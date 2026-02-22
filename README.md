@@ -27,8 +27,31 @@
 - **Node.js:** скопируйте `config.json.example` в `config.json` и укажите `vectorizer_username` и `vectorizer_password` (ключи с [vectorizer.ai](https://vectorizer.ai)).
 - **PHP:** скопируйте `config.php.example` в `config.php` или `config.local.php` и укажите те же переменные.
 
+## Подключение к GitHub
+
+1. Создайте новый репозиторий на [github.com](https://github.com/new) (без README и .gitignore).
+2. В папке `floor-plan-local` выполните (подставьте свой URL репозитория):
+
+   ```bash
+   git remote add origin https://github.com/ВАШ_ЛОГИН/floor-plan-local.git
+   git push -u origin main
+   ```
+
+   Либо через SSH:
+
+   ```bash
+   git remote add origin git@github.com:ВАШ_ЛОГИН/floor-plan-local.git
+   git push -u origin main
+   ```
+
+3. После первого push при необходимости настройте имя и email для коммитов:
+   ```bash
+   git config user.name "Ваше Имя"
+   git config user.email "ваш@email.com"
+   ```
+
 ## Структура
 
 - `index.html` — форма загрузки и отображение результата (SVG или ошибка).
-- **Node:** `server.js` — сервер и API; `config.json` — ключи.
-- **PHP:** `api/vectorize.php` — приём файла и запрос к Vectorizer.AI; `config.php` — ключи.
+- **Node:** `server.js` — сервер и API; `config.json` — ключи (скопируйте из `config.json.example`).
+- **PHP:** `api/vectorize.php` — приём файла и запрос к Vectorizer.AI; `config.php` — ключи (скопируйте из `config.php.example`).
