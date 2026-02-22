@@ -1,0 +1,11 @@
+<?php
+/**
+ * Настройки Vectorizer.AI.
+ * Скопируйте в config.php или config.local.php и укажите свои ключи.
+ */
+$vectorizer_username = 'ваш_идентификатор_API';
+$vectorizer_password = 'ваш_секретный_ключ';
+
+if ( file_exists( __DIR__ . '/config.local.php' ) ) {
+	include __DIR__ . '/config.local.php';
+}

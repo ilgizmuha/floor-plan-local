@@ -1,0 +1,11 @@
+{
+  "name": "floor-plan-local",
+  "version": "1.0.0",
+  "description": "Локальная страница векторной копии плана (Vectorizer.AI)",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "formidable": "^3.5.1"
+  }
+}
