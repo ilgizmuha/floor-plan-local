@@ -1,57 +1,62 @@
-# Локальная страница векторной копии плана
+# Autonomous Trading Service
 
-Страница без плагина WordPress: загрузка плана и получение SVG через Vectorizer.AI.
+Этот репозиторий заменен на стартовый автономный сервис для алгоритмической торговли на базе [Freqtrade](https://github.com/freqtrade/freqtrade).
 
-## Запуск
+Freqtrade - open-source crypto trading bot с поддержкой dry-run режима, backtesting, стратегий на Python, SQLite-хранилища, Telegram и Web UI.
 
-### Вариант 1: Node.js (рекомендуется)
+## Важно про безопасность
 
-1. В папке `floor-plan-local` выполните:
-   ```bash
-   npm install
-   npm start
-   ```
-2. Откройте в браузере: **http://localhost:8080**
-3. Выберите файл плана (PNG/JPG) и нажмите «Векторизовать».
+- По умолчанию включен `dry_run: true`: бот не размещает реальные ордера.
+- Реальные API-ключи биржи не хранятся в репозитории.
+- Не включайте live trading, пока стратегия не протестирована на истории и в dry-run.
+- Этот проект не является финансовой рекомендацией.
 
-### Вариант 2: PHP
+## Быстрый запуск
 
-1. В папке `floor-plan-local` выполните:
-   ```bash
-   php -S localhost:8080
-   ```
-2. Откройте в браузере: **http://localhost:8080**
-
-## Настройки
-
-- **Node.js:** скопируйте `config.json.example` в `config.json` и укажите `vectorizer_username` и `vectorizer_password` (ключи с [vectorizer.ai](https://vectorizer.ai)).
-- **PHP:** скопируйте `config.php.example` в `config.php` или `config.local.php` и укажите те же переменные.
-
-## Подключение к GitHub
-
-1. Создайте новый репозиторий на [github.com](https://github.com/new) (без README и .gitignore).
-2. В папке `floor-plan-local` выполните (подставьте свой URL репозитория):
+1. Установите Docker и Docker Compose.
+2. Проверьте конфигурацию:
 
    ```bash
-   git remote add origin https://github.com/ВАШ_ЛОГИН/floor-plan-local.git
-   git push -u origin main
+   docker compose config
    ```
 
-   Либо через SSH:
+3. Загрузите образ Freqtrade:
 
    ```bash
-   git remote add origin git@github.com:ВАШ_ЛОГИН/floor-plan-local.git
-   git push -u origin main
+   docker compose pull
    ```
 
-3. После первого push при необходимости настройте имя и email для коммитов:
+4. Запустите бота в dry-run режиме:
+
    ```bash
-   git config user.name "Ваше Имя"
-   git config user.email "ваш@email.com"
+   docker compose up -d
    ```
+
+5. Откройте Web UI:
+
+   ```text
+   http://localhost:8080
+   ```
+
+   Логин и пароль по умолчанию заданы в `user_data/config.json`. Смените их перед запуском на сервере.
+
+## Проверки и полезные команды
+
+```bash
+docker compose run --rm freqtrade --version
+docker compose run --rm freqtrade list-strategies --userdir /freqtrade/user_data
+docker compose run --rm freqtrade show-config --config /freqtrade/user_data/config.json
+docker compose logs -f freqtrade
+docker compose down
+```
 
 ## Структура
 
-- `index.html` — форма загрузки и отображение результата (SVG или ошибка).
-- **Node:** `server.js` — сервер и API; `config.json` — ключи (скопируйте из `config.json.example`).
-- **PHP:** `api/vectorize.php` — приём файла и запрос к Vectorizer.AI; `config.php` — ключи (скопируйте из `config.php.example`).
+- `docker-compose.yml` - запуск официального Docker-образа `freqtradeorg/freqtrade:stable`.
+- `user_data/config.json` - безопасная dry-run конфигурация.
+- `user_data/strategies/SafeMomentumStrategy.py` - пример простой стратегии на EMA и momentum.
+- `user_data/README.md` - где хранить стратегии, данные, логи и локальные настройки.
+
+## Переход к реальной торговле
+
+Для live trading нужно вручную изменить `dry_run`, добавить API-ключи биржи, ограничить права ключей, настроить пары и протестировать стратегию. Не коммитьте реальные ключи в Git.
