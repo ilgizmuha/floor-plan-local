@@ -27,6 +27,32 @@
 - **Node.js:** скопируйте `config.json.example` в `config.json` и укажите `vectorizer_username` и `vectorizer_password` (ключи с [vectorizer.ai](https://vectorizer.ai)).
 - **PHP:** скопируйте `config.php.example` в `config.php` или `config.local.php` и укажите те же переменные.
 
+## Bybit API трейдинг
+
+Скрипт `scripts/bybit-trader.js` позволяет проверить доступ к Bybit API, посмотреть баланс и создать ордер. По умолчанию реальные ордера не отправляются: включен `BYBIT_DRY_RUN=true`.
+
+1. На VPS скопируйте пример настроек:
+   ```bash
+   cp .env.example .env
+   ```
+2. В `.env` укажите `BYBIT_API_KEY` и `BYBIT_API_SECRET`. Для ключа на Bybit включайте только `read` и `trade`, выключайте `withdrawal`, добавляйте IP whitelist VPS.
+3. Проверьте публичный API:
+   ```bash
+   npm run bybit:health
+   ```
+4. Проверьте приватный API и баланс:
+   ```bash
+   npm run bybit:balance
+   ```
+5. Сформируйте ордер без отправки:
+   ```bash
+   npm run bybit:order -- --symbol BTCUSDT --side Buy --order-type Limit --qty 0.0001 --price 50000
+   ```
+6. Реальный ордер отправится только при двух условиях:
+   ```bash
+   BYBIT_DRY_RUN=false npm run bybit:order -- --symbol BTCUSDT --side Buy --order-type Limit --qty 0.0001 --price 50000 --confirm-live-order
+   ```
+
 ## Подключение к GitHub
 
 1. Создайте новый репозиторий на [github.com](https://github.com/new) (без README и .gitignore).
