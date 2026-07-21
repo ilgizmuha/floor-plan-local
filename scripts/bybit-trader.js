@@ -4,8 +4,15 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
-loadDotEnv(path.join(ROOT, '.env'));
+const ENV_PATHS = [
+  path.join(process.cwd(), '.env'),
+  path.join(__dirname, '.env'),
+  path.join(path.resolve(__dirname, '..'), '.env')
+];
+
+for (const filePath of [...new Set(ENV_PATHS)]) {
+  loadDotEnv(filePath);
+}
 
 const command = process.argv[2] || 'help';
 const args = parseArgs(process.argv.slice(3));
