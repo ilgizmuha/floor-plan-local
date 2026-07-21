@@ -68,6 +68,12 @@ npm run brain:status
 
 На VPS рекомендуемая папка: `/opt/trading-brain`. Журнал решений: `/opt/trading-brain/data/decisions.jsonl`.
 
+## WordPress-панель Trading Brain
+
+Отдельный плагин находится в `wp-plugins/trading-brain-panel`. Он добавляет админ-страницу **Trading Brain** и показывает статус сервиса, последние сигналы, новости и кнопки включить/выключить/перезапустить анализатор.
+
+Плагин не хранит Bybit-ключи и не содержит торговую логику. На VPS он работает через ограниченный helper `deploy/trading-brain-panel-helper.sh`, установленный как `/usr/local/bin/trading-brain-panel`.
+
 ## Подключение к GitHub
 
 1. Создайте новый репозиторий на [github.com](https://github.com/new) (без README и .gitignore).

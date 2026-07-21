@@ -1,0 +1,287 @@
+<?php
+/**
+ * Plugin Name: Trading Brain Panel
+ * Description: Admin-only control panel for the read-only hybrid trading brain service.
+ * Version: 0.1.0
+ * Author: Cursor
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+final class Trading_Brain_Panel {
+	private const MENU_SLUG = 'trading-brain-panel';
+	private const NONCE_ACTION = 'trading_brain_panel_action';
+	private const HELPER = '/usr/local/bin/trading-brain-panel';
+
+	public static function init(): void {
+		add_action( 'admin_menu', array( __CLASS__, 'add_menu' ) );
+		add_action( 'wp_ajax_trading_brain_panel_status', array( __CLASS__, 'ajax_status' ) );
+		add_action( 'wp_ajax_trading_brain_panel_control', array( __CLASS__, 'ajax_control' ) );
+	}
+
+	public static function add_menu(): void {
+		add_menu_page(
+			'Trading Brain',
+			'Trading Brain',
+			'manage_options',
+			self::MENU_SLUG,
+			array( __CLASS__, 'render_page' ),
+			'dashicons-chart-line',
+			58
+		);
+	}
+
+	public static function render_page(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'Access denied.', 'trading-brain-panel' ) );
+		}
+
+		$nonce = wp_create_nonce( self::NONCE_ACTION );
+		?>
+		<div class="wrap trading-brain-panel">
+			<h1>Trading Brain</h1>
+			<p>Панель только для управления и просмотра. Bybit-ключи и торговая логика находятся вне WordPress.</p>
+
+			<div class="tbp-grid">
+				<div class="tbp-card">
+					<h2>Сервис</h2>
+					<p><strong>Статус:</strong> <span id="tbp-service-status">loading...</span></p>
+					<p><strong>Dry-run:</strong> <span id="tbp-dry-run">loading...</span></p>
+					<p><strong>Обновлено:</strong> <span id="tbp-updated">loading...</span></p>
+					<div class="tbp-actions">
+						<button class="button button-primary" data-tbp-action="refresh">Обновить</button>
+						<button class="button" data-tbp-action="restart">Перезапустить мозг</button>
+						<button class="button" data-tbp-action="start">Включить</button>
+						<button class="button" data-tbp-action="stop">Выключить</button>
+					</div>
+				</div>
+
+				<div class="tbp-card">
+					<h2>Сигналы</h2>
+					<div id="tbp-decisions">loading...</div>
+				</div>
+
+				<div class="tbp-card tbp-wide">
+					<h2>Новости и причины</h2>
+					<div id="tbp-news">loading...</div>
+				</div>
+			</div>
+
+			<pre id="tbp-log" class="tbp-log"></pre>
+		</div>
+
+		<style>
+			.trading-brain-panel .tbp-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+				gap: 16px;
+				margin-top: 16px;
+			}
+			.trading-brain-panel .tbp-card {
+				background: #fff;
+				border: 1px solid #dcdcde;
+				border-radius: 8px;
+				padding: 16px;
+			}
+			.trading-brain-panel .tbp-wide {
+				grid-column: 1 / -1;
+			}
+			.trading-brain-panel .tbp-actions {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 8px;
+				margin-top: 12px;
+			}
+			.trading-brain-panel .tbp-signal {
+				border-left: 4px solid #8c8f94;
+				padding: 10px 12px;
+				margin: 10px 0;
+				background: #f6f7f7;
+			}
+			.trading-brain-panel .tbp-signal-buy {
+				border-left-color: #00a32a;
+			}
+			.trading-brain-panel .tbp-signal-sell {
+				border-left-color: #d63638;
+			}
+			.trading-brain-panel .tbp-signal-wait,
+			.trading-brain-panel .tbp-signal-hold {
+				border-left-color: #dba617;
+			}
+			.trading-brain-panel .tbp-muted {
+				color: #646970;
+			}
+			.trading-brain-panel .tbp-log {
+				background: #1d2327;
+				color: #f0f0f1;
+				padding: 12px;
+				border-radius: 6px;
+				max-height: 240px;
+				overflow: auto;
+			}
+		</style>
+
+		<script>
+			(function () {
+				const ajaxUrl = <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
+				const nonce = <?php echo wp_json_encode( $nonce ); ?>;
+				const log = document.getElementById('tbp-log');
+
+				function escapeHtml(value) {
+					return String(value ?? '').replace(/[&<>"']/g, function (char) {
+						return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char];
+					});
+				}
+
+				function writeLog(message) {
+					log.textContent = new Date().toISOString() + ' ' + message + "\n" + log.textContent;
+				}
+
+				function request(action, extra) {
+					const body = new URLSearchParams(Object.assign({
+						action: action,
+						_ajax_nonce: nonce
+					}, extra || {}));
+
+					return fetch(ajaxUrl, {
+						method: 'POST',
+						credentials: 'same-origin',
+						headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+						body: body.toString()
+					}).then((response) => response.json()).then((json) => {
+						if (!json.success) {
+							throw new Error((json.data && json.data.message) || 'Request failed');
+						}
+						return json.data;
+					});
+				}
+
+				function render(data) {
+					document.getElementById('tbp-service-status').textContent = data.service_status || 'unknown';
+					document.getElementById('tbp-dry-run').textContent = data.latest && typeof data.latest.dryRun !== 'undefined' ? String(data.latest.dryRun) : 'нет данных';
+					document.getElementById('tbp-updated').textContent = data.latest && data.latest.timestamp ? data.latest.timestamp : 'нет данных';
+
+					const decisions = (data.latest && data.latest.decisions) || [];
+					document.getElementById('tbp-decisions').innerHTML = decisions.length ? decisions.map((item) => {
+						const action = item.finalAction || 'WAIT';
+						const signal = item.signal || {};
+						const risk = item.risk || {};
+						const market = item.market || {};
+						const indicators = market.indicators || {};
+						return '<div class="tbp-signal tbp-signal-' + escapeHtml(action.toLowerCase()) + '">' +
+							'<h3>' + escapeHtml(item.symbol) + ' - ' + escapeHtml(action) + '</h3>' +
+							'<p><strong>Confidence:</strong> ' + escapeHtml(signal.confidence) + ' | <strong>Risk:</strong> ' + escapeHtml(risk.riskScore) + '</p>' +
+							'<p><strong>Price:</strong> ' + escapeHtml(market.lastPrice) + ' | <strong>24h:</strong> ' + escapeHtml(market.change24hPct) + '%</p>' +
+							'<p><strong>RSI:</strong> ' + escapeHtml(indicators.rsi14) + ' | <strong>SMA20/SMA50:</strong> ' + escapeHtml(indicators.sma20) + ' / ' + escapeHtml(indicators.sma50) + '</p>' +
+							'<p class="tbp-muted">' + escapeHtml((signal.reasons || []).join(', ')) + '</p>' +
+							(risk.blocks && risk.blocks.length ? '<p><strong>Блокировки:</strong> ' + escapeHtml(risk.blocks.join(', ')) + '</p>' : '') +
+						'</div>';
+					}).join('') : '<p>Пока нет решений.</p>';
+
+					const firstNews = decisions[0] && decisions[0].news ? decisions[0].news : {};
+					const topNews = firstNews.top || [];
+					document.getElementById('tbp-news').innerHTML =
+						'<p><strong>News score:</strong> ' + escapeHtml(firstNews.score ?? 0) + ' | <strong>Items:</strong> ' + escapeHtml(firstNews.itemCount ?? 0) + '</p>' +
+						(topNews.length ? '<ul>' + topNews.map((item) =>
+							'<li><a href="' + escapeHtml(item.link) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(item.title) + '</a> <span class="tbp-muted">score ' + escapeHtml(item.score) + '</span></li>'
+						).join('') + '</ul>' : '<p>Новостей пока нет.</p>');
+				}
+
+				function refresh() {
+					writeLog('refresh');
+					request('trading_brain_panel_status').then(render).catch((error) => writeLog(error.message));
+				}
+
+				document.querySelectorAll('[data-tbp-action]').forEach((button) => {
+					button.addEventListener('click', function () {
+						const action = button.getAttribute('data-tbp-action');
+						if (action === 'refresh') {
+							refresh();
+							return;
+						}
+						if (!window.confirm('Выполнить действие: ' + action + '?')) {
+							return;
+						}
+						writeLog(action);
+						request('trading_brain_panel_control', { service_action: action })
+							.then(render)
+							.catch((error) => writeLog(error.message));
+					});
+				});
+
+				refresh();
+			})();
+		</script>
+		<?php
+	}
+
+	public static function ajax_status(): void {
+		self::assert_admin_ajax();
+		wp_send_json_success( self::get_panel_data() );
+	}
+
+	public static function ajax_control(): void {
+		self::assert_admin_ajax();
+
+		$action = isset( $_POST['service_action'] ) ? sanitize_key( wp_unslash( $_POST['service_action'] ) ) : '';
+		if ( ! in_array( $action, array( 'start', 'stop', 'restart' ), true ) ) {
+			wp_send_json_error( array( 'message' => 'Invalid service action.' ), 400 );
+		}
+
+		$result = self::run_helper( $action );
+		if ( 0 !== $result['code'] ) {
+			wp_send_json_error( array( 'message' => 'Service action failed: ' . $result['output'] ), 500 );
+		}
+
+		wp_send_json_success( self::get_panel_data() );
+	}
+
+	private static function assert_admin_ajax(): void {
+		check_ajax_referer( self::NONCE_ACTION );
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error( array( 'message' => 'Access denied.' ), 403 );
+		}
+	}
+
+	private static function get_panel_data(): array {
+		$status = self::run_helper( 'status' );
+		$latest = self::run_helper( 'latest' );
+		$decoded_latest = array();
+
+		if ( 0 === $latest['code'] && '' !== $latest['output'] ) {
+			$decoded = json_decode( $latest['output'], true );
+			if ( is_array( $decoded ) ) {
+				$decoded_latest = $decoded;
+			}
+		}
+
+		return array(
+			'service_status' => trim( $status['output'] ) ?: 'unknown',
+			'latest'         => $decoded_latest,
+		);
+	}
+
+	private static function run_helper( string $command ): array {
+		$allowed = array( 'latest', 'status', 'start', 'stop', 'restart' );
+		if ( ! in_array( $command, $allowed, true ) ) {
+			return array(
+				'code'   => 1,
+				'output' => 'Command is not allowed.',
+			);
+		}
+
+		$cmd = 'sudo ' . escapeshellarg( self::HELPER ) . ' ' . escapeshellarg( $command ) . ' 2>&1';
+		$output = array();
+		$code = 0;
+		exec( $cmd, $output, $code );
+
+		return array(
+			'code'   => (int) $code,
+			'output' => trim( implode( "\n", $output ) ),
+		);
+	}
+}
+
+Trading_Brain_Panel::init();
