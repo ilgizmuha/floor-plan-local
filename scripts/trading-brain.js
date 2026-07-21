@@ -379,13 +379,13 @@ function scoreText(text) {
   const hits = [];
   let score = 0;
   for (const word of positive) {
-    if (lower.includes(word)) {
+    if (containsTerm(lower, word)) {
       score += 2;
       hits.push(`+${word}`);
     }
   }
   for (const word of negative) {
-    if (lower.includes(word)) {
+    if (containsTerm(lower, word)) {
       score -= 3;
       hits.push(`-${word}`);
     }
@@ -488,11 +488,17 @@ function stripTags(value) {
 
 function decodeEntities(value) {
   return String(value || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'");
+}
+
+function containsTerm(text, term) {
+  const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
 }
 
 function rsi(values, period) {
