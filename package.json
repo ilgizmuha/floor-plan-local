@@ -6,7 +6,9 @@
     "start": "node server.js",
     "bybit:health": "node scripts/bybit-trader.js health",
     "bybit:balance": "node scripts/bybit-trader.js balance",
-    "bybit:order": "node scripts/bybit-trader.js order"
+    "bybit:order": "node scripts/bybit-trader.js order",
+    "brain:once": "node scripts/trading-brain.js once",
+    "brain:status": "node scripts/trading-brain.js status"
   },
   "dependencies": {
     "formidable": "^3.5.1"
