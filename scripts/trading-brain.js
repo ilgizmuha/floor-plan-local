@@ -39,6 +39,14 @@ const config = {
     model: env('AI_ANALYST_MODEL', 'gpt-4o-mini'),
     timeoutMs: numberEnv('AI_ANALYST_TIMEOUT_MS', 20000),
     minConfidence: numberEnv('AI_ANALYST_MIN_CONFIDENCE', 60)
+  },
+  cursor: {
+    enabled: env('CURSOR_ANALYST_ENABLED', 'false') === 'true',
+    apiKey: env('CURSOR_API_KEY', ''),
+    model: env('CURSOR_ANALYST_MODEL', 'auto'),
+    timeoutMs: numberEnv('CURSOR_ANALYST_TIMEOUT_MS', 60000),
+    minConfidence: numberEnv('CURSOR_ANALYST_MIN_CONFIDENCE', 60),
+    cwd: env('CURSOR_ANALYST_CWD', process.cwd())
   }
 };
 
@@ -99,8 +107,9 @@ async function runBrainCycle() {
   const decisions = await Promise.all(markets.map(async (market) => {
     const signal = analyzeMarket(market, news);
     const aiAnalyst = await runAiAnalyst(market, news, signal);
-    const consensus = combineSignals(signal, aiAnalyst);
-    const risk = applyRiskManager(consensus, market, aiAnalyst);
+    const cursorAnalyst = await runCursorAnalyst(market, news, signal, aiAnalyst);
+    const consensus = combineSignals(signal, aiAnalyst, cursorAnalyst);
+    const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst);
     return {
       timestamp: new Date().toISOString(),
       symbol: market.symbol,
@@ -108,6 +117,7 @@ async function runBrainCycle() {
       news: summarizeNewsForDecision(news),
       signal,
       aiAnalyst,
+      cursorAnalyst,
       consensus,
       risk,
       finalAction: risk.allowed ? consensus.action : 'WAIT',
@@ -449,14 +459,130 @@ function normalizeAiVerdict(raw) {
   };
 }
 
-function combineSignals(ruleSignal, aiAnalyst) {
-  if (!aiAnalyst.enabled || aiAnalyst.status === 'disabled') {
+async function runCursorAnalyst(market, news, signal, aiAnalyst) {
+  if (!config.cursor.enabled) {
     return {
-      ...ruleSignal,
-      source: 'rules_only',
-      aiAgreement: 'not_enabled',
-      reasons: [...ruleSignal.reasons, 'AI analyst disabled']
+      enabled: false,
+      status: 'disabled',
+      provider: 'cursor',
+      model: config.cursor.model,
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: false,
+      reasoning: 'Cursor Analyst is disabled. Set CURSOR_ANALYST_ENABLED=true and CURSOR_API_KEY to enable.',
+      factors: []
     };
+  }
+
+  if (!config.cursor.apiKey) {
+    return {
+      enabled: true,
+      status: 'missing_api_key',
+      provider: 'cursor',
+      model: config.cursor.model,
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: true,
+      reasoning: 'Cursor Analyst is enabled but CURSOR_API_KEY is missing.',
+      factors: []
+    };
+  }
+
+  try {
+    const raw = await cursorRequest(buildCursorPrompt(market, news, signal, aiAnalyst));
+    return normalizeCursorVerdict(raw);
+  } catch (error) {
+    return {
+      enabled: true,
+      status: 'error',
+      provider: 'cursor',
+      model: config.cursor.model,
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: true,
+      reasoning: `Cursor Analyst error: ${error.message}`,
+      factors: []
+    };
+  }
+}
+
+function buildCursorPrompt(market, news, signal, aiAnalyst) {
+  return [
+    'You are Cursor Analyst, an independent conservative reviewer for a crypto trading brain.',
+    'Do not inspect or modify files. Use only the JSON payload in this prompt.',
+    'Return only valid JSON with this schema:',
+    '{"action":"BUY|SELL|HOLD|WAIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}',
+    'Prefer HOLD or WAIT when signal quality is weak, AI providers disagree, news risk is high, or edge is unclear.',
+    JSON.stringify({
+      symbol: market.symbol,
+      market: {
+        lastPrice: market.lastPrice,
+        change24hPct: market.change24hPct,
+        turnover24h: market.turnover24h,
+        volume24h: market.volume24h,
+        indicators: market.indicators
+      },
+      news: summarizeNewsForDecision(news),
+      ruleSignal: signal,
+      deepSeekAnalyst: aiAnalyst,
+      constraints: {
+        mode: 'dry-run analysis only',
+        allowedActions: ['BUY', 'SELL', 'HOLD', 'WAIT'],
+        noLeverage: true,
+        preferCapitalProtection: true
+      }
+    })
+  ].join('\n\n');
+}
+
+async function cursorRequest(prompt) {
+  const { Agent } = await import('@cursor/sdk');
+  const agent = Agent.create({
+    apiKey: config.cursor.apiKey,
+    model: { id: config.cursor.model },
+    local: { cwd: config.cursor.cwd, settingSources: [] }
+  });
+
+  let timeout = null;
+  try {
+    const run = await agent.send(prompt);
+    timeout = setTimeout(() => {
+      if (run.supports && run.supports('cancel')) {
+        run.cancel().catch(() => {});
+      }
+    }, config.cursor.timeoutMs);
+    const result = await run.wait();
+    if (result.status !== 'finished') {
+      throw new Error(`Cursor run ended with status ${result.status}`);
+    }
+    const parsed = parseJsonLoose(result.result || '');
+    if (!parsed) {
+      throw new Error('Cursor response was not valid JSON');
+    }
+    return parsed;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    await agent[Symbol.asyncDispose]();
+  }
+}
+
+function normalizeCursorVerdict(raw) {
+  const normalized = normalizeAiVerdict(raw);
+  return {
+    ...normalized,
+    provider: 'cursor',
+    model: config.cursor.model
+  };
+}
+
+function combineSignals(ruleSignal, aiAnalyst, cursorAnalyst = {}) {
+  if (!aiAnalyst.enabled || aiAnalyst.status === 'disabled') {
+    return combineWithCursorOnly(ruleSignal, cursorAnalyst);
   }
 
   if (aiAnalyst.status !== 'ok' || aiAnalyst.veto) {
@@ -466,6 +592,7 @@ function combineSignals(ruleSignal, aiAnalyst) {
       score: ruleSignal.score,
       source: 'ai_veto',
       aiAgreement: aiAnalyst.status,
+      cursorAgreement: cursorAnalyst.status || 'not_checked',
       reasons: [...ruleSignal.reasons, aiAnalyst.reasoning || 'AI analyst vetoed the signal']
     };
   }
@@ -477,17 +604,59 @@ function combineSignals(ruleSignal, aiAnalyst) {
       score: ruleSignal.score,
       source: 'ai_low_confidence',
       aiAgreement: 'low_confidence',
+      cursorAgreement: cursorAnalyst.status || 'not_checked',
       reasons: [...ruleSignal.reasons, 'AI analyst confidence below minimum']
     };
   }
 
+  if (cursorAnalyst.enabled && cursorAnalyst.status !== 'disabled') {
+    if (cursorAnalyst.status !== 'ok' || cursorAnalyst.veto) {
+      return {
+        action: 'WAIT',
+        confidence: Math.min(ruleSignal.confidence, aiAnalyst.confidence, 40),
+        score: ruleSignal.score,
+        source: 'cursor_veto',
+        aiAgreement: 'checked',
+        cursorAgreement: cursorAnalyst.status,
+        reasons: [...ruleSignal.reasons, cursorAnalyst.reasoning || 'Cursor Analyst vetoed the signal']
+      };
+    }
+    if (cursorAnalyst.confidence < config.cursor.minConfidence) {
+      return {
+        action: aiAnalyst.action === 'BUY' ? 'HOLD' : aiAnalyst.action,
+        confidence: Math.min(ruleSignal.confidence, aiAnalyst.confidence, cursorAnalyst.confidence || 50),
+        score: ruleSignal.score,
+        source: 'cursor_low_confidence',
+        aiAgreement: 'checked',
+        cursorAgreement: 'low_confidence',
+        reasons: [...ruleSignal.reasons, 'Cursor Analyst confidence below minimum']
+      };
+    }
+    if (cursorAnalyst.action !== aiAnalyst.action || cursorAnalyst.action !== ruleSignal.action) {
+      return {
+        action: 'WAIT',
+        confidence: Math.min(ruleSignal.confidence, aiAnalyst.confidence, cursorAnalyst.confidence),
+        score: ruleSignal.score,
+        source: 'multi_ai_disagree',
+        aiAgreement: 'mixed',
+        cursorAgreement: 'disagree',
+        reasons: [...ruleSignal.reasons, `Cursor Analyst disagrees: ${cursorAnalyst.action} - ${cursorAnalyst.reasoning}`]
+      };
+    }
+  }
+
   if (aiAnalyst.action === ruleSignal.action) {
+    const activeConfidences = [ruleSignal.confidence, aiAnalyst.confidence];
+    if (cursorAnalyst.status === 'ok') {
+      activeConfidences.push(cursorAnalyst.confidence);
+    }
     return {
       action: ruleSignal.action,
-      confidence: clamp(Math.round((ruleSignal.confidence + aiAnalyst.confidence) / 2) + 5, 0, 100),
+      confidence: clamp(Math.round(average(activeConfidences)) + 5, 0, 100),
       score: ruleSignal.score,
-      source: 'rules_ai_consensus',
+      source: cursorAnalyst.status === 'ok' ? 'rules_deepseek_cursor_consensus' : 'rules_ai_consensus',
       aiAgreement: 'agree',
+      cursorAgreement: cursorAnalyst.status === 'ok' ? 'agree' : (cursorAnalyst.status || 'not_enabled'),
       reasons: [...ruleSignal.reasons, `AI analyst agrees: ${aiAnalyst.reasoning}`]
     };
   }
@@ -498,7 +667,54 @@ function combineSignals(ruleSignal, aiAnalyst) {
     score: ruleSignal.score,
     source: 'rules_ai_disagree',
     aiAgreement: 'disagree',
+    cursorAgreement: cursorAnalyst.status || 'not_checked',
     reasons: [...ruleSignal.reasons, `AI analyst disagrees: ${aiAnalyst.action} - ${aiAnalyst.reasoning}`]
+  };
+}
+
+function combineWithCursorOnly(ruleSignal, cursorAnalyst) {
+  if (!cursorAnalyst.enabled || cursorAnalyst.status === 'disabled') {
+    return {
+      ...ruleSignal,
+      source: 'rules_only',
+      aiAgreement: 'not_enabled',
+      cursorAgreement: 'not_enabled',
+      reasons: [...ruleSignal.reasons, 'AI analyst disabled', 'Cursor Analyst disabled']
+    };
+  }
+
+  if (cursorAnalyst.status !== 'ok' || cursorAnalyst.veto) {
+    return {
+      action: 'WAIT',
+      confidence: Math.min(ruleSignal.confidence, 40),
+      score: ruleSignal.score,
+      source: 'cursor_veto',
+      aiAgreement: 'not_enabled',
+      cursorAgreement: cursorAnalyst.status,
+      reasons: [...ruleSignal.reasons, cursorAnalyst.reasoning || 'Cursor Analyst vetoed the signal']
+    };
+  }
+
+  if (cursorAnalyst.action === ruleSignal.action && cursorAnalyst.confidence >= config.cursor.minConfidence) {
+    return {
+      action: ruleSignal.action,
+      confidence: clamp(Math.round((ruleSignal.confidence + cursorAnalyst.confidence) / 2) + 5, 0, 100),
+      score: ruleSignal.score,
+      source: 'rules_cursor_consensus',
+      aiAgreement: 'not_enabled',
+      cursorAgreement: 'agree',
+      reasons: [...ruleSignal.reasons, `Cursor Analyst agrees: ${cursorAnalyst.reasoning}`]
+    };
+  }
+
+  return {
+    action: 'WAIT',
+    confidence: Math.min(ruleSignal.confidence, cursorAnalyst.confidence || 40),
+    score: ruleSignal.score,
+    source: 'rules_cursor_disagree',
+    aiAgreement: 'not_enabled',
+    cursorAgreement: 'disagree',
+    reasons: [...ruleSignal.reasons, `Cursor Analyst does not confirm: ${cursorAnalyst.action || 'none'} - ${cursorAnalyst.reasoning}`]
   };
 }
 
@@ -507,7 +723,7 @@ function normalizeAction(action) {
   return ['BUY', 'SELL', 'HOLD', 'WAIT'].includes(value) ? value : null;
 }
 
-function applyRiskManager(signal, market, aiAnalyst = {}) {
+function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}) {
   const i = market.indicators;
   let riskScore = 0;
   const blocks = [];
@@ -527,6 +743,16 @@ function applyRiskManager(signal, market, aiAnalyst = {}) {
     if (aiAnalyst.riskLevel === 'high') {
       riskScore += 25;
       blocks.push('AI analyst marked high risk');
+    }
+  }
+
+  if (cursorAnalyst.enabled && cursorAnalyst.status !== 'disabled') {
+    if (cursorAnalyst.status !== 'ok') {
+      blocks.push('Cursor Analyst unavailable');
+    }
+    if (cursorAnalyst.riskLevel === 'high') {
+      riskScore += 25;
+      blocks.push('Cursor Analyst marked high risk');
     }
   }
 
@@ -817,6 +1043,22 @@ function parseJson(text) {
   }
 }
 
+function parseJsonLoose(text) {
+  const direct = parseJson(text);
+  if (direct) {
+    return direct;
+  }
+  const fence = String(text || '').match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) {
+    const parsedFence = parseJson(fence[1].trim());
+    if (parsedFence) {
+      return parsedFence;
+    }
+  }
+  const objectMatch = String(text || '').match(/\{[\s\S]*\}/);
+  return objectMatch ? parseJson(objectMatch[0]) : null;
+}
+
 function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
@@ -839,8 +1081,11 @@ Environment:
   AI_ANALYST_BASE_URL=https://api.openai.com/v1
   AI_ANALYST_API_KEY=...
   AI_ANALYST_MODEL=gpt-4o-mini
+  CURSOR_ANALYST_ENABLED=false
+  CURSOR_API_KEY=cursor_...
+  CURSOR_ANALYST_MODEL=auto
 
 This brain is read-only and writes decisions to JSONL. It does not place orders.
-AI Analyst is optional and never bypasses the risk manager.
+DeepSeek/OpenAI-compatible AI Analyst and Cursor Analyst are optional and never bypass the risk manager.
 `);
 }

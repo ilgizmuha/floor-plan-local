@@ -11,6 +11,7 @@
     "brain:status": "node scripts/trading-brain.js status"
   },
   "dependencies": {
+    "@cursor/sdk": "^1.0.24",
     "formidable": "^3.5.1"
   }
 }
