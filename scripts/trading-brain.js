@@ -254,10 +254,16 @@ async function collectNews() {
     sentiment: scoreText(`${item.title} ${item.description}`)
   }));
   const score = scored.length ? round(average(scored.map((item) => item.sentiment.score)), 2) : 0;
+  const sourceCounts = {};
+  for (const item of scored) {
+    const label = item.sourceLabel || sourceLabel(item.source);
+    sourceCounts[label] = (sourceCounts[label] || 0) + 1;
+  }
 
   return {
     sourceCount: config.newsSources.length,
     itemCount: scored.length,
+    sourceCounts,
     score,
     items: scored
       .sort((a, b) => Math.abs(b.sentiment.score) - Math.abs(a.sentiment.score))
@@ -939,6 +945,7 @@ function summarizeNewsForDecision(news) {
   return {
     score: news.score || 0,
     itemCount: news.itemCount || 0,
+    sourceCounts: news.sourceCounts || {},
     error: news.error,
     top: (news.items || []).slice(0, 3)
   };

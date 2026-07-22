@@ -200,8 +200,10 @@ final class Trading_Brain_Panel {
 
 					const firstNews = decisions[0] && decisions[0].news ? decisions[0].news : {};
 					const topNews = firstNews.top || [];
+					const sourceCounts = firstNews.sourceCounts || {};
 					document.getElementById('tbp-news').innerHTML =
 						'<p><strong>News score:</strong> ' + escapeHtml(firstNews.score ?? 0) + ' | <strong>Items:</strong> ' + escapeHtml(firstNews.itemCount ?? 0) + '</p>' +
+						(Object.keys(sourceCounts).length ? '<p><strong>Sources:</strong> ' + escapeHtml(JSON.stringify(sourceCounts)) + '</p>' : '') +
 						(topNews.length ? '<ul>' + topNews.map((item) =>
 							'<li><a href="' + escapeHtml(item.link) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(item.title) + '</a> <span class="tbp-muted">' + escapeHtml(item.source || 'source') + ', score ' + escapeHtml(item.score) + '</span></li>'
 						).join('') + '</ul>' : '<p>Новостей пока нет.</p>');
