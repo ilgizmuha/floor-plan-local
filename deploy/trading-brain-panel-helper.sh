@@ -3,6 +3,8 @@ set -euo pipefail
 
 COMMAND="${1:-}"
 LATEST_FILE="/opt/trading-brain/data/latest.json"
+PAPER_FILE="/opt/trading-brain/data/paper-state.json"
+QUALITY_FILE="/opt/trading-brain/data/quality.json"
 SERVICE_NAME="trading-brain.service"
 
 case "$COMMAND" in
@@ -15,6 +17,20 @@ case "$COMMAND" in
     ;;
   status)
     systemctl is-active "$SERVICE_NAME" || true
+    ;;
+  paper)
+    if [[ -r "$PAPER_FILE" ]]; then
+      cat "$PAPER_FILE"
+    else
+      printf '{}\n'
+    fi
+    ;;
+  quality)
+    if [[ -r "$QUALITY_FILE" ]]; then
+      cat "$QUALITY_FILE"
+    else
+      printf '{}\n'
+    fi
     ;;
   start)
     systemctl start "$SERVICE_NAME"
@@ -29,7 +45,7 @@ case "$COMMAND" in
     systemctl is-active "$SERVICE_NAME"
     ;;
   *)
-    echo "Usage: trading-brain-panel {latest|status|start|stop|restart}" >&2
+    echo "Usage: trading-brain-panel {latest|status|paper|quality|start|stop|restart}" >&2
     exit 2
     ;;
 esac

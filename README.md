@@ -63,6 +63,8 @@ WordPress используется только как будущая панел
 
 Для Cursor SDK нужен Node.js `>=22.13`; VPS обновлён до Node.js 22.
 
+Paper-trading включается настройками `PAPER_*`. Это виртуальная торговля: мозг открывает/закрывает позиции только в файлах `/opt/trading-brain/data/paper-state.json` и `/opt/trading-brain/data/paper-trades.jsonl`. Качество сигналов по горизонтам 15м/1ч/4ч пишется в `/opt/trading-brain/data/quality.json` и отображается в WordPress-панели.
+
 Команды:
 
 ```bash

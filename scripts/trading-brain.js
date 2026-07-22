@@ -47,6 +47,16 @@ const config = {
     timeoutMs: numberEnv('CURSOR_ANALYST_TIMEOUT_MS', 60000),
     minConfidence: numberEnv('CURSOR_ANALYST_MIN_CONFIDENCE', 60),
     cwd: env('CURSOR_ANALYST_CWD', process.cwd())
+  },
+  paper: {
+    enabled: env('PAPER_TRADING_ENABLED', 'true') === 'true',
+    startBalanceUsd: numberEnv('PAPER_START_BALANCE_USD', 1000),
+    maxPositionUsd: numberEnv('PAPER_MAX_POSITION_USD', 20),
+    minConfidence: numberEnv('PAPER_MIN_CONFIDENCE', 70),
+    feeRate: numberEnv('PAPER_FEE_RATE', 0.001),
+    symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT')),
+    requireDeepSeekOk: env('PAPER_REQUIRE_DEEPSEEK_OK', 'true') === 'true',
+    requireCursorOk: env('PAPER_REQUIRE_CURSOR_OK', 'true') === 'true'
   }
 };
 
@@ -126,17 +136,23 @@ async function runBrainCycle() {
   }));
 
   appendJsonl(path.join(config.dataDir, 'decisions.jsonl'), decisions);
+  const paper = updatePaperState(decisions);
+  const quality = computeSignalQuality(readAllDecisions());
   writeJson(path.join(config.dataDir, 'latest.json'), {
     timestamp: new Date().toISOString(),
     dryRun: config.dryRun,
-    decisions
+    decisions,
+    paper,
+    quality
   });
 
   return {
     timestamp: new Date().toISOString(),
     dryRun: config.dryRun,
     summary: decisions.map((item) => `${item.symbol}:${item.finalAction}:${item.consensus.confidence}`).join(' '),
-    decisions
+    decisions,
+    paper,
+    quality
   };
 }
 
@@ -841,6 +857,287 @@ function summarizeNewsForDecision(news) {
   };
 }
 
+function updatePaperState(decisions) {
+  const statePath = path.join(config.dataDir, 'paper-state.json');
+  const tradesPath = path.join(config.dataDir, 'paper-trades.jsonl');
+  const now = new Date().toISOString();
+  const state = readJsonFile(statePath) || {
+    startedAt: now,
+    cashUsd: config.paper.startBalanceUsd,
+    startBalanceUsd: config.paper.startBalanceUsd,
+    realizedPnlUsd: 0,
+    positions: {},
+    stats: {
+      opened: 0,
+      closed: 0,
+      wins: 0,
+      losses: 0
+    },
+    recentEvents: []
+  };
+
+  state.updatedAt = now;
+  state.enabled = config.paper.enabled;
+  state.config = {
+    symbols: config.paper.symbols,
+    maxPositionUsd: config.paper.maxPositionUsd,
+    minConfidence: config.paper.minConfidence,
+    feeRate: config.paper.feeRate,
+    requireDeepSeekOk: config.paper.requireDeepSeekOk,
+    requireCursorOk: config.paper.requireCursorOk
+  };
+
+  const events = [];
+  for (const decision of decisions) {
+    const event = applyPaperDecision(state, decision);
+    if (event) {
+      events.push(event);
+    }
+  }
+
+  if (events.length) {
+    appendJsonl(tradesPath, events);
+    state.recentEvents = [...events, ...(state.recentEvents || [])].slice(0, 25);
+  }
+
+  const marks = markPaperPositions(state, decisions);
+  state.openPositionCount = Object.keys(state.positions || {}).length;
+  state.unrealizedPnlUsd = marks.unrealizedPnlUsd;
+  state.openPositionValueUsd = marks.openPositionValueUsd;
+  state.equityUsd = round((state.cashUsd || 0) + marks.openPositionValueUsd, 4);
+  state.totalPnlUsd = round(state.equityUsd - state.startBalanceUsd, 4);
+  state.totalPnlPct = round(percentChange(state.startBalanceUsd, state.equityUsd), 4);
+  state.stats.winRatePct = state.stats.closed ? round((state.stats.wins / state.stats.closed) * 100, 2) : 0;
+
+  writeJson(statePath, state);
+  return summarizePaperState(state);
+}
+
+function applyPaperDecision(state, decision) {
+  const symbol = decision.symbol;
+  const price = Number(decision.market && decision.market.lastPrice);
+  const action = decision.finalAction;
+  const consensus = decision.consensus || {};
+  const ai = decision.aiAnalyst || {};
+  const cursor = decision.cursorAnalyst || {};
+  const risk = decision.risk || {};
+  const positions = state.positions || {};
+  state.positions = positions;
+
+  if (!config.paper.enabled || !price || !config.paper.symbols.includes(symbol)) {
+    return null;
+  }
+
+  const position = positions[symbol];
+  if (!position && action === 'BUY') {
+    const blocks = [];
+    if ((consensus.confidence || 0) < config.paper.minConfidence) {
+      blocks.push('paper confidence below minimum');
+    }
+    if (risk.blocks && risk.blocks.length) {
+      blocks.push('risk manager has blocks');
+    }
+    if (config.paper.requireDeepSeekOk && ai.status !== 'ok') {
+      blocks.push('DeepSeek not ok');
+    }
+    if (config.paper.requireCursorOk && cursor.status !== 'ok') {
+      blocks.push('Cursor not ok');
+    }
+    if (config.paper.requireDeepSeekOk && ai.action !== 'BUY') {
+      blocks.push('DeepSeek does not confirm BUY');
+    }
+    if (config.paper.requireCursorOk && cursor.action !== 'BUY') {
+      blocks.push('Cursor does not confirm BUY');
+    }
+    if (blocks.length) {
+      return paperEvent('SKIP_BUY', decision, price, { blocks });
+    }
+
+    const positionUsd = Math.min(config.paper.maxPositionUsd, state.cashUsd || 0);
+    if (positionUsd <= 0) {
+      return paperEvent('SKIP_BUY', decision, price, { blocks: ['no paper cash'] });
+    }
+
+    const feeUsd = positionUsd * config.paper.feeRate;
+    const qty = positionUsd / price;
+    positions[symbol] = {
+      symbol,
+      qty,
+      entryPrice: price,
+      entryTime: decision.timestamp,
+      costUsd: positionUsd,
+      openFeeUsd: feeUsd,
+      confidence: consensus.confidence || 0
+    };
+    state.cashUsd = round((state.cashUsd || 0) - positionUsd - feeUsd, 4);
+    state.stats.opened += 1;
+    return paperEvent('OPEN', decision, price, { qty, positionUsd, feeUsd });
+  }
+
+  if (position && action === 'SELL') {
+    const grossUsd = position.qty * price;
+    const closeFeeUsd = grossUsd * config.paper.feeRate;
+    const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
+    state.cashUsd = round((state.cashUsd || 0) + grossUsd - closeFeeUsd, 4);
+    state.realizedPnlUsd = round((state.realizedPnlUsd || 0) + pnlUsd, 4);
+    state.stats.closed += 1;
+    if (pnlUsd >= 0) {
+      state.stats.wins += 1;
+    } else {
+      state.stats.losses += 1;
+    }
+    delete positions[symbol];
+    return paperEvent('CLOSE', decision, price, {
+      qty: position.qty,
+      grossUsd,
+      closeFeeUsd,
+      pnlUsd,
+      pnlPct: percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd)
+    });
+  }
+
+  return null;
+}
+
+function paperEvent(type, decision, price, extra = {}) {
+  return {
+    timestamp: new Date().toISOString(),
+    type,
+    symbol: decision.symbol,
+    action: decision.finalAction,
+    price,
+    confidence: decision.consensus ? decision.consensus.confidence : undefined,
+    consensusSource: decision.consensus ? decision.consensus.source : undefined,
+    deepSeek: decision.aiAnalyst ? decision.aiAnalyst.action : undefined,
+    cursor: decision.cursorAnalyst ? decision.cursorAnalyst.action : undefined,
+    ...extra
+  };
+}
+
+function markPaperPositions(state, decisions) {
+  const latestPrices = {};
+  for (const decision of decisions) {
+    latestPrices[decision.symbol] = Number(decision.market && decision.market.lastPrice);
+  }
+
+  let openPositionValueUsd = 0;
+  let unrealizedPnlUsd = 0;
+  for (const position of Object.values(state.positions || {})) {
+    const price = latestPrices[position.symbol] || position.entryPrice;
+    const valueUsd = position.qty * price;
+    const closeFeeUsd = valueUsd * config.paper.feeRate;
+    openPositionValueUsd += valueUsd;
+    unrealizedPnlUsd += valueUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
+    position.markPrice = price;
+    position.unrealizedPnlUsd = round(valueUsd - closeFeeUsd - position.costUsd - position.openFeeUsd, 4);
+    position.unrealizedPnlPct = round(percentChange(position.costUsd + position.openFeeUsd, valueUsd - closeFeeUsd), 4);
+  }
+
+  return {
+    openPositionValueUsd: round(openPositionValueUsd, 4),
+    unrealizedPnlUsd: round(unrealizedPnlUsd, 4)
+  };
+}
+
+function summarizePaperState(state) {
+  return {
+    enabled: state.enabled,
+    updatedAt: state.updatedAt,
+    startBalanceUsd: state.startBalanceUsd,
+    cashUsd: state.cashUsd,
+    equityUsd: state.equityUsd,
+    totalPnlUsd: state.totalPnlUsd,
+    totalPnlPct: state.totalPnlPct,
+    realizedPnlUsd: state.realizedPnlUsd,
+    unrealizedPnlUsd: state.unrealizedPnlUsd,
+    openPositionCount: state.openPositionCount,
+    positions: state.positions,
+    stats: state.stats,
+    recentEvents: state.recentEvents || [],
+    config: state.config
+  };
+}
+
+function computeSignalQuality(rows) {
+  const horizons = [
+    { label: '15m', steps: 3 },
+    { label: '1h', steps: 12 },
+    { label: '4h', steps: 48 }
+  ];
+  const bySymbol = {};
+  for (const row of rows) {
+    bySymbol[row.symbol] = bySymbol[row.symbol] || [];
+    bySymbol[row.symbol].push(row);
+  }
+
+  const symbols = {};
+  for (const [symbol, items] of Object.entries(bySymbol)) {
+    const actionCounts = {};
+    for (const item of items) {
+      actionCounts[item.finalAction] = (actionCounts[item.finalAction] || 0) + 1;
+    }
+
+    symbols[symbol] = {
+      count: items.length,
+      actionCounts,
+      horizons: {}
+    };
+
+    for (const horizon of horizons) {
+      const evaluated = [];
+      for (let index = 0; index + horizon.steps < items.length; index += 1) {
+        const current = items[index];
+        const future = items[index + horizon.steps];
+        if (!['BUY', 'SELL'].includes(current.finalAction)) {
+          continue;
+        }
+        const currentPrice = Number(current.market && current.market.lastPrice);
+        const futurePrice = Number(future.market && future.market.lastPrice);
+        if (!currentPrice || !futurePrice) {
+          continue;
+        }
+        const rawChangePct = percentChange(currentPrice, futurePrice);
+        const edgePct = current.finalAction === 'BUY' ? rawChangePct : -rawChangePct;
+        evaluated.push({
+          hit: edgePct > 0,
+          edgePct
+        });
+      }
+
+      const hits = evaluated.filter((item) => item.hit).length;
+      const edges = evaluated.map((item) => item.edgePct);
+      symbols[symbol].horizons[horizon.label] = {
+        evaluated: evaluated.length,
+        hits,
+        hitRatePct: evaluated.length ? round((hits / evaluated.length) * 100, 2) : 0,
+        avgEdgePct: edges.length ? round(average(edges), 4) : 0,
+        medianEdgePct: edges.length ? round(median(edges), 4) : 0
+      };
+    }
+  }
+
+  const quality = {
+    updatedAt: new Date().toISOString(),
+    totalDecisions: rows.length,
+    symbols
+  };
+  writeJson(path.join(config.dataDir, 'quality.json'), quality);
+  return quality;
+}
+
+function readAllDecisions() {
+  const filePath = path.join(config.dataDir, 'decisions.jsonl');
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  return fs.readFileSync(filePath, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => parseJson(line))
+    .filter(Boolean);
+}
+
 function readLatestDecisions(limit) {
   const filePath = path.join(config.dataDir, 'decisions.jsonl');
   if (!fs.existsSync(filePath)) {
@@ -862,6 +1159,13 @@ function appendJsonl(filePath, rows) {
 
 function writeJson(filePath, data) {
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+function readJsonFile(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+  return parseJson(fs.readFileSync(filePath, 'utf8'));
 }
 
 function loadDotEnv(filePath) {
@@ -981,6 +1285,15 @@ function averageTrueRangePercent(candles) {
 function average(values) {
   const filtered = values.filter((value) => Number.isFinite(value));
   return filtered.length ? filtered.reduce((sum, value) => sum + value, 0) / filtered.length : 0;
+}
+
+function median(values) {
+  const filtered = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
+  if (!filtered.length) {
+    return 0;
+  }
+  const middle = Math.floor(filtered.length / 2);
+  return filtered.length % 2 ? filtered[middle] : (filtered[middle - 1] + filtered[middle]) / 2;
 }
 
 function percentChange(from, to) {

@@ -63,9 +63,19 @@ final class Trading_Brain_Panel {
 					<div id="tbp-decisions">loading...</div>
 				</div>
 
+				<div class="tbp-card">
+					<h2>Paper trading</h2>
+					<div id="tbp-paper">loading...</div>
+				</div>
+
 				<div class="tbp-card tbp-wide">
 					<h2>Новости и причины</h2>
 					<div id="tbp-news">loading...</div>
+				</div>
+
+				<div class="tbp-card tbp-wide">
+					<h2>Качество сигналов</h2>
+					<div id="tbp-quality">loading...</div>
 				</div>
 			</div>
 
@@ -159,11 +169,12 @@ final class Trading_Brain_Panel {
 				}
 
 				function render(data) {
+					const latest = data.latest || {};
 					document.getElementById('tbp-service-status').textContent = data.service_status || 'unknown';
-					document.getElementById('tbp-dry-run').textContent = data.latest && typeof data.latest.dryRun !== 'undefined' ? String(data.latest.dryRun) : 'нет данных';
-					document.getElementById('tbp-updated').textContent = data.latest && data.latest.timestamp ? data.latest.timestamp : 'нет данных';
+					document.getElementById('tbp-dry-run').textContent = typeof latest.dryRun !== 'undefined' ? String(latest.dryRun) : 'нет данных';
+					document.getElementById('tbp-updated').textContent = latest.timestamp ? latest.timestamp : 'нет данных';
 
-					const decisions = (data.latest && data.latest.decisions) || [];
+					const decisions = latest.decisions || [];
 					document.getElementById('tbp-decisions').innerHTML = decisions.length ? decisions.map((item) => {
 						const action = item.finalAction || 'WAIT';
 						const signal = item.signal || {};
@@ -194,6 +205,34 @@ final class Trading_Brain_Panel {
 						(topNews.length ? '<ul>' + topNews.map((item) =>
 							'<li><a href="' + escapeHtml(item.link) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(item.title) + '</a> <span class="tbp-muted">score ' + escapeHtml(item.score) + '</span></li>'
 						).join('') + '</ul>' : '<p>Новостей пока нет.</p>');
+
+					const paper = data.paper || latest.paper || {};
+					const paperStats = paper.stats || {};
+					const positions = paper.positions || {};
+					document.getElementById('tbp-paper').innerHTML =
+						'<p><strong>Enabled:</strong> ' + escapeHtml(paper.enabled ?? false) + '</p>' +
+						'<p><strong>Equity:</strong> ' + escapeHtml(paper.equityUsd ?? 0) + ' USDT | <strong>PnL:</strong> ' + escapeHtml(paper.totalPnlUsd ?? 0) + ' (' + escapeHtml(paper.totalPnlPct ?? 0) + '%)</p>' +
+						'<p><strong>Cash:</strong> ' + escapeHtml(paper.cashUsd ?? 0) + ' | <strong>Open positions:</strong> ' + escapeHtml(paper.openPositionCount ?? 0) + '</p>' +
+						'<p><strong>Trades:</strong> opened ' + escapeHtml(paperStats.opened ?? 0) + ', closed ' + escapeHtml(paperStats.closed ?? 0) + ', winrate ' + escapeHtml(paperStats.winRatePct ?? 0) + '%</p>' +
+						(Object.keys(positions).length ? '<ul>' + Object.keys(positions).map((symbol) => {
+							const pos = positions[symbol] || {};
+							return '<li>' + escapeHtml(symbol) + ': qty ' + escapeHtml(pos.qty) + ', entry ' + escapeHtml(pos.entryPrice) + ', uPnL ' + escapeHtml(pos.unrealizedPnlUsd) + '</li>';
+						}).join('') + '</ul>' : '<p class="tbp-muted">Открытых paper-позиций нет.</p>');
+
+					const quality = data.quality || latest.quality || {};
+					const qualitySymbols = quality.symbols || {};
+					document.getElementById('tbp-quality').innerHTML = Object.keys(qualitySymbols).length ? Object.keys(qualitySymbols).map((symbol) => {
+						const item = qualitySymbols[symbol] || {};
+						const horizons = item.horizons || {};
+						return '<h3>' + escapeHtml(symbol) + '</h3>' +
+							'<p><strong>Decisions:</strong> ' + escapeHtml(item.count ?? 0) + ' | <strong>Actions:</strong> ' + escapeHtml(JSON.stringify(item.actionCounts || {})) + '</p>' +
+							'<table class="widefat striped"><thead><tr><th>Горизонт</th><th>Hit-rate</th><th>Hits</th><th>Avg edge</th><th>Median edge</th></tr></thead><tbody>' +
+							['15m', '1h', '4h'].map((label) => {
+								const h = horizons[label] || {};
+								return '<tr><td>' + escapeHtml(label) + '</td><td>' + escapeHtml(h.hitRatePct ?? 0) + '%</td><td>' + escapeHtml(h.hits ?? 0) + '/' + escapeHtml(h.evaluated ?? 0) + '</td><td>' + escapeHtml(h.avgEdgePct ?? 0) + '%</td><td>' + escapeHtml(h.medianEdgePct ?? 0) + '%</td></tr>';
+							}).join('') +
+							'</tbody></table>';
+					}).join('') : '<p>Качество ещё не рассчитано.</p>';
 				}
 
 				function refresh() {
@@ -255,7 +294,11 @@ final class Trading_Brain_Panel {
 	private static function get_panel_data(): array {
 		$status = self::run_helper( 'status' );
 		$latest = self::run_helper( 'latest' );
+		$paper = self::run_helper( 'paper' );
+		$quality = self::run_helper( 'quality' );
 		$decoded_latest = array();
+		$decoded_paper = array();
+		$decoded_quality = array();
 
 		if ( 0 === $latest['code'] && '' !== $latest['output'] ) {
 			$decoded = json_decode( $latest['output'], true );
@@ -263,15 +306,29 @@ final class Trading_Brain_Panel {
 				$decoded_latest = $decoded;
 			}
 		}
+		if ( 0 === $paper['code'] && '' !== $paper['output'] ) {
+			$decoded = json_decode( $paper['output'], true );
+			if ( is_array( $decoded ) ) {
+				$decoded_paper = $decoded;
+			}
+		}
+		if ( 0 === $quality['code'] && '' !== $quality['output'] ) {
+			$decoded = json_decode( $quality['output'], true );
+			if ( is_array( $decoded ) ) {
+				$decoded_quality = $decoded;
+			}
+		}
 
 		return array(
 			'service_status' => trim( $status['output'] ) ?: 'unknown',
 			'latest'         => $decoded_latest,
+			'paper'          => $decoded_paper,
+			'quality'        => $decoded_quality,
 		);
 	}
 
 	private static function run_helper( string $command ): array {
-		$allowed = array( 'latest', 'status', 'start', 'stop', 'restart' );
+		$allowed = array( 'latest', 'status', 'paper', 'quality', 'start', 'stop', 'restart' );
 		if ( ! in_array( $command, $allowed, true ) ) {
 			return array(
 				'code'   => 1,
