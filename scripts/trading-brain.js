@@ -567,7 +567,12 @@ async function cursorRequest(prompt) {
     if (timeout) {
       clearTimeout(timeout);
     }
-    await agent[Symbol.asyncDispose]();
+    const asyncDispose = agent[Symbol.asyncDispose];
+    if (typeof asyncDispose === 'function') {
+      await asyncDispose.call(agent);
+    } else if (typeof agent.dispose === 'function') {
+      await agent.dispose();
+    }
   }
 }
 
