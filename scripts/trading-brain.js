@@ -540,40 +540,21 @@ function buildCursorPrompt(market, news, signal, aiAnalyst) {
 
 async function cursorRequest(prompt) {
   const { Agent } = await import('@cursor/sdk');
-  const agent = Agent.create({
+  const request = Agent.prompt(prompt, {
     apiKey: config.cursor.apiKey,
     model: { id: config.cursor.model },
     local: { cwd: config.cursor.cwd, settingSources: [] }
   });
 
-  let timeout = null;
-  try {
-    const run = await agent.send(prompt);
-    timeout = setTimeout(() => {
-      if (run.supports && run.supports('cancel')) {
-        run.cancel().catch(() => {});
-      }
-    }, config.cursor.timeoutMs);
-    const result = await run.wait();
-    if (result.status !== 'finished') {
-      throw new Error(`Cursor run ended with status ${result.status}`);
-    }
-    const parsed = parseJsonLoose(result.result || '');
-    if (!parsed) {
-      throw new Error('Cursor response was not valid JSON');
-    }
-    return parsed;
-  } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    const asyncDispose = agent[Symbol.asyncDispose];
-    if (typeof asyncDispose === 'function') {
-      await asyncDispose.call(agent);
-    } else if (typeof agent.dispose === 'function') {
-      await agent.dispose();
-    }
+  const result = await withTimeout(request, config.cursor.timeoutMs, 'Cursor Analyst timed out');
+  if (result.status !== 'finished') {
+    throw new Error(`Cursor run ended with status ${result.status}`);
   }
+  const parsed = parseJsonLoose(result.result || '');
+  if (!parsed) {
+    throw new Error('Cursor response was not valid JSON');
+  }
+  return parsed;
 }
 
 function normalizeCursorVerdict(raw) {
@@ -1070,6 +1051,22 @@ function ensureDir(dirPath) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
 }
 
 function printHelp() {
