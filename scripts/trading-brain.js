@@ -28,6 +28,7 @@ const config = {
   maxDailyLossUsd: numberEnv('BRAIN_MAX_DAILY_LOSS_USD', 5),
   dataDir: env('BRAIN_DATA_DIR', path.join(process.cwd(), 'data')),
   newsSources: splitList(env('BRAIN_NEWS_SOURCES', 'https://cointelegraph.com/rss,https://www.coindesk.com/arc/outboundfeeds/rss/')),
+  htmlNewsSources: splitList(env('BRAIN_HTML_NEWS_SOURCES', 'https://forklog.com/en/news-and-analysis/,https://t.me/s/forklogfeed')),
   newsLookbackHours: numberEnv('BRAIN_NEWS_LOOKBACK_HOURS', 12),
   loopIntervalSeconds: numberEnv('BRAIN_LOOP_INTERVAL_SECONDS', 300),
   dryRun: env('BRAIN_DRY_RUN', 'true') !== 'false',
@@ -235,6 +236,19 @@ async function collectNews() {
     allItems.push(...items);
   }
 
+  for (const source of config.htmlNewsSources) {
+    const response = await fetch(source, { headers: { 'User-Agent': 'TradingBrain/1.0' } });
+    if (!response.ok) {
+      continue;
+    }
+    const html = await response.text();
+    const items = parseHtmlNews(html, source)
+      .filter((item) => !item.timestamp || item.timestamp >= cutoff)
+      .slice(0, 20)
+      .map((item) => ({ ...item, source, sourceLabel: sourceLabel(source) }));
+    allItems.push(...items);
+  }
+
   const scored = allItems.map((item) => ({
     ...item,
     sentiment: scoreText(`${item.title} ${item.description}`)
@@ -251,6 +265,7 @@ async function collectNews() {
       .map((item) => ({
         title: item.title,
         link: item.link,
+        source: item.sourceLabel || sourceLabel(item.source),
         publishedAt: item.publishedAt,
         score: item.sentiment.score,
         hits: item.sentiment.hits
@@ -821,6 +836,78 @@ function parseRss(xml) {
   }).filter((item) => item.title);
 }
 
+function parseHtmlNews(html, source) {
+  if (source.includes('t.me/')) {
+    return parseTelegramHtml(html, source);
+  }
+  if (source.includes('forklog.com')) {
+    return parseForkLogHtml(html, source);
+  }
+  return parseGenericHtmlNews(html, source);
+}
+
+function parseForkLogHtml(html, source) {
+  const seen = new Set();
+  const items = [];
+  const linkPattern = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = linkPattern.exec(html)) && items.length < 40) {
+    const link = absolutizeUrl(decodeEntities(match[1]), source);
+    if (!/forklog\.com\/(en\/)?[a-z0-9-]+/i.test(link) || seen.has(link)) {
+      continue;
+    }
+    const title = decodeEntities(stripTags(match[2]));
+    if (!isUsefulNewsTitle(title)) {
+      continue;
+    }
+    seen.add(link);
+    items.push({
+      title,
+      description: '',
+      link,
+      publishedAt: '',
+      timestamp: 0
+    });
+  }
+  return items;
+}
+
+function parseTelegramHtml(html, source) {
+  const chunks = html.match(/<div class="tgme_widget_message_wrap[\s\S]*?(?=<div class="tgme_widget_message_wrap|<\/body>)/g) || [];
+  return chunks.map((chunk) => {
+    const title = decodeEntities(stripTags(pickClass(chunk, 'tgme_widget_message_text')));
+    const publishedAt = decodeEntities(pickAttr(pickClassBlock(chunk, 'tgme_widget_message_date'), 'datetime'));
+    const link = absolutizeUrl(decodeEntities(pickAttr(pickClassBlock(chunk, 'tgme_widget_message_date'), 'href')), source);
+    return {
+      title,
+      description: title,
+      link,
+      publishedAt,
+      timestamp: publishedAt ? Date.parse(publishedAt) : 0
+    };
+  }).filter((item) => isUsefulNewsTitle(item.title));
+}
+
+function parseGenericHtmlNews(html, source) {
+  const matches = html.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi) || [];
+  const seen = new Set();
+  const items = [];
+  for (const raw of matches) {
+    const href = pickAttr(raw, 'href');
+    const title = decodeEntities(stripTags(raw));
+    const link = absolutizeUrl(decodeEntities(href), source);
+    if (!isUsefulNewsTitle(title) || seen.has(link)) {
+      continue;
+    }
+    seen.add(link);
+    items.push({ title, description: '', link, publishedAt: '', timestamp: 0 });
+    if (items.length >= 20) {
+      break;
+    }
+  }
+  return items;
+}
+
 function scoreText(text) {
   const lower = text.toLowerCase();
   const positive = [
@@ -1220,9 +1307,63 @@ function pickTag(xml, tag) {
   return match ? match[1].trim() : '';
 }
 
+function pickClass(html, className) {
+  return stripTags(pickClassBlock(html, className));
+}
+
+function pickClassBlock(html, className) {
+  const escaped = className.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = html.match(new RegExp(`<[^>]+class=["'][^"']*${escaped}[^"']*["'][^>]*>[\\s\\S]*?<\\/[^>]+>`, 'i'));
+  return match ? match[0] : '';
+}
+
+function pickAttr(html, attr) {
+  const escaped = attr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(html || '').match(new RegExp(`${escaped}=["']([^"']+)["']`, 'i'));
+  return match ? match[1] : '';
+}
+
 function pickLinkHref(xml) {
   const match = xml.match(/<link\b[^>]*href=["']([^"']+)["'][^>]*>/i);
   return match ? match[1] : '';
+}
+
+function absolutizeUrl(value, base) {
+  try {
+    return new URL(value, base).toString();
+  } catch (error) {
+    return value || base;
+  }
+}
+
+function sourceLabel(source) {
+  try {
+    const url = new URL(source);
+    if (url.hostname.includes('news.google.com')) {
+      return 'Google News';
+    }
+    if (url.hostname.includes('forklog.com')) {
+      return 'ForkLog';
+    }
+    if (url.hostname.includes('t.me')) {
+      return 'Telegram';
+    }
+    return url.hostname.replace(/^www\./, '');
+  } catch (error) {
+    return source || 'unknown';
+  }
+}
+
+function isUsefulNewsTitle(title) {
+  const value = String(title || '').replace(/\s+/g, ' ').trim();
+  if (value.length < 18 || value.length > 240) {
+    return false;
+  }
+  const lower = value.toLowerCase();
+  if (lower.includes('cookie') || lower.includes('privacy policy') || lower.includes('advertisement')) {
+    return false;
+  }
+  return true;
 }
 
 function stripTags(value) {

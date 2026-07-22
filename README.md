@@ -65,6 +65,8 @@ WordPress используется только как будущая панел
 
 Paper-trading включается настройками `PAPER_*`. Это виртуальная торговля: мозг открывает/закрывает позиции только в файлах `/opt/trading-brain/data/paper-state.json` и `/opt/trading-brain/data/paper-trades.jsonl`. Качество сигналов по горизонтам 15м/1ч/4ч пишется в `/opt/trading-brain/data/quality.json` и отображается в WordPress-панели.
 
+Новостной слой читает RSS (`BRAIN_NEWS_SOURCES`) и HTML-источники (`BRAIN_HTML_NEWS_SOURCES`). Сейчас подключены Cointelegraph, CoinDesk, Google News, ForkLog и публичная Telegram-лента ForkLog. X, Feedly и приватные Telegram-каналы стоит подключать отдельными API-токенами, чтобы не зависеть от нестабильного scraping.
+
 Команды:
 
 ```bash
