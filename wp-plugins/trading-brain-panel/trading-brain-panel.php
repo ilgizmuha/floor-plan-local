@@ -167,15 +167,19 @@ final class Trading_Brain_Panel {
 					document.getElementById('tbp-decisions').innerHTML = decisions.length ? decisions.map((item) => {
 						const action = item.finalAction || 'WAIT';
 						const signal = item.signal || {};
+						const consensus = item.consensus || signal;
+						const ai = item.aiAnalyst || {};
 						const risk = item.risk || {};
 						const market = item.market || {};
 						const indicators = market.indicators || {};
 						return '<div class="tbp-signal tbp-signal-' + escapeHtml(action.toLowerCase()) + '">' +
 							'<h3>' + escapeHtml(item.symbol) + ' - ' + escapeHtml(action) + '</h3>' +
-							'<p><strong>Confidence:</strong> ' + escapeHtml(signal.confidence) + ' | <strong>Risk:</strong> ' + escapeHtml(risk.riskScore) + '</p>' +
+							'<p><strong>Consensus:</strong> ' + escapeHtml(consensus.source || 'rules') + ' | <strong>Confidence:</strong> ' + escapeHtml(consensus.confidence) + ' | <strong>Risk:</strong> ' + escapeHtml(risk.riskScore) + '</p>' +
 							'<p><strong>Price:</strong> ' + escapeHtml(market.lastPrice) + ' | <strong>24h:</strong> ' + escapeHtml(market.change24hPct) + '%</p>' +
 							'<p><strong>RSI:</strong> ' + escapeHtml(indicators.rsi14) + ' | <strong>SMA20/SMA50:</strong> ' + escapeHtml(indicators.sma20) + ' / ' + escapeHtml(indicators.sma50) + '</p>' +
-							'<p class="tbp-muted">' + escapeHtml((signal.reasons || []).join(', ')) + '</p>' +
+							'<p><strong>AI Analyst:</strong> ' + escapeHtml(ai.status || 'unknown') + ' ' + escapeHtml(ai.model || '') + (ai.action ? ' → ' + escapeHtml(ai.action) + ' / ' + escapeHtml(ai.confidence) : '') + '</p>' +
+							(ai.reasoning ? '<p class="tbp-muted"><strong>AI:</strong> ' + escapeHtml(ai.reasoning) + '</p>' : '') +
+							'<p class="tbp-muted">' + escapeHtml((consensus.reasons || signal.reasons || []).join(', ')) + '</p>' +
 							(risk.blocks && risk.blocks.length ? '<p><strong>Блокировки:</strong> ' + escapeHtml(risk.blocks.join(', ')) + '</p>' : '') +
 						'</div>';
 					}).join('') : '<p>Пока нет решений.</p>';

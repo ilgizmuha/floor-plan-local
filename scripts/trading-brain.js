@@ -30,7 +30,16 @@ const config = {
   newsSources: splitList(env('BRAIN_NEWS_SOURCES', 'https://cointelegraph.com/rss,https://www.coindesk.com/arc/outboundfeeds/rss/')),
   newsLookbackHours: numberEnv('BRAIN_NEWS_LOOKBACK_HOURS', 12),
   loopIntervalSeconds: numberEnv('BRAIN_LOOP_INTERVAL_SECONDS', 300),
-  dryRun: env('BRAIN_DRY_RUN', 'true') !== 'false'
+  dryRun: env('BRAIN_DRY_RUN', 'true') !== 'false',
+  ai: {
+    enabled: env('AI_ANALYST_ENABLED', 'false') === 'true',
+    provider: env('AI_ANALYST_PROVIDER', 'openai-compatible'),
+    baseUrl: env('AI_ANALYST_BASE_URL', 'https://api.openai.com/v1').replace(/\/+$/, ''),
+    apiKey: env('AI_ANALYST_API_KEY', ''),
+    model: env('AI_ANALYST_MODEL', 'gpt-4o-mini'),
+    timeoutMs: numberEnv('AI_ANALYST_TIMEOUT_MS', 20000),
+    minConfidence: numberEnv('AI_ANALYST_MIN_CONFIDENCE', 60)
+  }
 };
 
 main().catch((error) => {
@@ -87,20 +96,24 @@ async function runBrainCycle() {
     }))
   ]);
 
-  const decisions = markets.map((market) => {
+  const decisions = await Promise.all(markets.map(async (market) => {
     const signal = analyzeMarket(market, news);
-    const risk = applyRiskManager(signal, market);
+    const aiAnalyst = await runAiAnalyst(market, news, signal);
+    const consensus = combineSignals(signal, aiAnalyst);
+    const risk = applyRiskManager(consensus, market, aiAnalyst);
     return {
       timestamp: new Date().toISOString(),
       symbol: market.symbol,
       market,
       news: summarizeNewsForDecision(news),
       signal,
+      aiAnalyst,
+      consensus,
       risk,
-      finalAction: risk.allowed ? signal.action : 'WAIT',
+      finalAction: risk.allowed ? consensus.action : 'WAIT',
       dryRun: config.dryRun
     };
-  });
+  }));
 
   appendJsonl(path.join(config.dataDir, 'decisions.jsonl'), decisions);
   writeJson(path.join(config.dataDir, 'latest.json'), {
@@ -112,7 +125,7 @@ async function runBrainCycle() {
   return {
     timestamp: new Date().toISOString(),
     dryRun: config.dryRun,
-    summary: decisions.map((item) => `${item.symbol}:${item.finalAction}:${item.signal.confidence}`).join(' '),
+    summary: decisions.map((item) => `${item.symbol}:${item.finalAction}:${item.consensus.confidence}`).join(' '),
     decisions
   };
 }
@@ -290,7 +303,211 @@ function analyzeMarket(market, news) {
   };
 }
 
-function applyRiskManager(signal, market) {
+async function runAiAnalyst(market, news, signal) {
+  if (!config.ai.enabled) {
+    return {
+      enabled: false,
+      status: 'disabled',
+      provider: config.ai.provider,
+      model: config.ai.model,
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: false,
+      reasoning: 'AI Analyst is disabled. Set AI_ANALYST_ENABLED=true and AI_ANALYST_API_KEY to enable.',
+      factors: []
+    };
+  }
+
+  if (!config.ai.apiKey) {
+    return {
+      enabled: true,
+      status: 'missing_api_key',
+      provider: config.ai.provider,
+      model: config.ai.model,
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: true,
+      reasoning: 'AI Analyst is enabled but AI_ANALYST_API_KEY is missing.',
+      factors: []
+    };
+  }
+
+  try {
+    const response = await aiRequest(buildAiMessages(market, news, signal));
+    return normalizeAiVerdict(response);
+  } catch (error) {
+    return {
+      enabled: true,
+      status: 'error',
+      provider: config.ai.provider,
+      model: config.ai.model,
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: true,
+      reasoning: `AI Analyst error: ${error.message}`,
+      factors: []
+    };
+  }
+}
+
+function buildAiMessages(market, news, signal) {
+  const payload = {
+    symbol: market.symbol,
+    market: {
+      lastPrice: market.lastPrice,
+      change24hPct: market.change24hPct,
+      turnover24h: market.turnover24h,
+      volume24h: market.volume24h,
+      indicators: market.indicators
+    },
+    news: summarizeNewsForDecision(news),
+    ruleSignal: signal,
+    constraints: {
+      mode: 'dry-run analysis only',
+      allowedActions: ['BUY', 'SELL', 'HOLD', 'WAIT'],
+      noLeverage: true,
+      preferCapitalProtection: true
+    }
+  };
+
+  return [
+    {
+      role: 'system',
+      content: [
+        'You are a conservative crypto trading analyst.',
+        'Return only valid JSON.',
+        'Do not suggest leverage.',
+        'If data is mixed, uncertain, or news risk is elevated, prefer HOLD or WAIT.',
+        'JSON schema: {"action":"BUY|SELL|HOLD|WAIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}.'
+      ].join(' ')
+    },
+    {
+      role: 'user',
+      content: JSON.stringify(payload)
+    }
+  ];
+}
+
+async function aiRequest(messages) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.ai.timeoutMs);
+  try {
+    const response = await fetch(`${config.ai.baseUrl}/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Authorization': `Bearer ${config.ai.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: config.ai.model,
+        messages,
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      })
+    });
+    const text = await response.text();
+    const data = parseJson(text);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const content = data && data.choices && data.choices[0] && data.choices[0].message
+      ? data.choices[0].message.content
+      : '';
+    const parsed = parseJson(content);
+    if (!parsed) {
+      throw new Error('AI response was not valid JSON');
+    }
+    return parsed;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function normalizeAiVerdict(raw) {
+  const action = normalizeAction(raw.action);
+  const confidence = clamp(Math.round(Number(raw.confidence) || 0), 0, 100);
+  const riskLevel = ['low', 'medium', 'high'].includes(String(raw.riskLevel || '').toLowerCase())
+    ? String(raw.riskLevel).toLowerCase()
+    : 'unknown';
+  const factors = Array.isArray(raw.factors) ? raw.factors.map((item) => String(item)).slice(0, 6) : [];
+
+  return {
+    enabled: true,
+    status: 'ok',
+    provider: config.ai.provider,
+    model: config.ai.model,
+    action,
+    confidence,
+    riskLevel,
+    veto: Boolean(raw.veto),
+    reasoning: String(raw.reasoning || '').slice(0, 500),
+    factors
+  };
+}
+
+function combineSignals(ruleSignal, aiAnalyst) {
+  if (!aiAnalyst.enabled || aiAnalyst.status === 'disabled') {
+    return {
+      ...ruleSignal,
+      source: 'rules_only',
+      aiAgreement: 'not_enabled',
+      reasons: [...ruleSignal.reasons, 'AI analyst disabled']
+    };
+  }
+
+  if (aiAnalyst.status !== 'ok' || aiAnalyst.veto) {
+    return {
+      action: 'WAIT',
+      confidence: Math.min(ruleSignal.confidence, 40),
+      score: ruleSignal.score,
+      source: 'ai_veto',
+      aiAgreement: aiAnalyst.status,
+      reasons: [...ruleSignal.reasons, aiAnalyst.reasoning || 'AI analyst vetoed the signal']
+    };
+  }
+
+  if (!aiAnalyst.action || aiAnalyst.confidence < config.ai.minConfidence) {
+    return {
+      action: ruleSignal.action === 'BUY' ? 'HOLD' : ruleSignal.action,
+      confidence: Math.min(ruleSignal.confidence, aiAnalyst.confidence || 50),
+      score: ruleSignal.score,
+      source: 'ai_low_confidence',
+      aiAgreement: 'low_confidence',
+      reasons: [...ruleSignal.reasons, 'AI analyst confidence below minimum']
+    };
+  }
+
+  if (aiAnalyst.action === ruleSignal.action) {
+    return {
+      action: ruleSignal.action,
+      confidence: clamp(Math.round((ruleSignal.confidence + aiAnalyst.confidence) / 2) + 5, 0, 100),
+      score: ruleSignal.score,
+      source: 'rules_ai_consensus',
+      aiAgreement: 'agree',
+      reasons: [...ruleSignal.reasons, `AI analyst agrees: ${aiAnalyst.reasoning}`]
+    };
+  }
+
+  return {
+    action: 'WAIT',
+    confidence: Math.min(ruleSignal.confidence, aiAnalyst.confidence),
+    score: ruleSignal.score,
+    source: 'rules_ai_disagree',
+    aiAgreement: 'disagree',
+    reasons: [...ruleSignal.reasons, `AI analyst disagrees: ${aiAnalyst.action} - ${aiAnalyst.reasoning}`]
+  };
+}
+
+function normalizeAction(action) {
+  const value = String(action || '').toUpperCase();
+  return ['BUY', 'SELL', 'HOLD', 'WAIT'].includes(value) ? value : null;
+}
+
+function applyRiskManager(signal, market, aiAnalyst = {}) {
   const i = market.indicators;
   let riskScore = 0;
   const blocks = [];
@@ -301,6 +518,16 @@ function applyRiskManager(signal, market) {
 
   if (signal.confidence < config.minConfidence && signal.action === 'BUY') {
     blocks.push('confidence below minimum');
+  }
+
+  if (aiAnalyst.enabled && aiAnalyst.status !== 'disabled') {
+    if (aiAnalyst.status !== 'ok') {
+      blocks.push('AI analyst unavailable');
+    }
+    if (aiAnalyst.riskLevel === 'high') {
+      riskScore += 25;
+      blocks.push('AI analyst marked high risk');
+    }
   }
 
   if (i.volatilityPct > 3.5) {
@@ -608,7 +835,12 @@ Environment:
   BRAIN_SYMBOLS=BTCUSDT,ETHUSDT
   BRAIN_DATA_DIR=/opt/trading-brain/data
   BRAIN_DRY_RUN=true
+  AI_ANALYST_ENABLED=false
+  AI_ANALYST_BASE_URL=https://api.openai.com/v1
+  AI_ANALYST_API_KEY=...
+  AI_ANALYST_MODEL=gpt-4o-mini
 
 This brain is read-only and writes decisions to JSONL. It does not place orders.
+AI Analyst is optional and never bypasses the risk manager.
 `);
 }
