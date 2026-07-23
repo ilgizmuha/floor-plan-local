@@ -180,6 +180,7 @@ final class Trading_Brain_Panel {
 						const signal = item.signal || {};
 						const consensus = item.consensus || signal;
 						const ai = item.aiAnalyst || {};
+						const algoVault = item.algoVaultAnalyst || {};
 						const cursor = item.cursorAnalyst || {};
 						const risk = item.risk || {};
 						const market = item.market || {};
@@ -198,6 +199,8 @@ final class Trading_Brain_Panel {
 							(derivatives.available ? '<p><strong>Derivatives:</strong> funding ' + escapeHtml(derivatives.fundingRatePct) + '%, OI change ' + escapeHtml(derivatives.openInterestChangePct) + '%, basis ' + escapeHtml(derivatives.basisPct) + '% | OI value ' + escapeHtml(derivatives.openInterestValue) + '</p>' : '<p class="tbp-muted"><strong>Derivatives:</strong> unavailable</p>') +
 							'<p><strong>DeepSeek Analyst:</strong> ' + escapeHtml(ai.status || 'unknown') + ' ' + escapeHtml(ai.model || '') + (ai.action ? ' → ' + escapeHtml(ai.action) + ' / ' + escapeHtml(ai.confidence) : '') + '</p>' +
 							(ai.reasoning ? '<p class="tbp-muted"><strong>AI:</strong> ' + escapeHtml(ai.reasoning) + '</p>' : '') +
+							'<p><strong>AlgoVault:</strong> ' + escapeHtml(algoVault.status || 'unknown') + ' ' + escapeHtml(algoVault.model || '') + (algoVault.action ? ' → ' + escapeHtml(algoVault.action) + ' / ' + escapeHtml(algoVault.confidence) : '') + (algoVault.regime ? ' | regime ' + escapeHtml(algoVault.regime) : '') + '</p>' +
+							(algoVault.reasoning ? '<p class="tbp-muted"><strong>AlgoVault:</strong> ' + escapeHtml(algoVault.reasoning) + '</p>' : '') +
 							'<p><strong>Cursor Analyst:</strong> ' + escapeHtml(cursor.status || 'unknown') + ' ' + escapeHtml(cursor.model || '') + (cursor.action ? ' → ' + escapeHtml(cursor.action) + ' / ' + escapeHtml(cursor.confidence) : '') + '</p>' +
 							(cursor.reasoning ? '<p class="tbp-muted"><strong>Cursor:</strong> ' + escapeHtml(cursor.reasoning) + '</p>' : '') +
 							'<p class="tbp-muted">' + escapeHtml((consensus.reasons || signal.reasons || []).join(', ')) + '</p>' +

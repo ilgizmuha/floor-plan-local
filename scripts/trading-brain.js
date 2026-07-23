@@ -49,6 +49,15 @@ const config = {
     minConfidence: numberEnv('CURSOR_ANALYST_MIN_CONFIDENCE', 60),
     cwd: env('CURSOR_ANALYST_CWD', process.cwd())
   },
+  algoVault: {
+    enabled: env('ALGOVAULT_ENABLED', 'true') === 'true',
+    mcpUrl: env('ALGOVAULT_MCP_URL', 'https://api.algovault.com/mcp'),
+    exchange: env('ALGOVAULT_EXCHANGE', 'BYBIT'),
+    fetchRegime: env('ALGOVAULT_FETCH_REGIME', 'true') === 'true',
+    minConfidence: numberEnv('ALGOVAULT_MIN_CONFIDENCE', 55),
+    timeoutMs: numberEnv('ALGOVAULT_TIMEOUT_MS', 20000),
+    attachToCursor: env('ALGOVAULT_ATTACH_TO_CURSOR', 'true') === 'true'
+  },
   paper: {
     enabled: env('PAPER_TRADING_ENABLED', 'true') === 'true',
     startBalanceUsd: numberEnv('PAPER_START_BALANCE_USD', 1000),
@@ -117,9 +126,15 @@ async function runBrainCycle() {
 
   const decisions = await Promise.all(markets.map(async (market) => {
     const signal = analyzeMarket(market, news);
-    const aiAnalyst = await runAiAnalyst(market, news, signal);
-    const cursorAnalyst = await runCursorAnalyst(market, news, signal, aiAnalyst);
-    const consensus = combineSignals(signal, aiAnalyst, cursorAnalyst);
+    const [aiAnalyst, algoVaultAnalyst] = await Promise.all([
+      runAiAnalyst(market, news, signal),
+      runAlgoVaultAnalyst(market)
+    ]);
+    const cursorAnalyst = await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst);
+    const consensus = applyAlgoVaultConsensus(
+      combineSignals(signal, aiAnalyst, cursorAnalyst),
+      algoVaultAnalyst
+    );
     const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst);
     return {
       timestamp: new Date().toISOString(),
@@ -128,6 +143,7 @@ async function runBrainCycle() {
       news: summarizeNewsForDecision(news),
       signal,
       aiAnalyst,
+      algoVaultAnalyst,
       cursorAnalyst,
       consensus,
       risk,
@@ -650,7 +666,7 @@ function normalizeAiVerdict(raw) {
   };
 }
 
-async function runCursorAnalyst(market, news, signal, aiAnalyst) {
+async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst = {}) {
   if (!config.cursor.enabled) {
     return {
       enabled: false,
@@ -682,7 +698,7 @@ async function runCursorAnalyst(market, news, signal, aiAnalyst) {
   }
 
   try {
-    const raw = await cursorRequest(buildCursorPrompt(market, news, signal, aiAnalyst));
+    const raw = await cursorRequest(buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst));
     return normalizeCursorVerdict(raw);
   } catch (error) {
     return {
@@ -700,10 +716,11 @@ async function runCursorAnalyst(market, news, signal, aiAnalyst) {
   }
 }
 
-function buildCursorPrompt(market, news, signal, aiAnalyst) {
+function buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst = {}) {
   return [
     'You are Cursor Analyst, an independent conservative reviewer for a crypto trading brain.',
     'Do not inspect or modify files. Use only the JSON payload in this prompt.',
+    'AlgoVault MCP quant signals are pre-fetched in algoVaultAnalyst. You may also call get_trade_call via MCP if needed.',
     'Return only valid JSON with this schema:',
     '{"action":"BUY|SELL|HOLD|WAIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}',
     'Prefer HOLD or WAIT when signal quality is weak, AI providers disagree, news risk is high, or edge is unclear.',
@@ -721,6 +738,7 @@ function buildCursorPrompt(market, news, signal, aiAnalyst) {
       news: summarizeNewsForDecision(news),
       ruleSignal: signal,
       deepSeekAnalyst: aiAnalyst,
+      algoVaultAnalyst,
       constraints: {
         mode: 'dry-run analysis only',
         allowedActions: ['BUY', 'SELL', 'HOLD', 'WAIT'],
@@ -731,13 +749,270 @@ function buildCursorPrompt(market, news, signal, aiAnalyst) {
   ].join('\n\n');
 }
 
+async function runAlgoVaultAnalyst(market) {
+  if (!config.algoVault.enabled) {
+    return {
+      enabled: false,
+      status: 'disabled',
+      provider: 'algovault',
+      model: 'crypto-quant-signal-mcp',
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: false,
+      reasoning: 'AlgoVault analyst is disabled. Set ALGOVAULT_ENABLED=true to enable.',
+      factors: [],
+      regime: null,
+      indicators: null
+    };
+  }
+
+  try {
+    const coin = symbolToCoin(market.symbol);
+    const timeframe = intervalToTimeframe(config.interval);
+    const exchange = config.algoVault.exchange;
+    const [tradeCall, regime] = await Promise.all([
+      algoVaultMcpCall('get_trade_call', {
+        coin,
+        timeframe,
+        exchange,
+        includeReasoning: true
+      }),
+      config.algoVault.fetchRegime
+        ? algoVaultMcpCall('get_market_regime', { coin, timeframe, exchange })
+        : Promise.resolve(null)
+    ]);
+
+    return normalizeAlgoVaultVerdict(tradeCall, regime, { coin, timeframe, exchange });
+  } catch (error) {
+    return {
+      enabled: true,
+      status: 'error',
+      provider: 'algovault',
+      model: 'crypto-quant-signal-mcp',
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: false,
+      reasoning: `AlgoVault analyst error: ${error.message}`,
+      factors: [],
+      regime: null,
+      indicators: null
+    };
+  }
+}
+
+async function algoVaultMcpCall(toolName, args) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.algoVault.timeoutMs);
+  try {
+    const response = await fetch(config.algoVault.mcpUrl, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream'
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: Date.now(),
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: args
+        }
+      })
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return parseAlgoVaultMcpPayload(text);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function parseAlgoVaultMcpPayload(text) {
+  const dataLines = text
+    .split('\n')
+    .filter((line) => line.startsWith('data: '))
+    .map((line) => line.slice(6));
+
+  for (const line of dataLines.reverse()) {
+    const envelope = parseJson(line);
+    if (!envelope || !envelope.result || !Array.isArray(envelope.result.content)) {
+      continue;
+    }
+    for (const block of envelope.result.content) {
+      if (!block || block.type !== 'text' || !block.text) {
+        continue;
+      }
+      const parsed = parseJsonLoose(block.text);
+      if (parsed && typeof parsed === 'object') {
+        return parsed;
+      }
+    }
+  }
+
+  throw new Error('AlgoVault MCP response did not contain JSON payload');
+}
+
+function normalizeAlgoVaultVerdict(tradeCall, regime, meta = {}) {
+  const action = normalizeAction(tradeCall && tradeCall.call);
+  const confidence = clamp(Math.round(Number(tradeCall && tradeCall.confidence) || 0), 0, 100);
+  const regimeLabel = (regime && regime.regime) || (tradeCall && tradeCall.regime) || null;
+  const riskLevel = regimeLabel === 'VOLATILE' ? 'high' : (confidence < 45 ? 'medium' : 'low');
+
+  return {
+    enabled: true,
+    status: 'ok',
+    provider: 'algovault',
+    model: 'crypto-quant-signal-mcp',
+    action,
+    confidence,
+    riskLevel,
+    veto: false,
+    reasoning: (tradeCall && tradeCall.reasoning) || 'AlgoVault composite quant call',
+    factors: buildAlgoVaultFactors(tradeCall, regime),
+    regime: regimeLabel,
+    indicators: tradeCall && tradeCall.indicators ? tradeCall.indicators : null,
+    price: tradeCall && tradeCall.price ? tradeCall.price : null,
+    exchange: meta.exchange || config.algoVault.exchange,
+    timeframe: meta.timeframe || intervalToTimeframe(config.interval),
+    coin: meta.coin || null,
+    raw: {
+      tradeCall,
+      regime
+    }
+  };
+}
+
+function buildAlgoVaultFactors(tradeCall, regime) {
+  const factors = [];
+  if (tradeCall && tradeCall.regime) {
+    factors.push(`regime:${tradeCall.regime}`);
+  }
+  if (regime && regime.regime && regime.regime !== tradeCall.regime) {
+    factors.push(`regime_check:${regime.regime}`);
+  }
+  if (tradeCall && tradeCall.indicators) {
+    const indicators = tradeCall.indicators;
+    if (indicators.funding_state) {
+      factors.push(`funding:${indicators.funding_state}`);
+    }
+    if (typeof indicators.oi_change_pct === 'number') {
+      factors.push(`oi_change:${indicators.oi_change_pct}%`);
+    }
+    if (indicators.trend_persistence) {
+      factors.push(`trend:${indicators.trend_persistence}`);
+    }
+  }
+  return factors;
+}
+
+function applyAlgoVaultConsensus(consensus, algoVaultAnalyst = {}) {
+  const next = {
+    ...consensus,
+    algoVaultAgreement: algoVaultAnalyst.status || 'not_checked',
+    reasons: [...(consensus.reasons || [])]
+  };
+
+  if (!algoVaultAnalyst.enabled || algoVaultAnalyst.status === 'disabled') {
+    return next;
+  }
+
+  if (algoVaultAnalyst.status !== 'ok' || !algoVaultAnalyst.action) {
+    next.reasons.push(algoVaultAnalyst.reasoning || 'AlgoVault analyst unavailable');
+    return next;
+  }
+
+  const algoAction = algoVaultAnalyst.action;
+  const algoConfidence = algoVaultAnalyst.confidence || 0;
+
+  if (algoConfidence < config.algoVault.minConfidence) {
+    if (consensus.action === 'BUY' || consensus.action === 'SELL') {
+      next.action = 'HOLD';
+      next.confidence = Math.min(consensus.confidence, algoConfidence, 55);
+      next.source = 'algovault_low_confidence';
+      next.reasons.push(`AlgoVault confidence below minimum (${algoConfidence})`);
+    }
+    return next;
+  }
+
+  if (algoAction === 'HOLD' || algoAction === 'WAIT') {
+    if (consensus.action === 'BUY' || consensus.action === 'SELL') {
+      next.action = 'HOLD';
+      next.confidence = Math.min(consensus.confidence, algoConfidence);
+      next.source = 'algovault_hold';
+      next.algoVaultAgreement = 'hold';
+      next.reasons.push(`AlgoVault suggests no trade: ${algoVaultAnalyst.reasoning}`);
+    }
+    return next;
+  }
+
+  if (algoAction !== consensus.action) {
+    next.action = 'WAIT';
+    next.confidence = Math.min(consensus.confidence, algoConfidence);
+    next.source = 'algovault_disagree';
+    next.algoVaultAgreement = 'disagree';
+    next.reasons.push(`AlgoVault disagrees (${algoAction}): ${algoVaultAnalyst.reasoning}`);
+    return next;
+  }
+
+  next.confidence = clamp(Math.round((consensus.confidence + algoConfidence) / 2) + 3, 0, 100);
+  next.source = `${consensus.source || 'rules'}_algovault_agree`;
+  next.algoVaultAgreement = 'agree';
+  next.reasons.push(`AlgoVault agrees (${algoAction}, ${algoConfidence}): ${algoVaultAnalyst.reasoning}`);
+  return next;
+}
+
+function symbolToCoin(symbol) {
+  return String(symbol || '').replace(/USDT$/i, '');
+}
+
+function intervalToTimeframe(interval) {
+  const value = String(interval || '15');
+  if (/^\d+m$/i.test(value)) {
+    return value.toLowerCase();
+  }
+  if (/^\d+h$/i.test(value)) {
+    return value.toLowerCase();
+  }
+  if (/^\d+d$/i.test(value)) {
+    return value.toLowerCase();
+  }
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return '15m';
+  }
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  if (minutes % 60 === 0) {
+    return `${minutes / 60}h`;
+  }
+  return '15m';
+}
+
 async function cursorRequest(prompt) {
   const { Agent } = await import('@cursor/sdk');
-  const request = Agent.prompt(prompt, {
+  const options = {
     apiKey: config.cursor.apiKey,
     model: { id: config.cursor.model },
     local: { cwd: config.cursor.cwd, settingSources: [] }
-  });
+  };
+
+  if (config.algoVault.enabled && config.algoVault.attachToCursor) {
+    options.mcpServers = {
+      'crypto-quant-signal': {
+        type: 'http',
+        url: config.algoVault.mcpUrl
+      }
+    };
+  }
+
+  const request = Agent.prompt(prompt, options);
 
   const result = await withTimeout(request, config.cursor.timeoutMs, 'Cursor Analyst timed out');
   if (result.status !== 'finished') {
@@ -1821,6 +2096,11 @@ Environment:
   CURSOR_ANALYST_ENABLED=false
   CURSOR_API_KEY=cursor_...
   CURSOR_ANALYST_MODEL=auto
+
+AlgoVault analyst (crypto-quant-signal-mcp):
+  ALGOVAULT_ENABLED=true
+  ALGOVAULT_MCP_URL=https://api.algovault.com/mcp
+  ALGOVAULT_EXCHANGE=BYBIT
 
 Market data also includes order book depth/imbalance and linear derivatives funding/OI.
 
