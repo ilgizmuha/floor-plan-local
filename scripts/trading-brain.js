@@ -850,6 +850,9 @@ function parseAlgoVaultMcpPayload(text) {
       }
       const parsed = parseJsonLoose(block.text);
       if (parsed && typeof parsed === 'object') {
+        if (parsed.error || parsed.error_code || parsed.code === 'TIER_LIMIT_REACHED') {
+          throw new Error(parsed.message || parsed.error || parsed.error_code || 'AlgoVault MCP error');
+        }
         return parsed;
       }
     }
