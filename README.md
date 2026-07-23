@@ -67,6 +67,12 @@ WordPress используется только как будущая панел
 
 Paper-trading включается настройками `PAPER_*`. Это виртуальная торговля: мозг открывает/закрывает позиции только в файлах `/opt/trading-brain/data/paper-state.json` и `/opt/trading-brain/data/paper-trades.jsonl`. По умолчанию paper работает и на крипте, и на TradFi (`XAUUSDT`, `XAGUSDT`, `TSLAUSDT`, `NVDAUSDT`, `CLUSDT`, `XAUTUSDT`) через `PAPER_SYMBOLS`. Качество сигналов по горизонтам 15м/1ч/4ч пишется в `/opt/trading-brain/data/quality.json` и отображается в WordPress-панели.
 
+**Regime gate** (`REGIME_GATE_*`) определяет режим рынка по ADX и волатильности: `trend_up`, `trend_down`, `range`, `volatile`, `transition`. В downtrend/volatile swing BUY блокируется, в range — mean-reversion логика.
+
+**Ensemble scoring** (`ENSEMBLE_*`) взвешивает 4 канала: technical, microstructure (стакан), derivatives (funding/OI), sentiment (новости + Fear & Greed).
+
+**Quality feedback** (`QUALITY_FEEDBACK_*`) автоматически повышает/понижает порог confidence для символов с плохим/хорошим hit-rate на 15m.
+
 Новостной слой читает RSS (`BRAIN_NEWS_SOURCES`) и HTML-источники (`BRAIN_HTML_NEWS_SOURCES`). Сейчас подключены Cointelegraph, CoinDesk, Google News, ForkLog и публичная Telegram-лента ForkLog. Также используется Crypto Fear & Greed Index (`FEAR_GREED_ENABLED`, API alternative.me, без ключа). X, Feedly, CryptoPanic и приватные Telegram-каналы стоит подключать отдельными API-токенами, чтобы не зависеть от нестабильного scraping.
 
 Команды:

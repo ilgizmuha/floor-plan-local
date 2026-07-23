@@ -85,6 +85,29 @@ const config = {
     paperEnabled: env('SCALP_PAPER_ENABLED', 'true') === 'true',
     maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 15),
     symbols: splitList(env('SCALP_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT'))
+  },
+  regime: {
+    enabled: env('REGIME_GATE_ENABLED', 'true') === 'true',
+    adxTrendMin: numberEnv('REGIME_ADX_TREND_MIN', 22),
+    volatilityHighPct: numberEnv('REGIME_VOLATILITY_HIGH_PCT', 3.2),
+    rangeTrendMaxPct: numberEnv('REGIME_RANGE_TREND_MAX_PCT', 0.35)
+  },
+  ensemble: {
+    enabled: env('ENSEMBLE_SCORING_ENABLED', 'true') === 'true',
+    weights: {
+      technical: numberEnv('ENSEMBLE_WEIGHT_TECHNICAL', 0.4),
+      microstructure: numberEnv('ENSEMBLE_WEIGHT_MICROSTRUCTURE', 0.15),
+      derivatives: numberEnv('ENSEMBLE_WEIGHT_DERIVATIVES', 0.2),
+      sentiment: numberEnv('ENSEMBLE_WEIGHT_SENTIMENT', 0.25)
+    }
+  },
+  qualityFeedback: {
+    enabled: env('QUALITY_FEEDBACK_ENABLED', 'true') === 'true',
+    minSamples: numberEnv('QUALITY_FEEDBACK_MIN_SAMPLES', 5),
+    poorHitRatePct: numberEnv('QUALITY_FEEDBACK_POOR_HIT_RATE', 45),
+    goodHitRatePct: numberEnv('QUALITY_FEEDBACK_GOOD_HIT_RATE', 55),
+    confidencePenalty: numberEnv('QUALITY_FEEDBACK_CONFIDENCE_PENALTY', 8),
+    confidenceBonus: numberEnv('QUALITY_FEEDBACK_CONFIDENCE_BONUS', 3)
   }
 };
 
@@ -132,6 +155,8 @@ async function main() {
 
 async function runBrainCycle() {
   ensureDir(config.dataDir);
+  const priorQuality = readJsonFile(path.join(config.dataDir, 'quality.json')) || { symbols: {} };
+  const qualityFeedback = buildQualityFeedback(priorQuality);
   const [markets, news, fearGreed] = await Promise.all([
     collectMarkets(),
     collectNews().catch((error) => ({
@@ -147,18 +172,25 @@ async function runBrainCycle() {
   ]);
 
   const decisions = await Promise.all(markets.map(async (market) => {
-    const signal = analyzeMarket(market, news, fearGreed);
+    const regime = detectMarketRegime(market);
+    let signal = analyzeMarket(market, news, fearGreed, qualityFeedback);
+    signal = applyRegimeToSignal(signal, regime, market);
+    signal.regime = regime;
     const [aiAnalyst, algoVaultAnalyst] = await Promise.all([
       runAiAnalyst(market, news, signal, fearGreed),
       runAlgoVaultAnalyst(market)
     ]);
     const cursorAnalyst = await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed);
-    const consensus = applyAlgoVaultConsensus(
-      combineSignals(signal, aiAnalyst, cursorAnalyst),
-      algoVaultAnalyst
+    const consensus = applyRegimeToConsensus(
+      applyAlgoVaultConsensus(
+        combineSignals(signal, aiAnalyst, cursorAnalyst),
+        algoVaultAnalyst
+      ),
+      regime,
+      signal
     );
-    const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst, fearGreed);
-    const scalpSignal = analyzeScalpStrategy(market, fearGreed);
+    const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst, fearGreed, signal, regime);
+    const scalpSignal = applyRegimeToScalp(analyzeScalpStrategy(market, fearGreed, regime), regime, market);
     return {
       timestamp: new Date().toISOString(),
       symbol: market.symbol,
@@ -172,6 +204,7 @@ async function runBrainCycle() {
       cursorAnalyst,
       consensus,
       risk,
+      qualityFeedback: getSymbolQualityFeedback(qualityFeedback, market.symbol),
       finalAction: risk.allowed ? consensus.action : 'WAIT',
       dryRun: config.dryRun
     };
@@ -273,6 +306,7 @@ async function collectMarkets() {
     const momentumPct = percentChange(previous, last);
     const trendPct = percentChange(sma50, sma20);
     const volatilityPct = averageTrueRangePercent(candles.slice(-14));
+    const adx14 = adx(candles, 14);
     const volumeRatio = safeDivide(average(volumes.slice(-5)), average(volumes.slice(-30)));
     const orderBook = summarizeOrderBook(orderBookData);
     const derivatives = summarizeDerivatives(derivativesTickerData, openInterestData);
@@ -308,6 +342,7 @@ async function collectMarkets() {
         momentumPct: round(momentumPct, 3),
         trendPct: round(trendPct, 3),
         volatilityPct: round(volatilityPct, 3),
+        adx14: round(adx14, 2),
         volumeRatio: round(volumeRatio, 3)
       },
       orderBook,
@@ -374,7 +409,7 @@ function buildScalpIndicators(candles) {
   };
 }
 
-function analyzeScalpStrategy(market, fearGreed = {}) {
+function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
   if (!config.scalp.enabled) {
     return {
       enabled: false,
@@ -631,6 +666,432 @@ function classifyFearGreed(value) {
   return 'Extreme Greed';
 }
 
+function buildQualityFeedback(quality = {}) {
+  const symbols = quality.symbols || {};
+  const feedback = { symbols: {}, enabled: config.qualityFeedback.enabled };
+  if (!config.qualityFeedback.enabled) {
+    return feedback;
+  }
+
+  for (const [symbol, data] of Object.entries(symbols)) {
+    const horizon = data.horizons && data.horizons['15m'];
+    if (!horizon || horizon.evaluated < config.qualityFeedback.minSamples) {
+      feedback.symbols[symbol] = {
+        minConfidenceDelta: 0,
+        confidenceDelta: 0,
+        reason: 'insufficient samples',
+        evaluated: horizon ? horizon.evaluated : 0
+      };
+      continue;
+    }
+
+    let minConfidenceDelta = 0;
+    let confidenceDelta = 0;
+    let reason = 'neutral';
+    if (horizon.hitRatePct < config.qualityFeedback.poorHitRatePct) {
+      minConfidenceDelta = config.qualityFeedback.confidencePenalty;
+      confidenceDelta = -5;
+      reason = `poor 15m hit-rate ${horizon.hitRatePct}%`;
+    } else if (horizon.hitRatePct >= config.qualityFeedback.goodHitRatePct && horizon.avgEdgePct > 0) {
+      minConfidenceDelta = -config.qualityFeedback.confidenceBonus;
+      confidenceDelta = 2;
+      reason = `good 15m hit-rate ${horizon.hitRatePct}%`;
+    }
+
+    feedback.symbols[symbol] = {
+      minConfidenceDelta,
+      confidenceDelta,
+      hitRatePct: horizon.hitRatePct,
+      avgEdgePct: horizon.avgEdgePct,
+      evaluated: horizon.evaluated,
+      reason
+    };
+  }
+
+  return feedback;
+}
+
+function getSymbolQualityFeedback(qualityFeedback, symbol) {
+  return (qualityFeedback.symbols && qualityFeedback.symbols[symbol]) || {
+    minConfidenceDelta: 0,
+    confidenceDelta: 0,
+    reason: 'no data'
+  };
+}
+
+function resolveEnsembleWeights(market) {
+  const weights = { ...config.ensemble.weights };
+  const derivatives = market.derivatives || {};
+  const orderBook = market.orderBook || {};
+
+  if (!derivatives.available) {
+    weights.technical += weights.derivatives * 0.6;
+    weights.sentiment += weights.derivatives * 0.4;
+    weights.derivatives = 0;
+  }
+  if (!orderBook.available) {
+    weights.technical += weights.microstructure;
+    weights.microstructure = 0;
+  }
+
+  const total = Object.values(weights).reduce((sum, value) => sum + value, 0) || 1;
+  return Object.fromEntries(Object.entries(weights).map(([key, value]) => [key, round(value / total, 4)]));
+}
+
+function detectMarketRegime(market) {
+  const indicators = market.indicators || {};
+  const adxValue = indicators.adx14 || 0;
+  const volatility = indicators.volatilityPct || 0;
+  const trendMagnitude = Math.abs(indicators.trendPct || 0);
+  const bullish = indicators.sma20 > indicators.sma50;
+  const reasons = [];
+
+  if (volatility >= config.regime.volatilityHighPct) {
+    reasons.push(`volatility ${volatility}% above ${config.regime.volatilityHighPct}%`);
+    return {
+      regime: 'volatile',
+      strength: round(volatility, 2),
+      adx: adxValue,
+      preferredStrategy: 'wait',
+      allowSwingBuy: false,
+      allowSwingSell: true,
+      allowScalp: false,
+      reasons
+    };
+  }
+
+  if (adxValue >= config.regime.adxTrendMin && trendMagnitude >= config.regime.rangeTrendMaxPct) {
+    const regime = bullish ? 'trend_up' : 'trend_down';
+    reasons.push(`ADX ${adxValue} with ${bullish ? 'bullish' : 'bearish'} trend ${round(indicators.trendPct, 2)}%`);
+    return {
+      regime,
+      strength: round(adxValue, 2),
+      adx: adxValue,
+      preferredStrategy: bullish ? 'trend_follow' : 'defensive',
+      allowSwingBuy: bullish,
+      allowSwingSell: !bullish,
+      allowScalp: bullish,
+      reasons
+    };
+  }
+
+  if (adxValue < config.regime.adxTrendMin && trendMagnitude < config.regime.rangeTrendMaxPct) {
+    reasons.push(`ADX ${adxValue} low, trend magnitude ${round(trendMagnitude, 2)}%`);
+    return {
+      regime: 'range',
+      strength: round(adxValue, 2),
+      adx: adxValue,
+      preferredStrategy: 'mean_reversion',
+      allowSwingBuy: indicators.bollingerPosition <= 0.45 && indicators.rsi14 < 55,
+      allowSwingSell: indicators.bollingerPosition >= 0.55 && indicators.rsi14 > 45,
+      allowScalp: true,
+      reasons
+    };
+  }
+
+  reasons.push('mixed signals between trend and range');
+  return {
+    regime: 'transition',
+    strength: round(adxValue, 2),
+    adx: adxValue,
+    preferredStrategy: 'cautious',
+    allowSwingBuy: bullish && indicators.rsi14 < 68,
+    allowSwingSell: !bullish && indicators.rsi14 > 32,
+    allowScalp: bullish,
+    reasons
+  };
+}
+
+function applyRegimeToSignal(signal, regime, market) {
+  const next = { ...signal, regimeApplied: config.regime.enabled };
+  if (!config.regime.enabled) {
+    return next;
+  }
+
+  const indicators = market.indicators || {};
+  if (signal.action === 'BUY' && !regime.allowSwingBuy) {
+    next.action = 'WAIT';
+    next.confidence = Math.min(signal.confidence, 45);
+    next.reasons = [...(signal.reasons || []), `Regime gate (${regime.regime}): swing BUY blocked`];
+    next.regimeBlock = 'swing_buy';
+    return next;
+  }
+
+  if (signal.action === 'SELL' && !regime.allowSwingSell) {
+    next.action = 'HOLD';
+    next.confidence = Math.min(signal.confidence, 50);
+    next.reasons = [...(signal.reasons || []), `Regime gate (${regime.regime}): swing SELL softened`];
+    return next;
+  }
+
+  if (regime.regime === 'range' && signal.action === 'BUY' && indicators.bollingerPosition > 0.72) {
+    next.action = 'WAIT';
+    next.confidence = Math.min(signal.confidence, 48);
+    next.reasons = [...(signal.reasons || []), 'Regime gate (range): BUY blocked near upper Bollinger'];
+    return next;
+  }
+
+  if (regime.regime === 'range' && signal.action === 'BUY' && indicators.bollingerPosition < 0.35) {
+    next.confidence = clamp(next.confidence + 4, 0, 100);
+    next.reasons = [...(signal.reasons || []), 'Regime gate (range): mean-reversion support boost'];
+  }
+
+  if (regime.regime === 'trend_up' && signal.action === 'BUY') {
+    next.confidence = clamp(next.confidence + 3, 0, 100);
+    next.reasons = [...(signal.reasons || []), 'Regime gate (trend_up): trend-follow boost'];
+  }
+
+  return next;
+}
+
+function applyRegimeToConsensus(consensus, regime, signal) {
+  const next = {
+    ...consensus,
+    regime: signal.regime || regime,
+    components: signal.components,
+    ensembleWeights: signal.ensembleWeights,
+    effectiveMinConfidence: signal.effectiveMinConfidence,
+    qualityFeedback: signal.qualityFeedback
+  };
+
+  if (!config.regime.enabled) {
+    return next;
+  }
+
+  if (consensus.action === 'BUY' && !regime.allowSwingBuy) {
+    next.action = 'WAIT';
+    next.confidence = Math.min(consensus.confidence, 42);
+    next.source = `${consensus.source || 'rules'}_regime_block`;
+    next.reasons = [...(consensus.reasons || []), `Regime gate (${regime.regime}) blocks consensus BUY`];
+  }
+
+  return next;
+}
+
+function applyRegimeToScalp(scalpSignal, regime, market) {
+  const next = { ...scalpSignal, regime: regime.regime };
+  if (!config.regime.enabled || !scalpSignal.enabled) {
+    return next;
+  }
+
+  if (!regime.allowScalp && scalpSignal.action === 'BUY') {
+    next.action = 'WAIT';
+    next.confidence = Math.min(scalpSignal.confidence, 40);
+    next.reasons = [...(scalpSignal.reasons || []), `Regime gate (${regime.regime}): scalp blocked`];
+    return next;
+  }
+
+  if (regime.regime === 'volatile') {
+    next.action = 'WAIT';
+    next.confidence = Math.min(scalpSignal.confidence, 35);
+    next.reasons = [...(scalpSignal.reasons || []), 'Regime gate (volatile): scalp blocked'];
+    return next;
+  }
+
+  if (regime.regime === 'range' && scalpSignal.action === 'BUY') {
+    const indicators = market.indicators || {};
+    if (indicators.bollingerPosition > 0.68) {
+      next.action = 'WAIT';
+      next.confidence = Math.min(scalpSignal.confidence, 42);
+      next.reasons = [...(scalpSignal.reasons || []), 'Regime gate (range): scalp blocked near resistance'];
+    }
+  }
+
+  return next;
+}
+
+function scoreTechnicalComponent(market) {
+  const indicators = market.indicators;
+  let score = 0;
+  const reasons = [];
+
+  if (indicators.sma20 > indicators.sma50) {
+    score += 18;
+    reasons.push('short trend above long trend');
+  } else {
+    score -= 18;
+    reasons.push('short trend below long trend');
+  }
+
+  if (indicators.ema12 > indicators.ema26) {
+    score += 8;
+    reasons.push('EMA12 above EMA26');
+  } else {
+    score -= 8;
+    reasons.push('EMA12 below EMA26');
+  }
+
+  if (indicators.macdLine > indicators.macdSignal && indicators.macdHistogram > 0) {
+    score += 10;
+    reasons.push('MACD bullish');
+  } else if (indicators.macdLine < indicators.macdSignal && indicators.macdHistogram < 0) {
+    score -= 10;
+    reasons.push('MACD bearish');
+  }
+
+  if (indicators.macdHistogramDelta > 0) {
+    score += 4;
+    reasons.push('MACD histogram improving');
+  } else if (indicators.macdHistogramDelta < 0) {
+    score -= 4;
+    reasons.push('MACD histogram weakening');
+  }
+
+  if (indicators.bollingerPosition > 1) {
+    score -= 7;
+    reasons.push('price above upper Bollinger band');
+  } else if (indicators.bollingerPosition < 0) {
+    score -= 8;
+    reasons.push('price below lower Bollinger band');
+  } else if (indicators.bollingerPosition >= 0.25 && indicators.bollingerPosition <= 0.75) {
+    score += 3;
+    reasons.push('price inside balanced Bollinger zone');
+  }
+
+  if (indicators.distanceToResistancePct >= 0 && indicators.distanceToResistancePct < 0.35) {
+    score -= 5;
+    reasons.push('price close to resistance');
+  }
+
+  if (indicators.distanceToSupportPct >= 0 && indicators.distanceToSupportPct < 0.35 && indicators.rsi14 >= 40) {
+    score += 4;
+    reasons.push('price near support with acceptable RSI');
+  }
+
+  if (indicators.rsi14 >= 45 && indicators.rsi14 <= 62) {
+    score += 12;
+    reasons.push('RSI in constructive range');
+  } else if (indicators.rsi14 > 72) {
+    score -= 16;
+    reasons.push('RSI overheated');
+  } else if (indicators.rsi14 < 32) {
+    score -= 8;
+    reasons.push('RSI weak/oversold');
+  }
+
+  if (indicators.momentumPct > 0) {
+    score += Math.min(12, indicators.momentumPct * 8);
+    reasons.push('positive short momentum');
+  } else {
+    score += Math.max(-12, indicators.momentumPct * 8);
+    reasons.push('negative short momentum');
+  }
+
+  if (indicators.volumeRatio > 1.15) {
+    score += 8;
+    reasons.push('volume expansion');
+  }
+
+  if (market.change24hPct < -4) {
+    score -= 10;
+    reasons.push('large 24h drawdown');
+  }
+
+  if (market.change24hPct > 8) {
+    score -= 8;
+    reasons.push('large 24h pump risk');
+  }
+
+  return { score: round(score, 2), reasons };
+}
+
+function scoreSentimentComponent(news, fearGreed = {}) {
+  let score = 0;
+  const reasons = [];
+
+  if (news.score > 0) {
+    score += Math.min(10, news.score);
+    reasons.push('news sentiment positive');
+  } else if (news.score < 0) {
+    score += Math.max(-14, news.score);
+    reasons.push('news sentiment negative');
+  }
+
+  if (fearGreed.available) {
+    const fearGreedScore = fearGreed.score || scoreFearGreed(fearGreed.value);
+    score += fearGreedScore;
+    if (fearGreedScore > 0) {
+      reasons.push(`Fear & Greed supportive (${fearGreed.value}, ${fearGreed.classification})`);
+    } else if (fearGreedScore < 0) {
+      reasons.push(`Fear & Greed cautious (${fearGreed.value}, ${fearGreed.classification})`);
+    } else {
+      reasons.push(`Fear & Greed neutral (${fearGreed.value})`);
+    }
+  }
+
+  return { score: round(score, 2), reasons };
+}
+
+function scoreMicrostructureComponent(market) {
+  let score = 0;
+  const reasons = [];
+  const orderBook = market.orderBook || {};
+
+  if (!orderBook.available) {
+    return { score: 0, reasons: ['order book unavailable'] };
+  }
+
+  if (orderBook.pressure === 'buy') {
+    score += 6;
+    reasons.push('order book buy pressure');
+  } else if (orderBook.pressure === 'sell') {
+    score -= 6;
+    reasons.push('order book sell pressure');
+  }
+
+  if (orderBook.imbalance > 0.3) {
+    score += 3;
+    reasons.push('strong bid-side depth');
+  } else if (orderBook.imbalance < -0.3) {
+    score -= 3;
+    reasons.push('strong ask-side depth');
+  }
+
+  if (orderBook.spreadPct > 0.12) {
+    score -= 4;
+    reasons.push('wide order book spread');
+  }
+
+  return { score: round(score, 2), reasons };
+}
+
+function scoreDerivativesComponent(market) {
+  let score = 0;
+  const reasons = [];
+  const derivatives = market.derivatives || {};
+  const indicators = market.indicators || {};
+
+  if (!derivatives.available) {
+    return { score: 0, reasons: ['derivatives unavailable'] };
+  }
+
+  if (derivatives.fundingRatePct > 0.03) {
+    score -= 5;
+    reasons.push('crowded long funding');
+  } else if (derivatives.fundingRatePct < -0.03) {
+    score += 4;
+    reasons.push('negative funding supports squeeze');
+  }
+
+  if (derivatives.basisPct > 0.15) {
+    score += 3;
+    reasons.push('futures premium over index');
+  } else if (derivatives.basisPct < -0.15) {
+    score -= 3;
+    reasons.push('futures discount to index');
+  }
+
+  if (derivatives.openInterestChangePct > 2 && indicators.momentumPct > 0) {
+    score += 4;
+    reasons.push('rising open interest with momentum');
+  } else if (derivatives.openInterestChangePct < -2 && indicators.momentumPct < 0) {
+    score -= 4;
+    reasons.push('falling open interest with weakness');
+  }
+
+  return { score: round(score, 2), reasons };
+}
+
 function scoreFearGreed(value) {
   if (value <= 20) {
     return 3;
@@ -650,181 +1111,66 @@ function scoreFearGreed(value) {
   return 0;
 }
 
-function analyzeMarket(market, news, fearGreed = {}) {
-  const i = market.indicators;
+function analyzeMarket(market, news, fearGreed = {}, qualityFeedback = { symbols: {} }) {
+  const symbolFeedback = getSymbolQualityFeedback(qualityFeedback, market.symbol);
+  const components = {
+    technical: scoreTechnicalComponent(market),
+    sentiment: scoreSentimentComponent(news, fearGreed),
+    microstructure: scoreMicrostructureComponent(market),
+    derivatives: scoreDerivativesComponent(market)
+  };
+  const ensembleWeights = resolveEnsembleWeights(market);
   let score = 0;
   const reasons = [];
 
-  if (i.sma20 > i.sma50) {
-    score += 18;
-    reasons.push('short trend above long trend');
+  if (config.ensemble.enabled) {
+    for (const [name, component] of Object.entries(components)) {
+      const weight = ensembleWeights[name] || 0;
+      score += component.score * weight;
+      if (component.reasons.length) {
+        reasons.push(`${name}: ${component.reasons.slice(0, 2).join('; ')}`);
+      }
+    }
+    score = round(score, 2);
   } else {
-    score -= 18;
-    reasons.push('short trend below long trend');
+    score = components.technical.score
+      + components.sentiment.score
+      + components.microstructure.score
+      + components.derivatives.score;
+    reasons.push(...components.technical.reasons, ...components.sentiment.reasons);
   }
 
-  if (i.ema12 > i.ema26) {
-    score += 8;
-    reasons.push('EMA12 above EMA26');
-  } else {
-    score -= 8;
-    reasons.push('EMA12 below EMA26');
-  }
+  let confidence = clamp(Math.round(50 + score + (symbolFeedback.confidenceDelta || 0)), 0, 100);
+  const effectiveMinConfidence = clamp(
+    config.minConfidence + (symbolFeedback.minConfidenceDelta || 0),
+    55,
+    90
+  );
 
-  if (i.macdLine > i.macdSignal && i.macdHistogram > 0) {
-    score += 10;
-    reasons.push('MACD bullish');
-  } else if (i.macdLine < i.macdSignal && i.macdHistogram < 0) {
-    score -= 10;
-    reasons.push('MACD bearish');
-  }
-
-  if (i.macdHistogramDelta > 0) {
-    score += 4;
-    reasons.push('MACD histogram improving');
-  } else if (i.macdHistogramDelta < 0) {
-    score -= 4;
-    reasons.push('MACD histogram weakening');
-  }
-
-  if (i.bollingerPosition > 1) {
-    score -= 7;
-    reasons.push('price above upper Bollinger band');
-  } else if (i.bollingerPosition < 0) {
-    score -= 8;
-    reasons.push('price below lower Bollinger band');
-  } else if (i.bollingerPosition >= 0.25 && i.bollingerPosition <= 0.75) {
-    score += 3;
-    reasons.push('price inside balanced Bollinger zone');
-  }
-
-  if (i.distanceToResistancePct >= 0 && i.distanceToResistancePct < 0.35) {
-    score -= 5;
-    reasons.push('price close to resistance');
-  }
-
-  if (i.distanceToSupportPct >= 0 && i.distanceToSupportPct < 0.35 && i.rsi14 >= 40) {
-    score += 4;
-    reasons.push('price near support with acceptable RSI');
-  }
-
-  if (i.rsi14 >= 45 && i.rsi14 <= 62) {
-    score += 12;
-    reasons.push('RSI in constructive range');
-  } else if (i.rsi14 > 72) {
-    score -= 16;
-    reasons.push('RSI overheated');
-  } else if (i.rsi14 < 32) {
-    score -= 8;
-    reasons.push('RSI weak/oversold');
-  }
-
-  if (i.momentumPct > 0) {
-    score += Math.min(12, i.momentumPct * 8);
-    reasons.push('positive short momentum');
-  } else {
-    score += Math.max(-12, i.momentumPct * 8);
-    reasons.push('negative short momentum');
-  }
-
-  if (i.volumeRatio > 1.15) {
-    score += 8;
-    reasons.push('volume expansion');
-  }
-
-  if (market.change24hPct < -4) {
-    score -= 10;
-    reasons.push('large 24h drawdown');
-  }
-
-  if (market.change24hPct > 8) {
-    score -= 8;
-    reasons.push('large 24h pump risk');
-  }
-
-  if (news.score > 0) {
-    score += Math.min(10, news.score);
-    reasons.push('news sentiment positive');
-  } else if (news.score < 0) {
-    score += Math.max(-14, news.score);
-    reasons.push('news sentiment negative');
-  }
-
-  if (fearGreed.available) {
-    const fgScore = fearGreed.score || scoreFearGreed(fearGreed.value);
-    score += fgScore;
-    if (fgScore > 0) {
-      reasons.push(`Fear & Greed supportive (${fearGreed.value}, ${fearGreed.classification})`);
-    } else if (fgScore < 0) {
-      reasons.push(`Fear & Greed cautious (${fearGreed.value}, ${fearGreed.classification})`);
-    } else {
-      reasons.push(`Fear & Greed neutral (${fearGreed.value})`);
-    }
-  }
-
-  const orderBook = market.orderBook || {};
-  if (orderBook.available) {
-    if (orderBook.pressure === 'buy') {
-      score += 6;
-      reasons.push('order book buy pressure');
-    } else if (orderBook.pressure === 'sell') {
-      score -= 6;
-      reasons.push('order book sell pressure');
-    }
-
-    if (orderBook.imbalance > 0.3) {
-      score += 3;
-      reasons.push('strong bid-side depth');
-    } else if (orderBook.imbalance < -0.3) {
-      score -= 3;
-      reasons.push('strong ask-side depth');
-    }
-
-    if (orderBook.spreadPct > 0.12) {
-      score -= 4;
-      reasons.push('wide order book spread');
-    }
-  }
-
-  const derivatives = market.derivatives || {};
-  if (derivatives.available) {
-    if (derivatives.fundingRatePct > 0.03) {
-      score -= 5;
-      reasons.push('crowded long funding');
-    } else if (derivatives.fundingRatePct < -0.03) {
-      score += 4;
-      reasons.push('negative funding supports squeeze');
-    }
-
-    if (derivatives.basisPct > 0.15) {
-      score += 3;
-      reasons.push('futures premium over index');
-    } else if (derivatives.basisPct < -0.15) {
-      score -= 3;
-      reasons.push('futures discount to index');
-    }
-
-    if (derivatives.openInterestChangePct > 2 && i.momentumPct > 0) {
-      score += 4;
-      reasons.push('rising open interest with momentum');
-    } else if (derivatives.openInterestChangePct < -2 && i.momentumPct < 0) {
-      score -= 4;
-      reasons.push('falling open interest with weakness');
-    }
-  }
-
-  const confidence = clamp(Math.round(50 + score), 0, 100);
   let action = 'HOLD';
-  if (confidence >= config.minConfidence) {
+  if (confidence >= effectiveMinConfidence) {
     action = 'BUY';
   } else if (confidence <= 35) {
     action = 'SELL';
   }
 
+  if (symbolFeedback.reason && symbolFeedback.reason !== 'no data' && symbolFeedback.reason !== 'neutral') {
+    reasons.push(`Quality feedback: ${symbolFeedback.reason}`);
+  }
+
   return {
     action,
     confidence,
-    score: round(score, 2),
+    score,
+    components: Object.fromEntries(Object.entries(components).map(([name, component]) => [name, {
+      score: component.score,
+      weightedScore: round(component.score * (ensembleWeights[name] || 0), 2),
+      reasons: component.reasons
+    }])),
+    ensembleWeights,
+    effectiveMinConfidence,
+    qualityFeedback: symbolFeedback,
+    source: config.ensemble.enabled ? 'ensemble_rules' : 'rules_only',
     reasons
   };
 }
@@ -1513,17 +1859,28 @@ function normalizeAction(action) {
   return ['BUY', 'SELL', 'HOLD', 'WAIT'].includes(value) ? value : null;
 }
 
-function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fearGreed = {}) {
+function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fearGreed = {}, ruleSignal = {}, regime = {}) {
   const i = market.indicators;
   let riskScore = 0;
   const blocks = [];
+  const minConfidence = Number(ruleSignal.effectiveMinConfidence) || config.minConfidence;
 
   if (!config.dryRun) {
     blocks.push('live mode disabled for this brain stage');
   }
 
-  if (signal.confidence < config.minConfidence && signal.action === 'BUY') {
-    blocks.push('confidence below minimum');
+  if (signal.confidence < minConfidence && signal.action === 'BUY') {
+    blocks.push(`confidence below effective minimum (${minConfidence})`);
+  }
+
+  if (config.regime.enabled && regime.regime === 'volatile' && signal.action === 'BUY') {
+    riskScore += 20;
+    blocks.push('volatile regime blocks entries');
+  }
+
+  if (config.regime.enabled && regime.regime === 'trend_down' && signal.action === 'BUY') {
+    riskScore += 15;
+    blocks.push('downtrend regime blocks swing BUY');
   }
 
   if (aiAnalyst.enabled && aiAnalyst.status !== 'disabled') {
@@ -1607,6 +1964,8 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
     maxRiskScore: config.maxRiskScore,
     maxPositionUsd: config.maxPositionUsd,
     maxDailyLossUsd: config.maxDailyLossUsd,
+    effectiveMinConfidence: minConfidence,
+    regime: regime.regime || null,
     blocks
   };
 }
@@ -1936,10 +2295,14 @@ function applyPaperDecision(state, decision) {
   }
 
   const position = positions[symbol];
+  const paperMinConfidence = Math.max(
+    config.paper.minConfidence,
+    Number(decision.signal && decision.signal.effectiveMinConfidence) || 0
+  );
   if (!position && action === 'BUY') {
     const blocks = [];
-    if ((consensus.confidence || 0) < config.paper.minConfidence) {
-      blocks.push('paper confidence below minimum');
+    if ((consensus.confidence || 0) < paperMinConfidence) {
+      blocks.push(`paper confidence below minimum (${paperMinConfidence})`);
     }
     if (risk.blocks && risk.blocks.length) {
       blocks.push('risk manager has blocks');
@@ -2455,6 +2818,64 @@ function averageTrueRangePercent(candles) {
   return safeDivide(average(ranges), candles[candles.length - 1].close) * 100;
 }
 
+function adx(candles, period = 14) {
+  if (!candles || candles.length < period + 2) {
+    return 0;
+  }
+
+  const trueRanges = [];
+  const plusDMs = [];
+  const minusDMs = [];
+
+  for (let index = 1; index < candles.length; index += 1) {
+    const current = candles[index];
+    const previous = candles[index - 1];
+    const upMove = current.high - previous.high;
+    const downMove = previous.low - current.low;
+    plusDMs.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDMs.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    trueRanges.push(Math.max(
+      current.high - current.low,
+      Math.abs(current.high - previous.close),
+      Math.abs(current.low - previous.close)
+    ));
+  }
+
+  if (trueRanges.length < period) {
+    return 0;
+  }
+
+  let smoothedTr = average(trueRanges.slice(0, period));
+  let smoothedPlus = average(plusDMs.slice(0, period));
+  let smoothedMinus = average(minusDMs.slice(0, period));
+  const dxValues = [];
+
+  for (let index = period; index < trueRanges.length; index += 1) {
+    smoothedTr = ((smoothedTr * (period - 1)) + trueRanges[index]) / period;
+    smoothedPlus = ((smoothedPlus * (period - 1)) + plusDMs[index]) / period;
+    smoothedMinus = ((smoothedMinus * (period - 1)) + minusDMs[index]) / period;
+    const plusDI = smoothedTr ? (100 * smoothedPlus) / smoothedTr : 0;
+    const minusDI = smoothedTr ? (100 * smoothedMinus) / smoothedTr : 0;
+    const diSum = plusDI + minusDI;
+    dxValues.push(diSum ? (100 * Math.abs(plusDI - minusDI)) / diSum : 0);
+  }
+
+  if (!dxValues.length) {
+    return 0;
+  }
+
+  if (dxValues.length < period) {
+    return round(average(dxValues), 2);
+  }
+
+  let adxValue = average(dxValues.slice(0, period));
+  for (let index = period; index < dxValues.length; index += 1) {
+    adxValue = ((adxValue * (period - 1)) + dxValues[index]) / period;
+  }
+
+  return round(adxValue, 2);
+}
+
 function average(values) {
   const filtered = values.filter((value) => Number.isFinite(value));
   return filtered.length ? filtered.reduce((sum, value) => sum + value, 0) / filtered.length : 0;
@@ -2602,6 +3023,11 @@ Scalp strategy (Murphy + Solabuto, 5m):
   SCALP_STOP_LOSS_PCT=0.18
 
 Market data also includes order book depth/imbalance and linear derivatives funding/OI.
+
+Regime gate, ensemble scoring, and quality feedback:
+  REGIME_GATE_ENABLED=true
+  ENSEMBLE_SCORING_ENABLED=true
+  QUALITY_FEEDBACK_ENABLED=true
 
 This brain is read-only and writes decisions to JSONL. It does not place orders.
 DeepSeek/OpenAI-compatible AI Analyst and Cursor Analyst are optional and never bypass the risk manager.
