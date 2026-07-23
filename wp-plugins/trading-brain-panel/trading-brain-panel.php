@@ -188,7 +188,7 @@ final class Trading_Brain_Panel {
 						const orderBook = market.orderBook || {};
 						const derivatives = market.derivatives || {};
 						return '<div class="tbp-signal tbp-signal-' + escapeHtml(action.toLowerCase()) + '">' +
-							'<h3>' + escapeHtml(item.symbol) + ' - ' + escapeHtml(action) + '</h3>' +
+							'<h3>' + escapeHtml(item.symbol) + (market.assetClass ? ' <span class="tbp-muted">(' + escapeHtml(market.assetClass) + (market.category ? '/' + escapeHtml(market.category) : '') + ')</span>' : '') + ' - ' + escapeHtml(action) + '</h3>' +
 							'<p><strong>Consensus:</strong> ' + escapeHtml(consensus.source || 'rules') + ' | <strong>Confidence:</strong> ' + escapeHtml(consensus.confidence) + ' | <strong>Risk:</strong> ' + escapeHtml(risk.riskScore) + '</p>' +
 							'<p><strong>Price:</strong> ' + escapeHtml(market.lastPrice) + ' | <strong>24h:</strong> ' + escapeHtml(market.change24hPct) + '%</p>' +
 							'<p><strong>RSI:</strong> ' + escapeHtml(indicators.rsi14) + ' | <strong>SMA20/SMA50:</strong> ' + escapeHtml(indicators.sma20) + ' / ' + escapeHtml(indicators.sma50) + '</p>' +

@@ -19,7 +19,8 @@ const args = parseArgs(process.argv.slice(3));
 const config = {
   baseUrl: env('BYBIT_BASE_URL', 'https://api.bybit.com').replace(/\/+$/, ''),
   category: env('BRAIN_CATEGORY', 'spot'),
-  symbols: splitList(env('BRAIN_SYMBOLS', 'BTCUSDT,ETHUSDT')),
+  symbols: splitList(env('BRAIN_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,LINKUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT')),
+  linearSymbols: new Set(splitList(env('BRAIN_LINEAR_SYMBOLS', 'XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT'))),
   interval: env('BRAIN_INTERVAL', '15'),
   klineLimit: numberEnv('BRAIN_KLINE_LIMIT', 96),
   minConfidence: numberEnv('BRAIN_MIN_CONFIDENCE', 65),
@@ -200,23 +201,25 @@ async function runBrainCycle() {
 async function collectMarkets() {
   const results = [];
   for (const symbol of config.symbols) {
+    const category = marketCategory(symbol);
+    const assetClass = marketAssetClass(symbol);
     const scalpQuery = config.scalp.enabled ? bybitPublic('/v5/market/kline', {
-      category: config.category,
+      category,
       symbol,
       interval: config.scalp.interval,
       limit: String(config.scalp.klineLimit)
     }) : Promise.resolve(null);
 
     const [tickerData, klineData, scalpKlineData, orderBookData, derivativesTickerData, openInterestData] = await Promise.all([
-      bybitPublic('/v5/market/tickers', { category: config.category, symbol }),
+      bybitPublic('/v5/market/tickers', { category, symbol }),
       bybitPublic('/v5/market/kline', {
-        category: config.category,
+        category,
         symbol,
         interval: config.interval,
         limit: String(config.klineLimit)
       }),
       scalpQuery,
-      bybitPublicOrNull('/v5/market/orderbook', { category: config.category, symbol, limit: '50' }),
+      bybitPublicOrNull('/v5/market/orderbook', { category, symbol, limit: '50' }),
       bybitPublicOrNull('/v5/market/tickers', { category: 'linear', symbol }),
       bybitPublicOrNull('/v5/market/open-interest', { category: 'linear', symbol, intervalTime: '5min', limit: '2' })
     ]);
@@ -277,6 +280,8 @@ async function collectMarkets() {
 
     results.push({
       symbol,
+      category,
+      assetClass,
       lastPrice: Number(ticker.lastPrice || last),
       change24hPct: Number(ticker.price24hPcnt || 0) * 100,
       turnover24h: Number(ticker.turnover24h || 0),
@@ -1280,6 +1285,26 @@ function applyAlgoVaultConsensus(consensus, algoVaultAnalyst = {}) {
 
 function symbolToCoin(symbol) {
   return String(symbol || '').replace(/USDT$/i, '');
+}
+
+function marketCategory(symbol) {
+  return config.linearSymbols.has(symbol) ? 'linear' : config.category;
+}
+
+function marketAssetClass(symbol) {
+  if (/^(XAU|XAG|PAXG)/.test(symbol)) {
+    return 'metal';
+  }
+  if (symbol === 'CLUSDT') {
+    return 'commodity';
+  }
+  if (/^(TSLA|AAPL|NVDA|MSFT|GOOGL|META|COIN|MSTR|HOOD|ORCL|INTC|MU|TSM|SNDK|CRCL)USDT$/.test(symbol)) {
+    return 'stock';
+  }
+  if (symbol.endsWith('USDT')) {
+    return 'crypto';
+  }
+  return 'other';
 }
 
 function intervalToTimeframe(interval) {
