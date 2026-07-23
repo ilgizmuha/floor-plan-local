@@ -72,6 +72,18 @@ const config = {
     symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT')),
     requireDeepSeekOk: env('PAPER_REQUIRE_DEEPSEEK_OK', 'true') === 'true',
     requireCursorOk: env('PAPER_REQUIRE_CURSOR_OK', 'true') === 'true'
+  },
+  scalp: {
+    enabled: env('SCALP_ENABLED', 'true') === 'true',
+    interval: env('SCALP_INTERVAL', '5'),
+    klineLimit: numberEnv('SCALP_KLINE_LIMIT', 120),
+    minConfidence: numberEnv('SCALP_MIN_CONFIDENCE', 62),
+    takeProfitPct: numberEnv('SCALP_TAKE_PROFIT_PCT', 0.35),
+    stopLossPct: numberEnv('SCALP_STOP_LOSS_PCT', 0.18),
+    maxSpreadPct: numberEnv('SCALP_MAX_SPREAD_PCT', 0.08),
+    paperEnabled: env('SCALP_PAPER_ENABLED', 'true') === 'true',
+    maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 15),
+    symbols: splitList(env('SCALP_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT'))
   }
 };
 
@@ -145,6 +157,7 @@ async function runBrainCycle() {
       algoVaultAnalyst
     );
     const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst, fearGreed);
+    const scalpSignal = analyzeScalpStrategy(market, fearGreed);
     return {
       timestamp: new Date().toISOString(),
       symbol: market.symbol,
@@ -152,6 +165,7 @@ async function runBrainCycle() {
       news: summarizeNewsForDecision(news),
       fearGreed,
       signal,
+      scalpSignal,
       aiAnalyst,
       algoVaultAnalyst,
       cursorAnalyst,
@@ -186,7 +200,14 @@ async function runBrainCycle() {
 async function collectMarkets() {
   const results = [];
   for (const symbol of config.symbols) {
-    const [tickerData, klineData, orderBookData, derivativesTickerData, openInterestData] = await Promise.all([
+    const scalpQuery = config.scalp.enabled ? bybitPublic('/v5/market/kline', {
+      category: config.category,
+      symbol,
+      interval: config.scalp.interval,
+      limit: String(config.scalp.klineLimit)
+    }) : Promise.resolve(null);
+
+    const [tickerData, klineData, scalpKlineData, orderBookData, derivativesTickerData, openInterestData] = await Promise.all([
       bybitPublic('/v5/market/tickers', { category: config.category, symbol }),
       bybitPublic('/v5/market/kline', {
         category: config.category,
@@ -194,6 +215,7 @@ async function collectMarkets() {
         interval: config.interval,
         limit: String(config.klineLimit)
       }),
+      scalpQuery,
       bybitPublicOrNull('/v5/market/orderbook', { category: config.category, symbol, limit: '50' }),
       bybitPublicOrNull('/v5/market/tickers', { category: 'linear', symbol }),
       bybitPublicOrNull('/v5/market/open-interest', { category: 'linear', symbol, intervalTime: '5min', limit: '2' })
@@ -251,6 +273,7 @@ async function collectMarkets() {
     const volumeRatio = safeDivide(average(volumes.slice(-5)), average(volumes.slice(-30)));
     const orderBook = summarizeOrderBook(orderBookData);
     const derivatives = summarizeDerivatives(derivativesTickerData, openInterestData);
+    const scalpIndicators = buildScalpIndicators(parseKlineRows(scalpKlineData));
 
     results.push({
       symbol,
@@ -283,10 +306,193 @@ async function collectMarkets() {
         volumeRatio: round(volumeRatio, 3)
       },
       orderBook,
-      derivatives
+      derivatives,
+      scalpIndicators
     });
   }
   return results;
+}
+
+function parseKlineRows(klineData) {
+  const rawKlines = klineData && klineData.result && klineData.result.list ? klineData.result.list : [];
+  return rawKlines
+    .map((row) => ({
+      start: Number(row[0]),
+      open: Number(row[1]),
+      high: Number(row[2]),
+      low: Number(row[3]),
+      close: Number(row[4]),
+      volume: Number(row[5])
+    }))
+    .sort((a, b) => a.start - b.start);
+}
+
+function buildScalpIndicators(candles) {
+  if (!candles || candles.length < 30) {
+    return { available: false };
+  }
+
+  const closes = candles.map((candle) => candle.close);
+  const volumes = candles.map((candle) => candle.volume);
+  const last = closes[closes.length - 1];
+  const ema9Values = emaSeries(closes, 9);
+  const ema21Values = emaSeries(closes, 21);
+  const ema9 = ema9Values[ema9Values.length - 1];
+  const ema21 = ema21Values[ema21Values.length - 1];
+  const sma50 = average(closes.slice(-50));
+  const priorWindow = candles.slice(-21, -1);
+  const support = Math.min(...priorWindow.map((candle) => candle.low));
+  const resistance = Math.max(...priorWindow.map((candle) => candle.high));
+  const last3 = closes.slice(-3);
+  const impulseUp = last3.length === 3 && last3[2] > last3[1] && last3[1] > last3[0];
+  const impulseDown = last3.length === 3 && last3[2] < last3[1] && last3[1] < last3[0];
+  const volumeRatio = safeDivide(average(volumes.slice(-3)), average(volumes.slice(-20)));
+  const distanceToEma21Pct = percentChange(ema21, last);
+
+  return {
+    available: true,
+    timeframe: `${config.scalp.interval}m`,
+    ema9: round(ema9, 4),
+    ema21: round(ema21, 4),
+    sma50: round(sma50, 4),
+    rsi7: round(rsi(closes, 7), 2),
+    volumeRatio: round(volumeRatio, 3),
+    impulseUp,
+    impulseDown,
+    priceAboveEma21: last > ema21,
+    distanceToEma21Pct: round(distanceToEma21Pct, 3),
+    support: round(support, 4),
+    resistance: round(resistance, 4),
+    distanceToSupportPct: round(percentChange(support, last), 3),
+    distanceToResistancePct: round(percentChange(last, resistance), 3),
+    momentumPct: round(percentChange(closes[closes.length - 2], last), 3)
+  };
+}
+
+function analyzeScalpStrategy(market, fearGreed = {}) {
+  if (!config.scalp.enabled) {
+    return {
+      enabled: false,
+      strategy: 'murphy_solabuto_scalp',
+      action: null,
+      confidence: 0,
+      reasons: ['Scalp strategy disabled']
+    };
+  }
+
+  const scalp = market.scalpIndicators || {};
+  const trend15m = market.indicators.sma20 > market.indicators.sma50 ? 'up' : 'down';
+  if (!scalp.available) {
+    return {
+      enabled: true,
+      strategy: 'murphy_solabuto_scalp',
+      action: 'WAIT',
+      confidence: 0,
+      trend15m,
+      reasons: ['Not enough 5m data for scalp']
+    };
+  }
+
+  let score = 0;
+  const reasons = [];
+
+  if (trend15m === 'up') {
+    score += 12;
+    reasons.push('Murphy: trade with 15m uptrend');
+  } else {
+    score -= 14;
+    reasons.push('Murphy: 15m downtrend, long scalp filtered');
+  }
+
+  if (scalp.volumeRatio > 1.12) {
+    score += 8;
+    reasons.push('Murphy: volume confirms short-term move');
+  } else if (scalp.volumeRatio < 0.85) {
+    score -= 5;
+    reasons.push('Murphy: weak volume, skip scalp');
+  }
+
+  if (scalp.impulseUp) {
+    score += 10;
+    reasons.push('Solabuto: bullish 5m impulse');
+  } else if (scalp.impulseDown) {
+    score -= 10;
+    reasons.push('Solabuto: bearish 5m impulse');
+  }
+
+  if (trend15m === 'up' && scalp.priceAboveEma21 && scalp.distanceToEma21Pct >= 0 && scalp.distanceToEma21Pct <= 0.35) {
+    score += 7;
+    reasons.push('Murphy: pullback to EMA21 in uptrend');
+  }
+
+  if (scalp.ema9 > scalp.ema21) {
+    score += 5;
+  } else {
+    score -= 5;
+  }
+
+  if (scalp.distanceToResistancePct >= 0 && scalp.distanceToResistancePct < 0.25) {
+    score -= 9;
+    reasons.push('Solabuto: too close to resistance for scalp entry');
+  }
+
+  if (scalp.distanceToSupportPct >= 0 && scalp.distanceToSupportPct < 0.35 && scalp.rsi7 >= 34) {
+    score += 5;
+    reasons.push('Murphy: support bounce zone');
+  }
+
+  if (scalp.rsi7 >= 42 && scalp.rsi7 <= 58) {
+    score += 6;
+    reasons.push('RSI7 in scalp entry zone');
+  } else if (scalp.rsi7 > 68) {
+    score -= 8;
+    reasons.push('RSI7 overheated for scalp long');
+  }
+
+  const orderBook = market.orderBook || {};
+  if (orderBook.available) {
+    if (orderBook.pressure === 'buy') {
+      score += 4;
+    } else if (orderBook.pressure === 'sell') {
+      score -= 4;
+    }
+    if (orderBook.spreadPct > config.scalp.maxSpreadPct) {
+      score -= 10;
+      reasons.push('Solabuto: spread too wide for scalp');
+    }
+  }
+
+  if (fearGreed.available && fearGreed.value >= 78) {
+    score -= 6;
+    reasons.push('Macro greed filter: avoid aggressive scalp long');
+  }
+
+  const confidence = clamp(Math.round(50 + score), 0, 100);
+  let action = 'WAIT';
+  if (trend15m === 'up' && confidence >= config.scalp.minConfidence) {
+    action = 'BUY';
+  } else if (trend15m === 'down' && confidence <= 38) {
+    action = 'SELL';
+  } else if (confidence >= 52) {
+    action = 'HOLD';
+  }
+
+  return {
+    enabled: true,
+    strategy: 'murphy_solabuto_scalp',
+    sources: [
+      'Murphy — Technical Analysis of the Futures Markets (trend, volume, S/R)',
+      'Solabuto — Short-term Trading (impulse, sizing, quick exits)'
+    ],
+    timeframe: scalp.timeframe,
+    trend15m,
+    action,
+    confidence,
+    score: round(score, 2),
+    takeProfitPct: config.scalp.takeProfitPct,
+    stopLossPct: config.scalp.stopLossPct,
+    reasons
+  };
 }
 
 async function collectNews() {
@@ -1647,14 +1853,27 @@ function updatePaperState(decisions) {
     minConfidence: config.paper.minConfidence,
     feeRate: config.paper.feeRate,
     requireDeepSeekOk: config.paper.requireDeepSeekOk,
-    requireCursorOk: config.paper.requireCursorOk
+    requireCursorOk: config.paper.requireCursorOk,
+    scalp: {
+      enabled: config.scalp.paperEnabled,
+      symbols: config.scalp.symbols,
+      minConfidence: config.scalp.minConfidence,
+      maxPositionUsd: config.scalp.maxPositionUsd,
+      takeProfitPct: config.scalp.takeProfitPct,
+      stopLossPct: config.scalp.stopLossPct
+    }
   };
 
   const events = [];
+  applyScalpPaperExits(state, decisions).forEach((event) => events.push(event));
   for (const decision of decisions) {
     const event = applyPaperDecision(state, decision);
     if (event) {
       events.push(event);
+    }
+    const scalpEvent = applyScalpPaperDecision(state, decision);
+    if (scalpEvent) {
+      events.push(scalpEvent);
     }
   }
 
@@ -1760,6 +1979,118 @@ function applyPaperDecision(state, decision) {
   }
 
   return null;
+}
+
+function applyScalpPaperExits(state, decisions) {
+  const events = [];
+  if (!config.scalp.paperEnabled) {
+    return events;
+  }
+
+  const latestPrices = {};
+  const decisionBySymbol = {};
+  for (const decision of decisions) {
+    latestPrices[decision.symbol] = Number(decision.market && decision.market.lastPrice);
+    decisionBySymbol[decision.symbol] = decision;
+  }
+
+  for (const [symbol, position] of Object.entries(state.positions || {})) {
+    if (position.strategy !== 'scalp') {
+      continue;
+    }
+    const price = latestPrices[symbol] || position.entryPrice;
+    const grossUsd = position.qty * price;
+    const closeFeeUsd = grossUsd * config.paper.feeRate;
+    const pnlPct = percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd);
+    const decision = decisionBySymbol[symbol] || { symbol, market: { lastPrice: price } };
+    const scalp = decision.scalpSignal || {};
+
+    let exitReason = null;
+    if (pnlPct >= config.scalp.takeProfitPct) {
+      exitReason = `scalp take-profit ${config.scalp.takeProfitPct}%`;
+    } else if (pnlPct <= -config.scalp.stopLossPct) {
+      exitReason = `scalp stop-loss ${config.scalp.stopLossPct}%`;
+    } else if (scalp.action === 'SELL') {
+      exitReason = 'scalp signal exit';
+    }
+
+    if (!exitReason) {
+      continue;
+    }
+
+    const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
+    state.cashUsd = round((state.cashUsd || 0) + grossUsd - closeFeeUsd, 4);
+    state.realizedPnlUsd = round((state.realizedPnlUsd || 0) + pnlUsd, 4);
+    state.stats.closed += 1;
+    if (pnlUsd >= 0) {
+      state.stats.wins += 1;
+    } else {
+      state.stats.losses += 1;
+    }
+    delete state.positions[symbol];
+    events.push(paperEvent('SCALP_CLOSE', decision, price, {
+      qty: position.qty,
+      grossUsd,
+      closeFeeUsd,
+      pnlUsd,
+      pnlPct,
+      reason: exitReason
+    }));
+  }
+
+  return events;
+}
+
+function applyScalpPaperDecision(state, decision) {
+  if (!config.scalp.paperEnabled) {
+    return null;
+  }
+
+  const symbol = decision.symbol;
+  const price = Number(decision.market && decision.market.lastPrice);
+  const scalp = decision.scalpSignal || {};
+  const positions = state.positions || {};
+  state.positions = positions;
+
+  if (!price || !config.scalp.symbols.includes(symbol) || positions[symbol]) {
+    return null;
+  }
+
+  if (scalp.action !== 'BUY' || (scalp.confidence || 0) < config.scalp.minConfidence) {
+    return null;
+  }
+
+  if (scalp.trend15m !== 'up') {
+    return paperEvent('SCALP_SKIP_BUY', decision, price, { blocks: ['15m trend not up'] });
+  }
+
+  const orderBook = decision.market.orderBook || {};
+  if (orderBook.available && orderBook.spreadPct > config.scalp.maxSpreadPct) {
+    return paperEvent('SCALP_SKIP_BUY', decision, price, { blocks: ['spread too wide'] });
+  }
+
+  const positionUsd = Math.min(config.scalp.maxPositionUsd, state.cashUsd || 0);
+  if (positionUsd <= 0) {
+    return paperEvent('SCALP_SKIP_BUY', decision, price, { blocks: ['no paper cash'] });
+  }
+
+  const feeUsd = positionUsd * config.paper.feeRate;
+  const qty = positionUsd / price;
+  positions[symbol] = {
+    symbol,
+    strategy: 'scalp',
+    qty,
+    entryPrice: price,
+    entryTime: decision.timestamp,
+    costUsd: positionUsd,
+    openFeeUsd: feeUsd,
+    confidence: scalp.confidence || 0,
+    takeProfitPct: config.scalp.takeProfitPct,
+    stopLossPct: config.scalp.stopLossPct
+  };
+  state.cashUsd = round((state.cashUsd || 0) - positionUsd - feeUsd, 4);
+  state.stats.opened += 1;
+  return paperEvent('SCALP_OPEN', decision, price, { qty, positionUsd, feeUsd, scalp });
 }
 
 function paperEvent(type, decision, price, extra = {}) {
@@ -2238,6 +2569,12 @@ AlgoVault analyst (crypto-quant-signal-mcp):
   ALGOVAULT_ENABLED=true
   ALGOVAULT_MCP_URL=https://api.algovault.com/mcp
   ALGOVAULT_EXCHANGE=BYBIT
+
+Scalp strategy (Murphy + Solabuto, 5m):
+  SCALP_ENABLED=true
+  SCALP_INTERVAL=5
+  SCALP_TAKE_PROFIT_PCT=0.35
+  SCALP_STOP_LOSS_PCT=0.18
 
 Market data also includes order book depth/imbalance and linear derivatives funding/OI.
 

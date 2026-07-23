@@ -193,6 +193,14 @@ final class Trading_Brain_Panel {
 							'<p><strong>Price:</strong> ' + escapeHtml(market.lastPrice) + ' | <strong>24h:</strong> ' + escapeHtml(market.change24hPct) + '%</p>' +
 							'<p><strong>RSI:</strong> ' + escapeHtml(indicators.rsi14) + ' | <strong>SMA20/SMA50:</strong> ' + escapeHtml(indicators.sma20) + ' / ' + escapeHtml(indicators.sma50) + '</p>' +
 							'<p><strong>MACD:</strong> ' + escapeHtml(indicators.macdLine) + ' / ' + escapeHtml(indicators.macdSignal) + ' | <strong>Hist:</strong> ' + escapeHtml(indicators.macdHistogram) + ' (' + escapeHtml(indicators.macdHistogramDelta) + ')</p>' +
+							(function () {
+								const scalp = item.scalpSignal || {};
+								if (!scalp.enabled) {
+									return '';
+								}
+								return '<p><strong>Scalp (Murphy+Solabuto):</strong> ' + escapeHtml(scalp.action || 'WAIT') + ' / ' + escapeHtml(scalp.confidence) + ' | 15m trend ' + escapeHtml(scalp.trend15m) + ' | TP ' + escapeHtml(scalp.takeProfitPct) + '% SL ' + escapeHtml(scalp.stopLossPct) + '%</p>' +
+									(scalp.reasons && scalp.reasons.length ? '<p class="tbp-muted"><strong>Scalp:</strong> ' + escapeHtml(scalp.reasons.slice(0, 4).join(', ')) + '</p>' : '');
+							})() +
 							'<p><strong>Bollinger:</strong> pos ' + escapeHtml(indicators.bollingerPosition) + ', width ' + escapeHtml(indicators.bollingerWidthPct) + '% | <strong>S/R:</strong> ' + escapeHtml(indicators.support) + ' / ' + escapeHtml(indicators.resistance) + '</p>' +
 							(orderBook.available ? '<p><strong>Order book:</strong> spread ' + escapeHtml(orderBook.spreadPct) + '%, imbalance ' + escapeHtml(orderBook.imbalance) + ', pressure ' + escapeHtml(orderBook.pressure) + ' | depth bid/ask ' + escapeHtml(orderBook.bidDepthUsd) + ' / ' + escapeHtml(orderBook.askDepthUsd) + '</p>' +
 							'<p class="tbp-muted"><strong>Walls:</strong> bid ' + escapeHtml(orderBook.bidWall && orderBook.bidWall.price) + ' (' + escapeHtml(orderBook.bidWall && orderBook.bidWall.usd) + ' USD) | ask ' + escapeHtml(orderBook.askWall && orderBook.askWall.price) + ' (' + escapeHtml(orderBook.askWall && orderBook.askWall.usd) + ' USD)</p>' : '<p class="tbp-muted"><strong>Order book:</strong> unavailable</p>') +
