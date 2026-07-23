@@ -188,11 +188,33 @@ async function collectMarkets() {
     }
 
     const closes = candles.map((candle) => candle.close);
+    const highs = candles.map((candle) => candle.high);
+    const lows = candles.map((candle) => candle.low);
     const volumes = candles.map((candle) => candle.volume);
     const last = closes[closes.length - 1];
     const previous = closes[closes.length - 2];
     const sma20 = average(closes.slice(-20));
     const sma50 = average(closes.slice(-50));
+    const ema12Values = emaSeries(closes, 12);
+    const ema26Values = emaSeries(closes, 26);
+    const ema12 = ema12Values[ema12Values.length - 1];
+    const ema26 = ema26Values[ema26Values.length - 1];
+    const macdValues = ema12Values.map((value, index) => value - ema26Values[index]);
+    const macdSignalValues = emaSeries(macdValues, 9);
+    const macdLine = macdValues[macdValues.length - 1];
+    const macdSignal = macdSignalValues[macdSignalValues.length - 1];
+    const macdHistogram = macdLine - macdSignal;
+    const previousMacdHistogram = macdValues[macdValues.length - 2] - macdSignalValues[macdSignalValues.length - 2];
+    const bollingerStdDev = standardDeviation(closes.slice(-20));
+    const bollingerUpper = sma20 + (2 * bollingerStdDev);
+    const bollingerLower = sma20 - (2 * bollingerStdDev);
+    const bollingerWidthPct = safeDivide(bollingerUpper - bollingerLower, sma20) * 100;
+    const bollingerPosition = safeDivide(last - bollingerLower, bollingerUpper - bollingerLower);
+    const priorWindow = candles.slice(-51, -1);
+    const support = Math.min(...priorWindow.map((candle) => candle.low));
+    const resistance = Math.max(...priorWindow.map((candle) => candle.high));
+    const distanceToSupportPct = percentChange(support, last);
+    const distanceToResistancePct = percentChange(last, resistance);
     const rsi14 = rsi(closes, 14);
     const momentumPct = percentChange(previous, last);
     const trendPct = percentChange(sma50, sma20);
@@ -208,6 +230,21 @@ async function collectMarkets() {
       indicators: {
         sma20: round(sma20, 4),
         sma50: round(sma50, 4),
+        ema12: round(ema12, 4),
+        ema26: round(ema26, 4),
+        macdLine: round(macdLine, 4),
+        macdSignal: round(macdSignal, 4),
+        macdHistogram: round(macdHistogram, 4),
+        macdHistogramDelta: round(macdHistogram - previousMacdHistogram, 4),
+        bollingerUpper: round(bollingerUpper, 4),
+        bollingerMiddle: round(sma20, 4),
+        bollingerLower: round(bollingerLower, 4),
+        bollingerWidthPct: round(bollingerWidthPct, 3),
+        bollingerPosition: round(bollingerPosition, 3),
+        support: round(support, 4),
+        resistance: round(resistance, 4),
+        distanceToSupportPct: round(distanceToSupportPct, 3),
+        distanceToResistancePct: round(distanceToResistancePct, 3),
         rsi14: round(rsi14, 2),
         momentumPct: round(momentumPct, 3),
         trendPct: round(trendPct, 3),
@@ -302,6 +339,51 @@ function analyzeMarket(market, news) {
   } else {
     score -= 18;
     reasons.push('short trend below long trend');
+  }
+
+  if (i.ema12 > i.ema26) {
+    score += 8;
+    reasons.push('EMA12 above EMA26');
+  } else {
+    score -= 8;
+    reasons.push('EMA12 below EMA26');
+  }
+
+  if (i.macdLine > i.macdSignal && i.macdHistogram > 0) {
+    score += 10;
+    reasons.push('MACD bullish');
+  } else if (i.macdLine < i.macdSignal && i.macdHistogram < 0) {
+    score -= 10;
+    reasons.push('MACD bearish');
+  }
+
+  if (i.macdHistogramDelta > 0) {
+    score += 4;
+    reasons.push('MACD histogram improving');
+  } else if (i.macdHistogramDelta < 0) {
+    score -= 4;
+    reasons.push('MACD histogram weakening');
+  }
+
+  if (i.bollingerPosition > 1) {
+    score -= 7;
+    reasons.push('price above upper Bollinger band');
+  } else if (i.bollingerPosition < 0) {
+    score -= 8;
+    reasons.push('price below lower Bollinger band');
+  } else if (i.bollingerPosition >= 0.25 && i.bollingerPosition <= 0.75) {
+    score += 3;
+    reasons.push('price inside balanced Bollinger zone');
+  }
+
+  if (i.distanceToResistancePct >= 0 && i.distanceToResistancePct < 0.35) {
+    score -= 5;
+    reasons.push('price close to resistance');
+  }
+
+  if (i.distanceToSupportPct >= 0 && i.distanceToSupportPct < 0.35 && i.rsi14 >= 40) {
+    score += 4;
+    reasons.push('price near support with acceptable RSI');
   }
 
   if (i.rsi14 >= 45 && i.rsi14 <= 62) {
@@ -1446,6 +1528,23 @@ function averageTrueRangePercent(candles) {
 function average(values) {
   const filtered = values.filter((value) => Number.isFinite(value));
   return filtered.length ? filtered.reduce((sum, value) => sum + value, 0) / filtered.length : 0;
+}
+
+function emaSeries(values, period) {
+  const multiplier = 2 / (period + 1);
+  const result = [];
+  let previous = values[0] || 0;
+  for (const value of values) {
+    previous = (value - previous) * multiplier + previous;
+    result.push(previous);
+  }
+  return result;
+}
+
+function standardDeviation(values) {
+  const avg = average(values);
+  const variance = average(values.map((value) => (value - avg) ** 2));
+  return Math.sqrt(variance);
 }
 
 function median(values) {

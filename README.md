@@ -57,6 +57,8 @@
 
 `scripts/trading-brain.js` — read-only анализатор для VPS. Он не отправляет ордера: собирает рынок Bybit, считает индикаторы, читает публичные RSS-новости, прогоняет сигнал через risk manager и пишет решения в JSONL.
 
+Технический анализ использует SMA20/SMA50, EMA12/EMA26, RSI14, MACD, Bollinger Bands, momentum, volatility, volume ratio и support/resistance.
+
 Опциональные AI-аналитики подключаются через DeepSeek/OpenAI-compatible API (`AI_ANALYST_*`) и Cursor SDK (`CURSOR_ANALYST_*`). Сейчас VPS настроен на DeepSeek (`AI_ANALYST_BASE_URL=https://api.deepseek.com`, `AI_ANALYST_MODEL=deepseek-chat`). Для Cursor Analyst нужен `CURSOR_API_KEY` из Cursor Dashboard. Базовые правила дают первый сигнал, DeepSeek и Cursor подтверждают/отклоняют его, затем risk manager принимает финальное разрешение.
 
 WordPress используется только как будущая панель управления и просмотра. Bybit-ключи, анализатор и торговая логика должны оставаться вне WordPress/OCR-плагина.
