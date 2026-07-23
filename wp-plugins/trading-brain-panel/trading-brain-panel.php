@@ -209,10 +209,12 @@ final class Trading_Brain_Panel {
 					}).join('') : '<p>Пока нет решений.</p>';
 
 					const firstNews = decisions[0] && decisions[0].news ? decisions[0].news : {};
+					const firstFearGreed = decisions[0] && decisions[0].fearGreed ? decisions[0].fearGreed : {};
 					const topNews = firstNews.top || [];
 					const sourceCounts = firstNews.sourceCounts || {};
 					const sourceErrors = firstNews.sourceErrors || {};
 					document.getElementById('tbp-news').innerHTML =
+						'<p><strong>Fear & Greed:</strong> ' + (firstFearGreed.available ? escapeHtml(firstFearGreed.value) + ' (' + escapeHtml(firstFearGreed.classification) + ')' : 'unavailable') + '</p>' +
 						'<p><strong>News score:</strong> ' + escapeHtml(firstNews.score ?? 0) + ' | <strong>Items:</strong> ' + escapeHtml(firstNews.itemCount ?? 0) + '</p>' +
 						(Object.keys(sourceCounts).length ? '<p><strong>Sources:</strong> ' + escapeHtml(JSON.stringify(sourceCounts)) + '</p>' : '') +
 						(Object.keys(sourceErrors).length ? '<p><strong>Source errors:</strong> ' + escapeHtml(JSON.stringify(sourceErrors)) + '</p>' : '') +

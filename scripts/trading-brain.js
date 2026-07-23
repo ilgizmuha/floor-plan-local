@@ -30,6 +30,11 @@ const config = {
   newsSources: splitList(env('BRAIN_NEWS_SOURCES', 'https://cointelegraph.com/rss,https://www.coindesk.com/arc/outboundfeeds/rss/')),
   htmlNewsSources: splitList(env('BRAIN_HTML_NEWS_SOURCES', 'https://forklog.com/en/news-and-analysis/,https://t.me/s/forklogfeed')),
   newsLookbackHours: numberEnv('BRAIN_NEWS_LOOKBACK_HOURS', 12),
+  fearGreed: {
+    enabled: env('FEAR_GREED_ENABLED', 'true') === 'true',
+    url: env('FEAR_GREED_URL', 'https://api.alternative.me/fng/'),
+    timeoutMs: numberEnv('FEAR_GREED_TIMEOUT_MS', 10000)
+  },
   loopIntervalSeconds: numberEnv('BRAIN_LOOP_INTERVAL_SECONDS', 300),
   dryRun: env('BRAIN_DRY_RUN', 'true') !== 'false',
   ai: {
@@ -114,33 +119,38 @@ async function main() {
 
 async function runBrainCycle() {
   ensureDir(config.dataDir);
-  const [markets, news] = await Promise.all([
+  const [markets, news, fearGreed] = await Promise.all([
     collectMarkets(),
     collectNews().catch((error) => ({
       sourceCount: 0,
       items: [],
       score: 0,
       error: error.message
+    })),
+    collectFearGreed().catch((error) => ({
+      available: false,
+      error: error.message
     }))
   ]);
 
   const decisions = await Promise.all(markets.map(async (market) => {
-    const signal = analyzeMarket(market, news);
+    const signal = analyzeMarket(market, news, fearGreed);
     const [aiAnalyst, algoVaultAnalyst] = await Promise.all([
-      runAiAnalyst(market, news, signal),
+      runAiAnalyst(market, news, signal, fearGreed),
       runAlgoVaultAnalyst(market)
     ]);
-    const cursorAnalyst = await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst);
+    const cursorAnalyst = await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed);
     const consensus = applyAlgoVaultConsensus(
       combineSignals(signal, aiAnalyst, cursorAnalyst),
       algoVaultAnalyst
     );
-    const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst);
+    const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst, fearGreed);
     return {
       timestamp: new Date().toISOString(),
       symbol: market.symbol,
       market,
       news: summarizeNewsForDecision(news),
+      fearGreed,
       signal,
       aiAnalyst,
       algoVaultAnalyst,
@@ -351,7 +361,85 @@ async function collectNews() {
   };
 }
 
-function analyzeMarket(market, news) {
+async function collectFearGreed() {
+  if (!config.fearGreed.enabled) {
+    return {
+      available: false,
+      enabled: false,
+      reason: 'disabled'
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), config.fearGreed.timeoutMs);
+  try {
+    const url = new URL(config.fearGreed.url);
+    url.searchParams.set('limit', '1');
+    url.searchParams.set('format', 'json');
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'TradingBrain/1.0' }
+    });
+    const data = parseJson(await response.text());
+    if (!response.ok || !data || !Array.isArray(data.data) || !data.data.length) {
+      throw new Error(`Fear & Greed API HTTP ${response.status}`);
+    }
+
+    const latest = data.data[0];
+    const value = clamp(Math.round(Number(latest.value) || 0), 0, 100);
+    const classification = String(latest.value_classification || classifyFearGreed(value));
+    const timestamp = latest.timestamp ? new Date(Number(latest.timestamp) * 1000).toISOString() : null;
+
+    return {
+      available: true,
+      enabled: true,
+      value,
+      classification,
+      score: scoreFearGreed(value),
+      timestamp,
+      source: 'alternative.me'
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function classifyFearGreed(value) {
+  if (value <= 24) {
+    return 'Extreme Fear';
+  }
+  if (value <= 44) {
+    return 'Fear';
+  }
+  if (value <= 55) {
+    return 'Neutral';
+  }
+  if (value <= 74) {
+    return 'Greed';
+  }
+  return 'Extreme Greed';
+}
+
+function scoreFearGreed(value) {
+  if (value <= 20) {
+    return 3;
+  }
+  if (value <= 35) {
+    return 1;
+  }
+  if (value >= 80) {
+    return -8;
+  }
+  if (value >= 65) {
+    return -5;
+  }
+  if (value >= 56) {
+    return -2;
+  }
+  return 0;
+}
+
+function analyzeMarket(market, news, fearGreed = {}) {
   const i = market.indicators;
   let score = 0;
   const reasons = [];
@@ -451,6 +539,18 @@ function analyzeMarket(market, news) {
     reasons.push('news sentiment negative');
   }
 
+  if (fearGreed.available) {
+    const fgScore = fearGreed.score || scoreFearGreed(fearGreed.value);
+    score += fgScore;
+    if (fgScore > 0) {
+      reasons.push(`Fear & Greed supportive (${fearGreed.value}, ${fearGreed.classification})`);
+    } else if (fgScore < 0) {
+      reasons.push(`Fear & Greed cautious (${fearGreed.value}, ${fearGreed.classification})`);
+    } else {
+      reasons.push(`Fear & Greed neutral (${fearGreed.value})`);
+    }
+  }
+
   const orderBook = market.orderBook || {};
   if (orderBook.available) {
     if (orderBook.pressure === 'buy') {
@@ -518,7 +618,7 @@ function analyzeMarket(market, news) {
   };
 }
 
-async function runAiAnalyst(market, news, signal) {
+async function runAiAnalyst(market, news, signal, fearGreed = {}) {
   if (!config.ai.enabled) {
     return {
       enabled: false,
@@ -550,7 +650,7 @@ async function runAiAnalyst(market, news, signal) {
   }
 
   try {
-    const response = await aiRequest(buildAiMessages(market, news, signal));
+    const response = await aiRequest(buildAiMessages(market, news, signal, fearGreed));
     return normalizeAiVerdict(response);
   } catch (error) {
     return {
@@ -568,7 +668,7 @@ async function runAiAnalyst(market, news, signal) {
   }
 }
 
-function buildAiMessages(market, news, signal) {
+function buildAiMessages(market, news, signal, fearGreed = {}) {
   const payload = {
     symbol: market.symbol,
     market: {
@@ -581,6 +681,7 @@ function buildAiMessages(market, news, signal) {
       derivatives: market.derivatives || { available: false }
     },
     news: summarizeNewsForDecision(news),
+    fearGreed: summarizeFearGreedForDecision(fearGreed),
     ruleSignal: signal,
     constraints: {
       mode: 'dry-run analysis only',
@@ -666,7 +767,7 @@ function normalizeAiVerdict(raw) {
   };
 }
 
-async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst = {}) {
+async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst = {}, fearGreed = {}) {
   if (!config.cursor.enabled) {
     return {
       enabled: false,
@@ -698,7 +799,7 @@ async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalys
   }
 
   try {
-    const raw = await cursorRequest(buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst));
+    const raw = await cursorRequest(buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed));
     return normalizeCursorVerdict(raw);
   } catch (error) {
     return {
@@ -716,14 +817,14 @@ async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalys
   }
 }
 
-function buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst = {}) {
+function buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst = {}, fearGreed = {}) {
   return [
     'You are Cursor Analyst, an independent conservative reviewer for a crypto trading brain.',
     'Do not inspect or modify files. Use only the JSON payload in this prompt.',
     'AlgoVault MCP quant signals are pre-fetched in algoVaultAnalyst. You may also call get_trade_call via MCP if needed.',
     'Return only valid JSON with this schema:',
     '{"action":"BUY|SELL|HOLD|WAIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}',
-    'Prefer HOLD or WAIT when signal quality is weak, AI providers disagree, news risk is high, or edge is unclear.',
+    'Prefer HOLD or WAIT when signal quality is weak, AI providers disagree, news risk is high, Fear & Greed is extreme, or edge is unclear.',
     JSON.stringify({
       symbol: market.symbol,
       market: {
@@ -736,6 +837,7 @@ function buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst = {
         derivatives: market.derivatives || { available: false }
       },
       news: summarizeNewsForDecision(news),
+      fearGreed: summarizeFearGreedForDecision(fearGreed),
       ruleSignal: signal,
       deepSeekAnalyst: aiAnalyst,
       algoVaultAnalyst,
@@ -1180,7 +1282,7 @@ function normalizeAction(action) {
   return ['BUY', 'SELL', 'HOLD', 'WAIT'].includes(value) ? value : null;
 }
 
-function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}) {
+function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fearGreed = {}) {
   const i = market.indicators;
   let riskScore = 0;
   const blocks = [];
@@ -1245,6 +1347,18 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}) {
     if (Math.abs(derivatives.basisPct) > 0.5) {
       riskScore += 10;
       blocks.push('futures basis too stretched');
+    }
+  }
+
+  if (fearGreed.available) {
+    if (fearGreed.value >= 80 && signal.action === 'BUY') {
+      riskScore += 15;
+      blocks.push('extreme market greed');
+    } else if (fearGreed.value >= 75) {
+      riskScore += 8;
+    } else if (fearGreed.value <= 15) {
+      riskScore += 10;
+      blocks.push('extreme market fear');
     }
   }
 
@@ -1483,6 +1597,26 @@ function summarizeNewsForDecision(news) {
     sourceErrors: news.sourceErrors || {},
     error: news.error,
     top: (news.items || []).slice(0, 3)
+  };
+}
+
+function summarizeFearGreedForDecision(fearGreed = {}) {
+  if (!fearGreed || !fearGreed.available) {
+    return {
+      available: false,
+      enabled: fearGreed.enabled !== false,
+      error: fearGreed.error || fearGreed.reason || null
+    };
+  }
+
+  return {
+    available: true,
+    enabled: true,
+    value: fearGreed.value,
+    classification: fearGreed.classification,
+    score: fearGreed.score,
+    timestamp: fearGreed.timestamp,
+    source: fearGreed.source || 'alternative.me'
   };
 }
 
