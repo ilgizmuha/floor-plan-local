@@ -160,14 +160,17 @@ async function runBrainCycle() {
 async function collectMarkets() {
   const results = [];
   for (const symbol of config.symbols) {
-    const [tickerData, klineData] = await Promise.all([
+    const [tickerData, klineData, orderBookData, derivativesTickerData, openInterestData] = await Promise.all([
       bybitPublic('/v5/market/tickers', { category: config.category, symbol }),
       bybitPublic('/v5/market/kline', {
         category: config.category,
         symbol,
         interval: config.interval,
         limit: String(config.klineLimit)
-      })
+      }),
+      bybitPublicOrNull('/v5/market/orderbook', { category: config.category, symbol, limit: '50' }),
+      bybitPublicOrNull('/v5/market/tickers', { category: 'linear', symbol }),
+      bybitPublicOrNull('/v5/market/open-interest', { category: 'linear', symbol, intervalTime: '5min', limit: '2' })
     ]);
 
     const ticker = first(tickerData.result && tickerData.result.list);
@@ -220,6 +223,8 @@ async function collectMarkets() {
     const trendPct = percentChange(sma50, sma20);
     const volatilityPct = averageTrueRangePercent(candles.slice(-14));
     const volumeRatio = safeDivide(average(volumes.slice(-5)), average(volumes.slice(-30)));
+    const orderBook = summarizeOrderBook(orderBookData);
+    const derivatives = summarizeDerivatives(derivativesTickerData, openInterestData);
 
     results.push({
       symbol,
@@ -250,7 +255,9 @@ async function collectMarkets() {
         trendPct: round(trendPct, 3),
         volatilityPct: round(volatilityPct, 3),
         volumeRatio: round(volumeRatio, 3)
-      }
+      },
+      orderBook,
+      derivatives
     });
   }
   return results;
@@ -428,6 +435,57 @@ function analyzeMarket(market, news) {
     reasons.push('news sentiment negative');
   }
 
+  const orderBook = market.orderBook || {};
+  if (orderBook.available) {
+    if (orderBook.pressure === 'buy') {
+      score += 6;
+      reasons.push('order book buy pressure');
+    } else if (orderBook.pressure === 'sell') {
+      score -= 6;
+      reasons.push('order book sell pressure');
+    }
+
+    if (orderBook.imbalance > 0.3) {
+      score += 3;
+      reasons.push('strong bid-side depth');
+    } else if (orderBook.imbalance < -0.3) {
+      score -= 3;
+      reasons.push('strong ask-side depth');
+    }
+
+    if (orderBook.spreadPct > 0.12) {
+      score -= 4;
+      reasons.push('wide order book spread');
+    }
+  }
+
+  const derivatives = market.derivatives || {};
+  if (derivatives.available) {
+    if (derivatives.fundingRatePct > 0.03) {
+      score -= 5;
+      reasons.push('crowded long funding');
+    } else if (derivatives.fundingRatePct < -0.03) {
+      score += 4;
+      reasons.push('negative funding supports squeeze');
+    }
+
+    if (derivatives.basisPct > 0.15) {
+      score += 3;
+      reasons.push('futures premium over index');
+    } else if (derivatives.basisPct < -0.15) {
+      score -= 3;
+      reasons.push('futures discount to index');
+    }
+
+    if (derivatives.openInterestChangePct > 2 && i.momentumPct > 0) {
+      score += 4;
+      reasons.push('rising open interest with momentum');
+    } else if (derivatives.openInterestChangePct < -2 && i.momentumPct < 0) {
+      score -= 4;
+      reasons.push('falling open interest with weakness');
+    }
+  }
+
   const confidence = clamp(Math.round(50 + score), 0, 100);
   let action = 'HOLD';
   if (confidence >= config.minConfidence) {
@@ -502,7 +560,9 @@ function buildAiMessages(market, news, signal) {
       change24hPct: market.change24hPct,
       turnover24h: market.turnover24h,
       volume24h: market.volume24h,
-      indicators: market.indicators
+      indicators: market.indicators,
+      orderBook: market.orderBook || { available: false },
+      derivatives: market.derivatives || { available: false }
     },
     news: summarizeNewsForDecision(news),
     ruleSignal: signal,
@@ -654,7 +714,9 @@ function buildCursorPrompt(market, news, signal, aiAnalyst) {
         change24hPct: market.change24hPct,
         turnover24h: market.turnover24h,
         volume24h: market.volume24h,
-        indicators: market.indicators
+        indicators: market.indicators,
+        orderBook: market.orderBook || { available: false },
+        derivatives: market.derivatives || { available: false }
       },
       news: summarizeNewsForDecision(news),
       ruleSignal: signal,
@@ -890,6 +952,24 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}) {
     blocks.push('24h move outside safe range');
   }
 
+  const orderBook = market.orderBook || {};
+  if (orderBook.available && orderBook.spreadPct > 0.15) {
+    riskScore += 15;
+    blocks.push('order book spread too wide');
+  }
+
+  const derivatives = market.derivatives || {};
+  if (derivatives.available) {
+    if (Math.abs(derivatives.fundingRatePct) > 0.08) {
+      riskScore += 12;
+      blocks.push('extreme funding rate');
+    }
+    if (Math.abs(derivatives.basisPct) > 0.5) {
+      riskScore += 10;
+      blocks.push('futures basis too stretched');
+    }
+  }
+
   if (config.maxPositionUsd <= 0) {
     blocks.push('max position is zero');
   }
@@ -922,6 +1002,88 @@ async function bybitPublic(endpoint, query = {}) {
     throw error;
   }
   return data;
+}
+
+async function bybitPublicOrNull(endpoint, query = {}) {
+  try {
+    return await bybitPublic(endpoint, query);
+  } catch (error) {
+    return null;
+  }
+}
+
+function summarizeOrderBook(data) {
+  const result = data && data.result ? data.result : {};
+  const bids = Array.isArray(result.b) ? result.b.map(([price, size]) => ({ price: Number(price), size: Number(size) })).filter((level) => level.price && level.size) : [];
+  const asks = Array.isArray(result.a) ? result.a.map(([price, size]) => ({ price: Number(price), size: Number(size) })).filter((level) => level.price && level.size) : [];
+  if (!bids.length || !asks.length) {
+    return { available: false };
+  }
+
+  const bestBid = bids[0].price;
+  const bestAsk = asks[0].price;
+  const mid = (bestBid + bestAsk) / 2;
+  const bidDepthUsd = depthUsd(bids.slice(0, 20));
+  const askDepthUsd = depthUsd(asks.slice(0, 20));
+  const bidWall = largestWall(bids.slice(0, 20));
+  const askWall = largestWall(asks.slice(0, 20));
+  const imbalance = safeDivide(bidDepthUsd - askDepthUsd, bidDepthUsd + askDepthUsd);
+
+  return {
+    available: true,
+    bestBid,
+    bestAsk,
+    spreadPct: round(safeDivide(bestAsk - bestBid, mid) * 100, 5),
+    bidDepthUsd: round(bidDepthUsd, 2),
+    askDepthUsd: round(askDepthUsd, 2),
+    imbalance: round(imbalance, 4),
+    bidWall,
+    askWall,
+    pressure: imbalance > 0.15 ? 'buy' : (imbalance < -0.15 ? 'sell' : 'neutral')
+  };
+}
+
+function summarizeDerivatives(tickerData, openInterestData) {
+  const ticker = first(tickerData && tickerData.result && tickerData.result.list);
+  if (!ticker) {
+    return { available: false };
+  }
+
+  const markPrice = Number(ticker.markPrice || 0);
+  const indexPrice = Number(ticker.indexPrice || 0);
+  const openInterest = Number(ticker.openInterest || 0);
+  const openInterestValue = Number(ticker.openInterestValue || 0);
+  const fundingRatePct = Number(ticker.fundingRate || 0) * 100;
+  const openInterestList = openInterestData && openInterestData.result && openInterestData.result.list ? openInterestData.result.list : [];
+  const oiNow = Number(openInterestList[0] && openInterestList[0].openInterest || openInterest);
+  const oiPrev = Number(openInterestList[1] && openInterestList[1].openInterest || 0);
+
+  return {
+    available: true,
+    markPrice,
+    indexPrice,
+    basisPct: indexPrice ? round(percentChange(indexPrice, markPrice), 4) : 0,
+    fundingRatePct: round(fundingRatePct, 5),
+    openInterest: round(openInterest, 4),
+    openInterestValue: round(openInterestValue, 2),
+    openInterestChangePct: oiPrev ? round(percentChange(oiPrev, oiNow), 4) : 0
+  };
+}
+
+function depthUsd(levels) {
+  return levels.reduce((sum, level) => sum + (level.price * level.size), 0);
+}
+
+function largestWall(levels) {
+  const wall = levels.reduce((best, level) => {
+    const usd = level.price * level.size;
+    return usd > best.usd ? { price: level.price, size: level.size, usd } : best;
+  }, { price: 0, size: 0, usd: 0 });
+  return {
+    price: wall.price,
+    size: round(wall.size, 6),
+    usd: round(wall.usd, 2)
+  };
 }
 
 function parseRss(xml) {
@@ -1659,6 +1821,8 @@ Environment:
   CURSOR_ANALYST_ENABLED=false
   CURSOR_API_KEY=cursor_...
   CURSOR_ANALYST_MODEL=auto
+
+Market data also includes order book depth/imbalance and linear derivatives funding/OI.
 
 This brain is read-only and writes decisions to JSONL. It does not place orders.
 DeepSeek/OpenAI-compatible AI Analyst and Cursor Analyst are optional and never bypass the risk manager.

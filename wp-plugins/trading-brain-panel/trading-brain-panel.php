@@ -184,6 +184,8 @@ final class Trading_Brain_Panel {
 						const risk = item.risk || {};
 						const market = item.market || {};
 						const indicators = market.indicators || {};
+						const orderBook = market.orderBook || {};
+						const derivatives = market.derivatives || {};
 						return '<div class="tbp-signal tbp-signal-' + escapeHtml(action.toLowerCase()) + '">' +
 							'<h3>' + escapeHtml(item.symbol) + ' - ' + escapeHtml(action) + '</h3>' +
 							'<p><strong>Consensus:</strong> ' + escapeHtml(consensus.source || 'rules') + ' | <strong>Confidence:</strong> ' + escapeHtml(consensus.confidence) + ' | <strong>Risk:</strong> ' + escapeHtml(risk.riskScore) + '</p>' +
@@ -191,6 +193,9 @@ final class Trading_Brain_Panel {
 							'<p><strong>RSI:</strong> ' + escapeHtml(indicators.rsi14) + ' | <strong>SMA20/SMA50:</strong> ' + escapeHtml(indicators.sma20) + ' / ' + escapeHtml(indicators.sma50) + '</p>' +
 							'<p><strong>MACD:</strong> ' + escapeHtml(indicators.macdLine) + ' / ' + escapeHtml(indicators.macdSignal) + ' | <strong>Hist:</strong> ' + escapeHtml(indicators.macdHistogram) + ' (' + escapeHtml(indicators.macdHistogramDelta) + ')</p>' +
 							'<p><strong>Bollinger:</strong> pos ' + escapeHtml(indicators.bollingerPosition) + ', width ' + escapeHtml(indicators.bollingerWidthPct) + '% | <strong>S/R:</strong> ' + escapeHtml(indicators.support) + ' / ' + escapeHtml(indicators.resistance) + '</p>' +
+							(orderBook.available ? '<p><strong>Order book:</strong> spread ' + escapeHtml(orderBook.spreadPct) + '%, imbalance ' + escapeHtml(orderBook.imbalance) + ', pressure ' + escapeHtml(orderBook.pressure) + ' | depth bid/ask ' + escapeHtml(orderBook.bidDepthUsd) + ' / ' + escapeHtml(orderBook.askDepthUsd) + '</p>' +
+							'<p class="tbp-muted"><strong>Walls:</strong> bid ' + escapeHtml(orderBook.bidWall && orderBook.bidWall.price) + ' (' + escapeHtml(orderBook.bidWall && orderBook.bidWall.usd) + ' USD) | ask ' + escapeHtml(orderBook.askWall && orderBook.askWall.price) + ' (' + escapeHtml(orderBook.askWall && orderBook.askWall.usd) + ' USD)</p>' : '<p class="tbp-muted"><strong>Order book:</strong> unavailable</p>') +
+							(derivatives.available ? '<p><strong>Derivatives:</strong> funding ' + escapeHtml(derivatives.fundingRatePct) + '%, OI change ' + escapeHtml(derivatives.openInterestChangePct) + '%, basis ' + escapeHtml(derivatives.basisPct) + '% | OI value ' + escapeHtml(derivatives.openInterestValue) + '</p>' : '<p class="tbp-muted"><strong>Derivatives:</strong> unavailable</p>') +
 							'<p><strong>DeepSeek Analyst:</strong> ' + escapeHtml(ai.status || 'unknown') + ' ' + escapeHtml(ai.model || '') + (ai.action ? ' → ' + escapeHtml(ai.action) + ' / ' + escapeHtml(ai.confidence) : '') + '</p>' +
 							(ai.reasoning ? '<p class="tbp-muted"><strong>AI:</strong> ' + escapeHtml(ai.reasoning) + '</p>' : '') +
 							'<p><strong>Cursor Analyst:</strong> ' + escapeHtml(cursor.status || 'unknown') + ' ' + escapeHtml(cursor.model || '') + (cursor.action ? ' → ' + escapeHtml(cursor.action) + ' / ' + escapeHtml(cursor.confidence) : '') + '</p>' +
