@@ -70,7 +70,7 @@ const config = {
     maxPositionUsd: numberEnv('PAPER_MAX_POSITION_USD', 20),
     minConfidence: numberEnv('PAPER_MIN_CONFIDENCE', 70),
     feeRate: numberEnv('PAPER_FEE_RATE', 0.001),
-    symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT')),
+    symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT')),
     requireDeepSeekOk: env('PAPER_REQUIRE_DEEPSEEK_OK', 'true') === 'true',
     requireCursorOk: env('PAPER_REQUIRE_CURSOR_OK', 'true') === 'true'
   },
