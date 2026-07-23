@@ -221,32 +221,43 @@ async function collectMarkets() {
 
 async function collectNews() {
   const allItems = [];
+  const sourceErrors = {};
   const cutoff = Date.now() - config.newsLookbackHours * 60 * 60 * 1000;
 
   for (const source of config.newsSources) {
-    const response = await fetch(source, { headers: { 'User-Agent': 'TradingBrain/1.0' } });
-    if (!response.ok) {
-      continue;
+    try {
+      const response = await fetch(source, { headers: { 'User-Agent': 'TradingBrain/1.0' } });
+      if (!response.ok) {
+        sourceErrors[sourceLabel(source)] = `HTTP ${response.status}`;
+        continue;
+      }
+      const xml = await response.text();
+      const items = parseRss(xml)
+        .filter((item) => !item.timestamp || item.timestamp >= cutoff)
+        .slice(0, 20)
+        .map((item) => ({ ...item, source }));
+      allItems.push(...items);
+    } catch (error) {
+      sourceErrors[sourceLabel(source)] = error.message;
     }
-    const xml = await response.text();
-    const items = parseRss(xml)
-      .filter((item) => !item.timestamp || item.timestamp >= cutoff)
-      .slice(0, 20)
-      .map((item) => ({ ...item, source }));
-    allItems.push(...items);
   }
 
   for (const source of config.htmlNewsSources) {
-    const response = await fetch(source, { headers: { 'User-Agent': 'TradingBrain/1.0' } });
-    if (!response.ok) {
-      continue;
+    try {
+      const response = await fetch(source, { headers: { 'User-Agent': 'TradingBrain/1.0' } });
+      if (!response.ok) {
+        sourceErrors[sourceLabel(source)] = `HTTP ${response.status}`;
+        continue;
+      }
+      const html = await response.text();
+      const items = parseHtmlNews(html, source)
+        .filter((item) => !item.timestamp || item.timestamp >= cutoff)
+        .slice(0, 20)
+        .map((item) => ({ ...item, source, sourceLabel: sourceLabel(source) }));
+      allItems.push(...items);
+    } catch (error) {
+      sourceErrors[sourceLabel(source)] = error.message;
     }
-    const html = await response.text();
-    const items = parseHtmlNews(html, source)
-      .filter((item) => !item.timestamp || item.timestamp >= cutoff)
-      .slice(0, 20)
-      .map((item) => ({ ...item, source, sourceLabel: sourceLabel(source) }));
-    allItems.push(...items);
   }
 
   const scored = allItems.map((item) => ({
@@ -264,6 +275,7 @@ async function collectNews() {
     sourceCount: config.newsSources.length,
     itemCount: scored.length,
     sourceCounts,
+    sourceErrors,
     score,
     items: scored
       .sort((a, b) => Math.abs(b.sentiment.score) - Math.abs(a.sentiment.score))
@@ -946,6 +958,7 @@ function summarizeNewsForDecision(news) {
     score: news.score || 0,
     itemCount: news.itemCount || 0,
     sourceCounts: news.sourceCounts || {},
+    sourceErrors: news.sourceErrors || {},
     error: news.error,
     top: (news.items || []).slice(0, 3)
   };
