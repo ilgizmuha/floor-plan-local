@@ -68,6 +68,11 @@ final class Trading_Brain_Panel {
 					<div id="tbp-paper">loading...</div>
 				</div>
 
+				<div class="tbp-card">
+					<h2>Finam</h2>
+					<div id="tbp-finam">loading...</div>
+				</div>
+
 				<div class="tbp-card tbp-wide">
 					<h2>Новости и причины</h2>
 					<div id="tbp-news">loading...</div>
@@ -191,7 +196,7 @@ final class Trading_Brain_Panel {
 						const orderBook = market.orderBook || {};
 						const derivatives = market.derivatives || {};
 						return '<div class="tbp-signal tbp-signal-' + escapeHtml(action.toLowerCase()) + '">' +
-							'<h3>' + escapeHtml(item.symbol) + (market.assetClass ? ' <span class="tbp-muted">(' + escapeHtml(market.assetClass) + (market.category ? '/' + escapeHtml(market.category) : '') + ')</span>' : '') + ' - ' + escapeHtml(action) + '</h3>' +
+							'<h3>' + escapeHtml(item.symbol) + (market.assetClass ? ' <span class="tbp-muted">(' + escapeHtml(market.assetClass) + (market.provider ? '/' + escapeHtml(market.provider) : (market.category ? '/' + escapeHtml(market.category) : '')) + ')</span>' : '') + ' - ' + escapeHtml(action) + '</h3>' +
 							'<p><strong>Consensus:</strong> ' + escapeHtml(consensus.source || 'rules') + ' | <strong>Confidence:</strong> ' + escapeHtml(consensus.confidence) + ' | <strong>Risk:</strong> ' + escapeHtml(risk.riskScore) + (risk.effectiveMinConfidence ? ' | <strong>Min conf:</strong> ' + escapeHtml(risk.effectiveMinConfidence) : '') + '</p>' +
 							(regime.regime ? '<p><strong>Regime:</strong> ' + escapeHtml(regime.regime) + ' / ' + escapeHtml(regime.preferredStrategy || '') + ' | ADX ' + escapeHtml(regime.adx ?? indicators.adx14 ?? '') + ' | ' + escapeHtml((regime.reasons || []).join(', ')) + '</p>' : '') +
 							(Object.keys(components).length ? '<p><strong>Ensemble:</strong> ' + escapeHtml(Object.keys(components).map((name) => name + ' ' + escapeHtml((components[name] && components[name].weightedScore) ?? 0)).join(' | ')) + '</p>' : '') +
@@ -251,6 +256,22 @@ final class Trading_Brain_Panel {
 							const pos = positions[symbol] || {};
 							return '<li>' + escapeHtml(symbol) + ': qty ' + escapeHtml(pos.qty) + ', entry ' + escapeHtml(pos.entryPrice) + ', uPnL ' + escapeHtml(pos.unrealizedPnlUsd) + '</li>';
 						}).join('') + '</ul>' : '<p class="tbp-muted">Открытых paper-позиций нет.</p>');
+
+					const finam = data.finam || latest.finam || {};
+					const finamAccounts = finam.accounts || [];
+					document.getElementById('tbp-finam').innerHTML =
+						'<p><strong>Enabled:</strong> ' + escapeHtml(finam.enabled ?? false) + (finam.error ? ' | <strong>Error:</strong> ' + escapeHtml(finam.error) : '') + '</p>' +
+						(finamAccounts.length ? finamAccounts.map((acc) => {
+							const cash = (acc.cash || []).map((c) => escapeHtml(c.amount) + ' ' + escapeHtml(c.currency)).join(', ');
+							const positions = acc.positions || [];
+							return '<div class="tbp-signal">' +
+								'<p><strong>' + escapeHtml(acc.tradeCode || acc.accountId) + '</strong> <span class="tbp-muted">(' + escapeHtml(acc.accountId) + ')</span> — ' + escapeHtml(acc.status || acc.error || '') + '</p>' +
+								'<p>Equity: ' + escapeHtml(acc.equity ?? '—') + ' | Cash: ' + (cash || '—') + ' | uPnL: ' + escapeHtml(acc.unrealizedProfit ?? 0) + '</p>' +
+								(positions.length ? '<ul>' + positions.map((pos) =>
+									'<li>' + escapeHtml(pos.symbol) + ': qty ' + escapeHtml(pos.qty) + ', avg ' + escapeHtml(pos.averagePrice) + ', now ' + escapeHtml(pos.currentPrice) + ', uPnL ' + escapeHtml(pos.unrealizedPnl) + '</li>'
+								).join('') + '</ul>' : '<p class="tbp-muted">Позиций нет.</p>') +
+							'</div>';
+						}).join('') : '<p class="tbp-muted">Нет данных по счетам Finam.</p>');
 
 					const quality = data.quality || latest.quality || {};
 					const qualitySymbols = quality.symbols || {};

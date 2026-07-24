@@ -2,6 +2,14 @@
 
 const fs = require('fs');
 const path = require('path');
+const {
+  FinamClient,
+  num: finamNum,
+  finamAssetClass,
+  summarizeFinamOrderBook,
+  barsToCandles,
+  summarizeAccount
+} = require('./finam-client');
 
 const ENV_PATHS = [
   path.join(process.cwd(), '.env'),
@@ -112,6 +120,27 @@ const config = {
     goodHitRatePct: numberEnv('QUALITY_FEEDBACK_GOOD_HIT_RATE', 55),
     confidencePenalty: numberEnv('QUALITY_FEEDBACK_CONFIDENCE_PENALTY', 8),
     confidenceBonus: numberEnv('QUALITY_FEEDBACK_CONFIDENCE_BONUS', 3)
+  },
+  finam: {
+    enabled: env('FINAM_ENABLED', 'false') === 'true',
+    baseUrl: env('FINAM_BASE_URL', 'https://api.finam.ru').replace(/\/+$/, ''),
+    secret: env('FINAM_SECRET_TOKEN', ''),
+    // API numeric account ids (from token details). Trade codes are labels only.
+    accountIds: splitList(env('FINAM_ACCOUNT_IDS', '1748987,2076665')),
+    tradeCodes: splitList(env('FINAM_TRADE_CODES', '791750REXQ4,791750RM43P')),
+    accountMap: {
+      '1748987': env('FINAM_ACCOUNT_1748987_CODE', '791750REXQ4'),
+      '2076665': env('FINAM_ACCOUNT_2076665_CODE', '791750RM43P')
+    },
+    // Long/swing symbols only (fee gate blocks scalp for stock/forex/metal).
+    symbols: splitList(env(
+      'FINAM_SYMBOLS',
+      'SBER@MISX,GAZP@MISX,LKOH@MISX,ROSN@MISX,USD000UTSTOM@MISX,CNYRUB_TOM@MISX,GLDRUB_TOM@MISX,AAPL@XNGS,TSLA@XNGS'
+    )),
+    timeframe: env('FINAM_TIMEFRAME', 'TIME_FRAME_M15'),
+    barLookbackHours: numberEnv('FINAM_BAR_LOOKBACK_HOURS', 48),
+    timeoutMs: numberEnv('FINAM_TIMEOUT_MS', 20000),
+    aiEnabled: env('FINAM_AI_ENABLED', 'false') === 'true'
   }
 };
 
@@ -141,6 +170,12 @@ async function main() {
     return;
   }
 
+  if (command === 'finam') {
+    const report = await finamStatusReport();
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
   if (command === 'loop') {
     console.log(`Trading brain loop started. interval=${config.loopIntervalSeconds}s dryRun=${config.dryRun}`);
     while (true) {
@@ -161,8 +196,12 @@ async function runBrainCycle() {
   ensureDir(config.dataDir);
   const priorQuality = readJsonFile(path.join(config.dataDir, 'quality.json')) || { symbols: {} };
   const qualityFeedback = buildQualityFeedback(priorQuality);
-  const [markets, news, fearGreed] = await Promise.all([
+  const [marketsBybit, marketsFinam, news, fearGreed, finamAccounts] = await Promise.all([
     collectMarkets(),
+    collectFinamMarkets().catch((error) => {
+      console.error(new Date().toISOString(), 'Finam markets error:', error.message);
+      return [];
+    }),
     collectNews().catch((error) => ({
       sourceCount: 0,
       items: [],
@@ -172,19 +211,52 @@ async function runBrainCycle() {
     collectFearGreed().catch((error) => ({
       available: false,
       error: error.message
+    })),
+    collectFinamAccounts().catch((error) => ({
+      enabled: config.finam.enabled,
+      error: error.message,
+      accounts: []
     }))
   ]);
+  const markets = [...marketsBybit, ...marketsFinam];
 
   const decisions = await Promise.all(markets.map(async (market) => {
     const regime = detectMarketRegime(market);
     let signal = analyzeMarket(market, news, fearGreed, qualityFeedback);
     signal = applyRegimeToSignal(signal, regime, market);
     signal.regime = regime;
+    const skipAi = market.provider === 'finam' && !config.finam.aiEnabled;
     const [aiAnalyst, algoVaultAnalyst] = await Promise.all([
-      runAiAnalyst(market, news, signal, fearGreed),
+      skipAi
+        ? Promise.resolve({
+          enabled: false,
+          status: 'skipped',
+          provider: 'finam',
+          model: null,
+          action: null,
+          confidence: 0,
+          riskLevel: 'unknown',
+          veto: false,
+          reasoning: 'AI skipped for Finam (set FINAM_AI_ENABLED=true to enable)',
+          factors: []
+        })
+        : runAiAnalyst(market, news, signal, fearGreed),
       runAlgoVaultAnalyst(market)
     ]);
-    const cursorAnalyst = await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed);
+    const cursorAnalyst = skipAi
+      ? {
+        enabled: false,
+        status: 'skipped',
+        provider: 'cursor',
+        model: null,
+        action: null,
+        confidence: 0,
+        riskLevel: 'unknown',
+        veto: false,
+        reasoning: 'Cursor skipped for Finam (set FINAM_AI_ENABLED=true to enable)',
+        factors: []
+      }
+      : await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed);
     const consensus = applyRegimeToConsensus(
       applyAlgoVaultConsensus(
         combineSignals(signal, aiAnalyst, cursorAnalyst),
@@ -222,7 +294,8 @@ async function runBrainCycle() {
     dryRun: config.dryRun,
     decisions,
     paper,
-    quality
+    quality,
+    finam: finamAccounts
   });
 
   return {
@@ -231,7 +304,8 @@ async function runBrainCycle() {
     summary: decisions.map((item) => `${item.symbol}:${item.finalAction}:${item.consensus.confidence}`).join(' '),
     decisions,
     paper,
-    quality
+    quality,
+    finam: finamAccounts
   };
 }
 
@@ -1615,6 +1689,23 @@ async function runAlgoVaultAnalyst(market) {
     };
   }
 
+  if (market.provider === 'finam' || String(market.symbol || '').includes('@')) {
+    return {
+      enabled: true,
+      status: 'skipped',
+      provider: 'algovault',
+      model: 'crypto-quant-signal-mcp',
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: false,
+      reasoning: 'AlgoVault skipped for Finam / non-crypto symbols',
+      factors: [],
+      regime: null,
+      indicators: null
+    };
+  }
+
   try {
     const coin = symbolToCoin(market.symbol);
     const timeframe = intervalToTimeframe(config.interval);
@@ -1827,6 +1918,9 @@ function marketCategory(symbol) {
 }
 
 function marketAssetClass(symbol) {
+  if (String(symbol || '').includes('@')) {
+    return finamAssetClass(symbol);
+  }
   if (/^(XAU|XAG|PAXG)/.test(symbol)) {
     return 'metal';
   }
@@ -1843,6 +1937,225 @@ function marketAssetClass(symbol) {
     return 'crypto';
   }
   return 'other';
+}
+
+function getFinamClient() {
+  if (!config.finam.enabled) {
+    return null;
+  }
+  if (!config.finam.secret) {
+    throw new Error('FINAM_ENABLED=true but FINAM_SECRET_TOKEN is empty');
+  }
+  return new FinamClient({
+    baseUrl: config.finam.baseUrl,
+    secret: config.finam.secret,
+    timeoutMs: config.finam.timeoutMs
+  });
+}
+
+async function finamStatusReport() {
+  const secret = config.finam.secret || process.env.FINAM_SECRET_TOKEN;
+  if (!secret) {
+    return { enabled: false, error: 'Finam not configured' };
+  }
+  const client = new FinamClient({
+    baseUrl: config.finam.baseUrl,
+    secret,
+    timeoutMs: config.finam.timeoutMs
+  });
+  const details = await client.tokenDetails();
+  const accounts = [];
+  for (const accountId of (details.account_ids || config.finam.accountIds)) {
+    try {
+      const raw = await client.getAccount(accountId);
+      const summary = summarizeAccount(raw);
+      summary.tradeCode = config.finam.accountMap[accountId] || null;
+      accounts.push(summary);
+    } catch (error) {
+      accounts.push({ accountId, error: error.message });
+    }
+  }
+  return {
+    enabled: true,
+    expiresAt: details.expires_at,
+    accountIds: details.account_ids || [],
+    tradeCodes: config.finam.tradeCodes,
+    readonly: details.readonly,
+    accounts
+  };
+}
+
+async function collectFinamAccounts() {
+  if (!config.finam.enabled) {
+    return { enabled: false, accounts: [] };
+  }
+  const client = getFinamClient();
+  const accounts = [];
+  for (const accountId of config.finam.accountIds) {
+    try {
+      const raw = await client.getAccount(accountId);
+      const summary = summarizeAccount(raw);
+      summary.tradeCode = config.finam.accountMap[accountId] || null;
+      accounts.push(summary);
+    } catch (error) {
+      accounts.push({
+        accountId,
+        tradeCode: config.finam.accountMap[accountId] || null,
+        error: error.message
+      });
+    }
+  }
+  return {
+    enabled: true,
+    updatedAt: new Date().toISOString(),
+    accounts
+  };
+}
+
+async function collectFinamMarkets() {
+  if (!config.finam.enabled || !config.finam.symbols.length) {
+    return [];
+  }
+  const client = getFinamClient();
+  const end = new Date();
+  const start = new Date(end.getTime() - config.finam.barLookbackHours * 3600 * 1000);
+  const startTime = start.toISOString();
+  const endTime = end.toISOString();
+  const results = [];
+
+  for (const symbol of config.finam.symbols) {
+    try {
+      const [quotePayload, barsPayload, orderBookPayload] = await Promise.all([
+        client.lastQuote(symbol),
+        client.bars(symbol, {
+          timeframe: config.finam.timeframe,
+          startTime,
+          endTime
+        }),
+        client.orderBook(symbol).catch(() => null)
+      ]);
+      const candles = barsToCandles(barsPayload);
+      if (candles.length < 30) {
+        console.error(new Date().toISOString(), `Finam ${symbol}: not enough bars (${candles.length})`);
+        continue;
+      }
+      const quote = quotePayload.quote || quotePayload;
+      const lastPrice = finamNum(quote.last) || candles[candles.length - 1].close;
+      const firstClose = candles[Math.max(0, candles.length - 96)].close;
+      const change24hPct = percentChange(firstClose, lastPrice);
+      const orderBook = orderBookPayload
+        ? summarizeFinamOrderBook(orderBookPayload)
+        : { available: false };
+      const market = assembleMarketFromCandles({
+        symbol,
+        provider: 'finam',
+        category: 'finam',
+        assetClass: finamAssetClass(symbol),
+        lastPrice,
+        change24hPct,
+        turnover24h: 0,
+        volume24h: candles.slice(-20).reduce((sum, candle) => sum + (candle.volume || 0), 0),
+        candles,
+        orderBook,
+        derivatives: { available: false },
+        scalpCandles: null
+      });
+      market.finam = {
+        bid: finamNum(quote.bid),
+        ask: finamNum(quote.ask),
+        quoteTimestamp: quote.timestamp || null
+      };
+      results.push(market);
+    } catch (error) {
+      console.error(new Date().toISOString(), `Finam ${symbol}:`, error.message);
+    }
+  }
+  return results;
+}
+
+function assembleMarketFromCandles({
+  symbol,
+  provider,
+  category,
+  assetClass,
+  lastPrice,
+  change24hPct,
+  turnover24h,
+  volume24h,
+  candles,
+  orderBook,
+  derivatives,
+  scalpCandles
+}) {
+  const closes = candles.map((candle) => candle.close);
+  const volumes = candles.map((candle) => candle.volume);
+  const last = closes[closes.length - 1];
+  const previous = closes[closes.length - 2];
+  const sma20 = average(closes.slice(-20));
+  const sma50 = average(closes.slice(-50));
+  const ema12Values = emaSeries(closes, 12);
+  const ema26Values = emaSeries(closes, 26);
+  const ema12 = ema12Values[ema12Values.length - 1];
+  const ema26 = ema26Values[ema26Values.length - 1];
+  const macdValues = ema12Values.map((value, index) => value - ema26Values[index]);
+  const macdSignalValues = emaSeries(macdValues, 9);
+  const macdLine = macdValues[macdValues.length - 1];
+  const macdSignal = macdSignalValues[macdSignalValues.length - 1];
+  const macdHistogram = macdLine - macdSignal;
+  const previousMacdHistogram = macdValues[macdValues.length - 2] - macdSignalValues[macdSignalValues.length - 2];
+  const bollingerStdDev = standardDeviation(closes.slice(-20));
+  const bollingerUpper = sma20 + (2 * bollingerStdDev);
+  const bollingerLower = sma20 - (2 * bollingerStdDev);
+  const bollingerWidthPct = safeDivide(bollingerUpper - bollingerLower, sma20) * 100;
+  const bollingerPosition = safeDivide(last - bollingerLower, bollingerUpper - bollingerLower);
+  const priorWindow = candles.slice(-51, -1);
+  const support = Math.min(...priorWindow.map((candle) => candle.low));
+  const resistance = Math.max(...priorWindow.map((candle) => candle.high));
+  const rsi14 = rsi(closes, 14);
+  const momentumPct = percentChange(previous, last);
+  const trendPct = percentChange(sma50, sma20);
+  const volatilityPct = averageTrueRangePercent(candles.slice(-14));
+  const adx14 = adx(candles, 14);
+  const volumeRatio = safeDivide(average(volumes.slice(-5)), average(volumes.slice(-30)));
+
+  return {
+    symbol,
+    provider: provider || 'bybit',
+    category,
+    assetClass,
+    lastPrice: Number(lastPrice || last),
+    change24hPct: Number(change24hPct || 0),
+    turnover24h: Number(turnover24h || 0),
+    volume24h: Number(volume24h || 0),
+    indicators: {
+      sma20: round(sma20, 4),
+      sma50: round(sma50, 4),
+      ema12: round(ema12, 4),
+      ema26: round(ema26, 4),
+      macdLine: round(macdLine, 4),
+      macdSignal: round(macdSignal, 4),
+      macdHistogram: round(macdHistogram, 4),
+      macdHistogramDelta: round(macdHistogram - previousMacdHistogram, 4),
+      bollingerUpper: round(bollingerUpper, 4),
+      bollingerMiddle: round(sma20, 4),
+      bollingerLower: round(bollingerLower, 4),
+      bollingerWidthPct: round(bollingerWidthPct, 3),
+      bollingerPosition: round(bollingerPosition, 3),
+      support: round(support, 4),
+      resistance: round(resistance, 4),
+      distanceToSupportPct: round(percentChange(support, last), 3),
+      distanceToResistancePct: round(percentChange(last, resistance), 3),
+      rsi14: round(rsi14, 2),
+      momentumPct: round(momentumPct, 3),
+      trendPct: round(trendPct, 3),
+      volatilityPct: round(volatilityPct, 3),
+      adx14: round(adx14, 2),
+      volumeRatio: round(volumeRatio, 3)
+    },
+    orderBook: orderBook || { available: false },
+    derivatives: derivatives || { available: false },
+    scalpIndicators: buildScalpIndicators(scalpCandles || [])
+  };
 }
 
 function intervalToTimeframe(interval) {

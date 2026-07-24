@@ -63,6 +63,8 @@
 
 **База знаний скальпинга** (`scripts/knowledge/scalping-kb.json`): Боровков (микроструктура/дисциплина), CScalp (стакан/стены), Ширяев (Pivot Points), Young/Benner (ожидание сетапа) + Murphy/Solabuto. Правила применяются в `analyzeScalpStrategy`.
 
+**Finam Trade API** (`FINAM_*`): котировки и счета МосБиржи / NASDAQ через `api.finam.ru`. Символы `TICKER@MIC` (SBER@MISX, AAPL@XNGS, USD000UTSTOM@MISX). Скальп по fee gate запрещён — только свинг/long. Ордера не выставляются (dry-run). Команда: `node trading-brain.js finam`.
+
 **Fee gate** (`scripts/knowledge/fee-policy.json`): короткие сделки (scalp) только по `BTC/ETH/SOL`. Металлы, нефть, акции, forex-прокси — **только длинный/свинг** горизонт: комиссия на круг съедает микро-прибыль.
 
 Опциональные AI-аналитики подключаются через DeepSeek/OpenAI-compatible API (`AI_ANALYST_*`) и Cursor SDK (`CURSOR_ANALYST_*`). Сейчас VPS настроен на DeepSeek (`AI_ANALYST_BASE_URL=https://api.deepseek.com`, `AI_ANALYST_MODEL=deepseek-chat`). Для Cursor Analyst нужен `CURSOR_API_KEY` из Cursor Dashboard. Базовые правила дают первый сигнал, DeepSeek и Cursor подтверждают/отклоняют его, затем risk manager принимает финальное разрешение.
