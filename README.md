@@ -63,7 +63,7 @@
 
 **База знаний скальпинга** (`scripts/knowledge/scalping-kb.json`): Боровков (микроструктура/дисциплина), CScalp (стакан/стены), Ширяев (Pivot Points), Young/Benner (ожидание сетапа) + Murphy/Solabuto. Правила применяются в `analyzeScalpStrategy`.
 
-**Finam Trade API** (`FINAM_*`): котировки и счета МосБиржи / NASDAQ через `api.finam.ru`. Символы `TICKER@MIC` (SBER@MISX, AAPL@XNGS, USD000UTSTOM@MISX). Скальп по fee gate запрещён — только свинг/long. Ордера не выставляются (dry-run). Команда: `node trading-brain.js finam`.
+**Finam Trade API** (`FINAM_*`): котировки и счета МосБиржи / NASDAQ через `api.finam.ru`. Символы `TICKER@MIC` (SBER@MISX, AAPL@XNGS, USD000UTSTOM@MISX). Счета: `791750REXQ4` — длинные/свинг, `791750RM43P` — дневной тариф/intraday. Скальп по fee gate запрещён на акциях/металлах/FX-споте — только свинг/long на REXQ4. Ордера не выставляются (dry-run). Команда: `node trading-brain.js finam`.
 
 **Fee gate** (`scripts/knowledge/fee-policy.json`): короткие сделки (scalp) только по `BTC/ETH/SOL`. Металлы, нефть, акции, forex-прокси — **только длинный/свинг** горизонт: комиссия на круг съедает микро-прибыль.
 

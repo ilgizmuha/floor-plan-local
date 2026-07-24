@@ -132,11 +132,30 @@ const config = {
       '1748987': env('FINAM_ACCOUNT_1748987_CODE', '791750REXQ4'),
       '2076665': env('FINAM_ACCOUNT_2076665_CODE', '791750RM43P')
     },
-    // Long/swing symbols only (fee gate blocks scalp for stock/forex/metal).
+    // 791750REXQ4 — длинные/свинг; 791750RM43P — дневной тариф (intraday).
+    accountRoles: {
+      '1748987': {
+        tradeCode: env('FINAM_ACCOUNT_1748987_CODE', '791750REXQ4'),
+        role: env('FINAM_ACCOUNT_1748987_ROLE', 'long'),
+        label: env('FINAM_ACCOUNT_1748987_LABEL', 'Длинные / свинг'),
+        tariff: env('FINAM_ACCOUNT_1748987_TARIFF', 'long')
+      },
+      '2076665': {
+        tradeCode: env('FINAM_ACCOUNT_2076665_CODE', '791750RM43P'),
+        role: env('FINAM_ACCOUNT_2076665_ROLE', 'day'),
+        label: env('FINAM_ACCOUNT_2076665_LABEL', 'Дневной тариф / intraday'),
+        tariff: env('FINAM_ACCOUNT_2076665_TARIFF', 'daily')
+      }
+    },
+    longAccountId: env('FINAM_LONG_ACCOUNT_ID', '1748987'),
+    dayAccountId: env('FINAM_DAY_ACCOUNT_ID', '2076665'),
+    // Long/swing symbols route to long account (fee gate blocks scalp).
     symbols: splitList(env(
       'FINAM_SYMBOLS',
       'SBER@MISX,GAZP@MISX,LKOH@MISX,ROSN@MISX,USD000UTSTOM@MISX,CNYRUB_TOM@MISX,GLDRUB_TOM@MISX,AAPL@XNGS,TSLA@XNGS'
     )),
+    // Day-tariff symbols (futures / FX maker-friendly) — empty until short-trade list is ready.
+    daySymbols: splitList(env('FINAM_DAY_SYMBOLS', '')),
     timeframe: env('FINAM_TIMEFRAME', 'TIME_FRAME_M15'),
     barLookbackHours: numberEnv('FINAM_BAR_LOOKBACK_HOURS', 48),
     timeoutMs: numberEnv('FINAM_TIMEOUT_MS', 20000),
@@ -1953,6 +1972,40 @@ function getFinamClient() {
   });
 }
 
+function enrichFinamAccount(summary, accountId) {
+  const role = config.finam.accountRoles[accountId] || {};
+  summary.accountId = summary.accountId || accountId;
+  summary.tradeCode = role.tradeCode || config.finam.accountMap[accountId] || summary.tradeCode || null;
+  summary.role = role.role || 'unknown';
+  summary.roleLabel = role.label || summary.role;
+  summary.tariff = role.tariff || null;
+  summary.horizon = role.role === 'day' ? 'intraday' : 'long';
+  return summary;
+}
+
+function resolveFinamAccountForSymbol(symbol) {
+  if (config.finam.daySymbols.includes(symbol)) {
+    const accountId = config.finam.dayAccountId;
+    const role = config.finam.accountRoles[accountId] || {};
+    return {
+      accountId,
+      tradeCode: role.tradeCode || config.finam.accountMap[accountId],
+      role: role.role || 'day',
+      roleLabel: role.label || 'Дневной тариф / intraday',
+      horizon: 'intraday'
+    };
+  }
+  const accountId = config.finam.longAccountId;
+  const role = config.finam.accountRoles[accountId] || {};
+  return {
+    accountId,
+    tradeCode: role.tradeCode || config.finam.accountMap[accountId],
+    role: role.role || 'long',
+    roleLabel: role.label || 'Длинные / свинг',
+    horizon: 'long'
+  };
+}
+
 async function finamStatusReport() {
   const secret = config.finam.secret || process.env.FINAM_SECRET_TOKEN;
   if (!secret) {
@@ -1968,11 +2021,9 @@ async function finamStatusReport() {
   for (const accountId of (details.account_ids || config.finam.accountIds)) {
     try {
       const raw = await client.getAccount(accountId);
-      const summary = summarizeAccount(raw);
-      summary.tradeCode = config.finam.accountMap[accountId] || null;
-      accounts.push(summary);
+      accounts.push(enrichFinamAccount(summarizeAccount(raw), accountId));
     } catch (error) {
-      accounts.push({ accountId, error: error.message });
+      accounts.push(enrichFinamAccount({ accountId, error: error.message }, accountId));
     }
   }
   return {
@@ -1980,6 +2031,16 @@ async function finamStatusReport() {
     expiresAt: details.expires_at,
     accountIds: details.account_ids || [],
     tradeCodes: config.finam.tradeCodes,
+    roles: {
+      long: resolveFinamAccountForSymbol('__long__'),
+      day: {
+        accountId: config.finam.dayAccountId,
+        tradeCode: (config.finam.accountRoles[config.finam.dayAccountId] || {}).tradeCode,
+        role: 'day',
+        roleLabel: (config.finam.accountRoles[config.finam.dayAccountId] || {}).label,
+        horizon: 'intraday'
+      }
+    },
     readonly: details.readonly,
     accounts
   };
@@ -1994,26 +2055,39 @@ async function collectFinamAccounts() {
   for (const accountId of config.finam.accountIds) {
     try {
       const raw = await client.getAccount(accountId);
-      const summary = summarizeAccount(raw);
-      summary.tradeCode = config.finam.accountMap[accountId] || null;
-      accounts.push(summary);
+      accounts.push(enrichFinamAccount(summarizeAccount(raw), accountId));
     } catch (error) {
-      accounts.push({
+      accounts.push(enrichFinamAccount({
         accountId,
-        tradeCode: config.finam.accountMap[accountId] || null,
         error: error.message
-      });
+      }, accountId));
     }
   }
   return {
     enabled: true,
     updatedAt: new Date().toISOString(),
+    roles: {
+      long: {
+        accountId: config.finam.longAccountId,
+        tradeCode: (config.finam.accountRoles[config.finam.longAccountId] || {}).tradeCode,
+        label: (config.finam.accountRoles[config.finam.longAccountId] || {}).label
+      },
+      day: {
+        accountId: config.finam.dayAccountId,
+        tradeCode: (config.finam.accountRoles[config.finam.dayAccountId] || {}).tradeCode,
+        label: (config.finam.accountRoles[config.finam.dayAccountId] || {}).label
+      }
+    },
     accounts
   };
 }
 
 async function collectFinamMarkets() {
-  if (!config.finam.enabled || !config.finam.symbols.length) {
+  if (!config.finam.enabled) {
+    return [];
+  }
+  const symbols = [...new Set([...config.finam.symbols, ...config.finam.daySymbols])];
+  if (!symbols.length) {
     return [];
   }
   const client = getFinamClient();
@@ -2023,7 +2097,7 @@ async function collectFinamMarkets() {
   const endTime = end.toISOString();
   const results = [];
 
-  for (const symbol of config.finam.symbols) {
+  for (const symbol of symbols) {
     try {
       const [quotePayload, barsPayload, orderBookPayload] = await Promise.all([
         client.lastQuote(symbol),
@@ -2046,6 +2120,7 @@ async function collectFinamMarkets() {
       const orderBook = orderBookPayload
         ? summarizeFinamOrderBook(orderBookPayload)
         : { available: false };
+      const accountRoute = resolveFinamAccountForSymbol(symbol);
       const market = assembleMarketFromCandles({
         symbol,
         provider: 'finam',
@@ -2063,8 +2138,10 @@ async function collectFinamMarkets() {
       market.finam = {
         bid: finamNum(quote.bid),
         ask: finamNum(quote.ask),
-        quoteTimestamp: quote.timestamp || null
+        quoteTimestamp: quote.timestamp || null,
+        account: accountRoute
       };
+      market.preferredAccount = accountRoute;
       results.push(market);
     } catch (error) {
       console.error(new Date().toISOString(), `Finam ${symbol}:`, error.message);

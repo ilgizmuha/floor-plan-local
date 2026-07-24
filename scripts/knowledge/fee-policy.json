@@ -20,6 +20,10 @@
       "forex": "FX тейкер/мелкий лот и spot-прокси: минимумы 50–100₽ или ~0.2% круг"
     },
     "finamWhenConnected": {
+      "accounts": {
+        "791750REXQ4": "long / swing only",
+        "791750RM43P": "daily tariff / intraday (futures, FX maker >=50 lots)"
+      },
       "scalpOk": ["futures_moex_0.45rub", "fx_maker_ge_50_lots"],
       "longOnly": ["moex_equities", "us_equities", "metals_spot", "fx_taker_small", "fx_tms_taker"]
     }

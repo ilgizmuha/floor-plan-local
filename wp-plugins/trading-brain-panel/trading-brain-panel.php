@@ -197,6 +197,7 @@ final class Trading_Brain_Panel {
 						const derivatives = market.derivatives || {};
 						return '<div class="tbp-signal tbp-signal-' + escapeHtml(action.toLowerCase()) + '">' +
 							'<h3>' + escapeHtml(item.symbol) + (market.assetClass ? ' <span class="tbp-muted">(' + escapeHtml(market.assetClass) + (market.provider ? '/' + escapeHtml(market.provider) : (market.category ? '/' + escapeHtml(market.category) : '')) + ')</span>' : '') + ' - ' + escapeHtml(action) + '</h3>' +
+							(market.preferredAccount ? '<p class="tbp-muted"><strong>Счёт:</strong> ' + escapeHtml(market.preferredAccount.tradeCode || market.preferredAccount.accountId) + ' — ' + escapeHtml(market.preferredAccount.roleLabel || market.preferredAccount.role) + '</p>' : '') +
 							'<p><strong>Consensus:</strong> ' + escapeHtml(consensus.source || 'rules') + ' | <strong>Confidence:</strong> ' + escapeHtml(consensus.confidence) + ' | <strong>Risk:</strong> ' + escapeHtml(risk.riskScore) + (risk.effectiveMinConfidence ? ' | <strong>Min conf:</strong> ' + escapeHtml(risk.effectiveMinConfidence) : '') + '</p>' +
 							(regime.regime ? '<p><strong>Regime:</strong> ' + escapeHtml(regime.regime) + ' / ' + escapeHtml(regime.preferredStrategy || '') + ' | ADX ' + escapeHtml(regime.adx ?? indicators.adx14 ?? '') + ' | ' + escapeHtml((regime.reasons || []).join(', ')) + '</p>' : '') +
 							(Object.keys(components).length ? '<p><strong>Ensemble:</strong> ' + escapeHtml(Object.keys(components).map((name) => name + ' ' + escapeHtml((components[name] && components[name].weightedScore) ?? 0)).join(' | ')) + '</p>' : '') +
@@ -266,6 +267,7 @@ final class Trading_Brain_Panel {
 							const positions = acc.positions || [];
 							return '<div class="tbp-signal">' +
 								'<p><strong>' + escapeHtml(acc.tradeCode || acc.accountId) + '</strong> <span class="tbp-muted">(' + escapeHtml(acc.accountId) + ')</span> — ' + escapeHtml(acc.status || acc.error || '') + '</p>' +
+								'<p><strong>Роль:</strong> ' + escapeHtml(acc.roleLabel || acc.role || '—') + ' | <strong>Горизонт:</strong> ' + escapeHtml(acc.horizon || '—') + (acc.tariff ? ' | тариф ' + escapeHtml(acc.tariff) : '') + '</p>' +
 								'<p>Equity: ' + escapeHtml(acc.equity ?? '—') + ' | Cash: ' + (cash || '—') + ' | uPnL: ' + escapeHtml(acc.unrealizedProfit ?? 0) + '</p>' +
 								(positions.length ? '<ul>' + positions.map((pos) =>
 									'<li>' + escapeHtml(pos.symbol) + ': qty ' + escapeHtml(pos.qty) + ', avg ' + escapeHtml(pos.averagePrice) + ', now ' + escapeHtml(pos.currentPrice) + ', uPnL ' + escapeHtml(pos.unrealizedPnl) + '</li>'
