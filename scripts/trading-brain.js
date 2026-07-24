@@ -84,8 +84,11 @@ const config = {
     maxSpreadPct: numberEnv('SCALP_MAX_SPREAD_PCT', 0.08),
     paperEnabled: env('SCALP_PAPER_ENABLED', 'true') === 'true',
     maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 15),
-    symbols: splitList(env('SCALP_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,USDTEUR,BTCEUR,ETHEUR')),
-    knowledgePath: env('SCALP_KNOWLEDGE_PATH', path.join(__dirname, 'knowledge', 'scalping-kb.json'))
+    symbols: splitList(env('SCALP_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT')),
+    knowledgePath: env('SCALP_KNOWLEDGE_PATH', path.join(__dirname, 'knowledge', 'scalping-kb.json')),
+    feePolicyPath: env('FEE_POLICY_PATH', path.join(__dirname, 'knowledge', 'fee-policy.json')),
+    // Fee gate: metals/stocks/commodities/forex — только длинный горизонт (комиссия съедает скальп).
+    allowedAssetClasses: splitList(env('SCALP_ALLOWED_ASSET_CLASSES', 'crypto'))
   },
   regime: {
     enabled: env('REGIME_GATE_ENABLED', 'true') === 'true',
@@ -459,6 +462,37 @@ function loadScalpingKnowledge() {
   }
 }
 
+function loadFeePolicy() {
+  try {
+    return readJsonFile(config.scalp.feePolicyPath) || {};
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+
+function isScalpFeeEligible(market) {
+  const assetClass = market.assetClass || marketAssetClass(market.symbol);
+  const policy = loadFeePolicy();
+  const allowedClasses = config.scalp.allowedAssetClasses.length
+    ? config.scalp.allowedAssetClasses
+    : ((policy.scalp && policy.scalp.allowedAssetClasses) || ['crypto']);
+  const allowedSymbols = (policy.scalp && policy.scalp.allowedSymbols) || config.scalp.symbols;
+  const inSymbolList = config.scalp.symbols.includes(market.symbol)
+    && (!allowedSymbols.length || allowedSymbols.includes(market.symbol));
+  const classOk = allowedClasses.includes(assetClass);
+  const longOnlyReason = policy.longOnly
+    && policy.longOnly.reasonByClass
+    && policy.longOnly.reasonByClass[assetClass];
+
+  return {
+    eligible: classOk && inSymbolList,
+    assetClass,
+    reason: classOk && inSymbolList
+      ? 'fee gate ok for scalp'
+      : (longOnlyReason || `Fee gate: ${assetClass} is long/swing only — commission eats short-trade edge`)
+  };
+}
+
 function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
   if (!config.scalp.enabled) {
     return {
@@ -467,6 +501,20 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
       action: null,
       confidence: 0,
       reasons: ['Scalp strategy disabled']
+    };
+  }
+
+  const feeGate = isScalpFeeEligible(market);
+  if (!feeGate.eligible) {
+    return {
+      enabled: true,
+      strategy: 'scalping_kb_v1',
+      action: 'WAIT',
+      confidence: 0,
+      horizon: 'long_only',
+      feeGate,
+      trend15m: market.indicators && market.indicators.sma20 > market.indicators.sma50 ? 'up' : 'down',
+      reasons: [feeGate.reason, 'Short trades disabled for this instrument']
     };
   }
 
@@ -481,6 +529,8 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
       strategy: 'scalping_kb_v1',
       action: 'WAIT',
       confidence: 0,
+      horizon: 'scalp',
+      feeGate,
       trend15m,
       knowledgeBooks: bookSources,
       reasons: ['Not enough 5m data for scalp']
@@ -663,6 +713,8 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     trend15m,
     setupReady,
     pivots,
+    horizon: 'scalp',
+    feeGate,
     action,
     confidence,
     score: round(score, 2),
@@ -2582,6 +2634,12 @@ function applyScalpPaperDecision(state, decision) {
 
   if (!price || !config.scalp.symbols.includes(symbol) || positions[symbol]) {
     return null;
+  }
+
+  if (scalp.horizon === 'long_only' || (scalp.feeGate && scalp.feeGate.eligible === false)) {
+    return paperEvent('SCALP_SKIP_BUY', decision, price, {
+      blocks: [scalp.feeGate?.reason || 'fee gate: long/swing only']
+    });
   }
 
   if (scalp.action !== 'BUY' || (scalp.confidence || 0) < config.scalp.minConfidence) {

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "title": "Fee policy: short vs long horizon",
+  "principle": "Не скальпить инструменты, где комиссия на круг съедает целевую прибыль. Такие рынки — только свинг/длинные сделки.",
+  "scalp": {
+    "allowedAssetClasses": ["crypto"],
+    "allowedSymbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "notes": [
+      "Bybit linear/crypto liquid pairs — приемлемый round-trip для TP ~0.35%",
+      "Не включать spot forex-прокси (USDTEUR/BTCEUR) — spot комиссия ~0.2% круг",
+      "Финам (когда подключим): скальп только фьючерсы РФ или FX мейкер ≥50 лотов"
+    ]
+  },
+  "longOnly": {
+    "assetClasses": ["metal", "commodity", "stock", "forex"],
+    "reasonByClass": {
+      "metal": "Спот металлы: брокер ~0.05% + биржа; круг ~0.1%+ — для скальпа невыгодно",
+      "commodity": "Нефть/сырьё — держать как свинг, не микро-скальп",
+      "stock": "Акции РФ/США: % + минимумы (41.3₽ / 90₽) съедают короткие сделки",
+      "forex": "FX тейкер/мелкий лот и spot-прокси: минимумы 50–100₽ или ~0.2% круг"
+    },
+    "finamWhenConnected": {
+      "scalpOk": ["futures_moex_0.45rub", "fx_maker_ge_50_lots"],
+      "longOnly": ["moex_equities", "us_equities", "metals_spot", "fx_taker_small", "fx_tms_taker"]
+    }
+  }
+}

@@ -204,7 +204,8 @@ final class Trading_Brain_Panel {
 								if (!scalp.enabled) {
 									return '';
 								}
-								return '<p><strong>Scalp (KB):</strong> ' + escapeHtml(scalp.action || 'WAIT') + ' / ' + escapeHtml(scalp.confidence) + ' | 15m trend ' + escapeHtml(scalp.trend15m) + (scalp.setupReady !== undefined ? ' | setup ' + escapeHtml(scalp.setupReady) : '') + ' | TP ' + escapeHtml(scalp.takeProfitPct) + '% SL ' + escapeHtml(scalp.stopLossPct) + '%</p>' +
+								return '<p><strong>Scalp (KB):</strong> ' + escapeHtml(scalp.action || 'WAIT') + ' / ' + escapeHtml(scalp.confidence) + (scalp.horizon ? ' | <strong>horizon:</strong> ' + escapeHtml(scalp.horizon) : '') + ' | 15m trend ' + escapeHtml(scalp.trend15m) + (scalp.setupReady !== undefined ? ' | setup ' + escapeHtml(scalp.setupReady) : '') + ' | TP ' + escapeHtml(scalp.takeProfitPct) + '% SL ' + escapeHtml(scalp.stopLossPct) + '%</p>' +
+									(scalp.horizon === 'long_only' ? '<p class="tbp-muted"><strong>Fee gate:</strong> ' + escapeHtml((scalp.feeGate && scalp.feeGate.reason) || 'long/swing only — commission eats short trades') + '</p>' : '') +
 									(scalp.pivots ? '<p class="tbp-muted"><strong>Pivots (Shiryaev):</strong> PP ' + escapeHtml(scalp.pivots.pp) + ' S1 ' + escapeHtml(scalp.pivots.s1) + ' R1 ' + escapeHtml(scalp.pivots.r1) + '</p>' : '') +
 									(scalp.appliedRules && scalp.appliedRules.length ? '<p class="tbp-muted"><strong>KB rules:</strong> ' + escapeHtml(scalp.appliedRules.join(', ')) + '</p>' : '') +
 									(scalp.reasons && scalp.reasons.length ? '<p class="tbp-muted"><strong>Scalp:</strong> ' + escapeHtml(scalp.reasons.slice(0, 5).join(', ')) + '</p>' : '');
