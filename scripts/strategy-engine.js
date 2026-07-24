@@ -518,7 +518,7 @@ function createStrategyEngine(options = {}) {
       return { available: false, count: 0, bars: [] };
     }
     const slice = candles.slice(-limit).map((candle) => ({
-      t: candle.start || candle.timestamp || null,
+      t: candle.start ?? candle.timestamp ?? candle.t ?? null,
       o: round(Number(candle.open), 6),
       h: round(Number(candle.high), 6),
       l: round(Number(candle.low), 6),
