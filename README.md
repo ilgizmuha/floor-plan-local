@@ -81,7 +81,12 @@ Paper-trading включается настройками `PAPER_*`. Это ви
 
 **Quality feedback** (`QUALITY_FEEDBACK_*`) автоматически повышает/понижает порог confidence для символов с плохим/хорошим hit-rate на 15m.
 
-**Бэктест** (`npm run brain:backtest`): прогон правил по истории свечей Bybit (без DeepSeek/Cursor) и/или переигровка `decisions.jsonl`. Результат пишется в `data/backtest-latest.json` и показывается во вкладке **Бэктест** WP-панели. Пример: `node scripts/trading-brain.js backtest --mode both --symbols BTCUSDT,ETHUSDT --limit 500`.
+**Бэктест** (`npm run brain:backtest`):  
+- `rules` — прогон правил по истории свечей Bybit (без AI)  
+- `ai` / `decisions` — переигровка `decisions.jsonl` с разбивкой rules / DeepSeek / Cursor / agreement  
+- `all` — оба режима  
+
+Результат: `data/backtest-latest.json`, вкладка **Бэктест** в WP. Пример: `node scripts/trading-brain.js backtest --mode ai --symbols BTCUSDT,ETHUSDT,SOLUSDT`.
 
 Новостной слой читает RSS (`BRAIN_NEWS_SOURCES`) и HTML-источники (`BRAIN_HTML_NEWS_SOURCES`). Сейчас подключены Cointelegraph, CoinDesk, Google News, ForkLog и публичная Telegram-лента ForkLog. Также используется Crypto Fear & Greed Index (`FEAR_GREED_ENABLED`, API alternative.me, без ключа). X, Feedly, CryptoPanic и приватные Telegram-каналы стоит подключать отдельными API-токенами, чтобы не зависеть от нестабильного scraping.
 

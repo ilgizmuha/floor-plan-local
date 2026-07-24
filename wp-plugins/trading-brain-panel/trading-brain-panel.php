@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Trading Brain Panel
  * Description: Admin trading terminal for the hybrid trading brain (Bybit + Finam).
- * Version: 0.2.1
+ * Version: 0.2.2
  * Author: Cursor
  */
 
@@ -444,23 +444,48 @@ final class Trading_Brain_Panel {
 							const run = backtestRuns[runName] || {};
 							const portfolio = run.portfolio || {};
 							const symbolsMap = run.symbols || {};
+							const strategyPortfolios = run.portfolioByStrategy || {};
+							const legend = run.strategyLegend || {};
+							let strategyHtml = '';
+							if (Object.keys(strategyPortfolios).length) {
+								strategyHtml = '<table class="tbp-table"><thead><tr><th>Strategy</th><th>Trades</th><th>WR</th><th>Avg PnL%</th><th>Max DD</th></tr></thead><tbody>' +
+									Object.keys(strategyPortfolios).map((name) => {
+										const p = strategyPortfolios[name] || {};
+										return '<tr><td title="' + escapeHtml(legend[name] || '') + '">' + escapeHtml(name) + '</td>' +
+											'<td>' + escapeHtml(p.totalTrades ?? 0) + '</td>' +
+											'<td>' + escapeHtml(p.winRatePct ?? 0) + '%</td>' +
+											'<td class="' + pctClass(p.avgTotalPnlPct) + '">' + escapeHtml(p.avgTotalPnlPct ?? 0) + '%</td>' +
+											'<td>' + escapeHtml(p.worstMaxDrawdownPct ?? 0) + '%</td></tr>';
+									}).join('') + '</tbody></table>';
+							}
 							return '<div class="tbp-account">' +
 								'<p><strong>' + escapeHtml(runName) + '</strong> · trades ' + escapeHtml(portfolio.totalTrades ?? 0) +
 								' · WR ' + escapeHtml(portfolio.winRatePct ?? 0) + '%' +
 								' · avg PnL ' + escapeHtml(portfolio.avgTotalPnlPct ?? 0) + '%' +
 								' · max DD ' + escapeHtml(portfolio.worstMaxDrawdownPct ?? 0) + '%</p>' +
+								strategyHtml +
 								Object.keys(symbolsMap).map((symbol) => {
 									const item = symbolsMap[symbol] || {};
 									const paperBt = item.paper || {};
 									const q15 = (item.signalQuality && item.signalQuality['15m']) || {};
+									const cov = item.aiCoverage || {};
+									const strat = item.strategies || {};
+									const stratLine = Object.keys(strat).length ? Object.keys(strat).map((name) => {
+										const s = strat[name] || {};
+										const sp = s.paper || {};
+										const sq = (s.signalQuality && s.signalQuality['15m']) || {};
+										return escapeHtml(name) + ': WR ' + escapeHtml(sp.winRatePct ?? 0) + '% PnL ' + escapeHtml(sp.totalPnlPct ?? 0) + '% hit15m ' + escapeHtml(sq.hitRatePct ?? 0) + '%';
+									}).join(' · ') : '';
 									return '<p><strong>' + escapeHtml(symbol) + '</strong>: PnL ' + escapeHtml(paperBt.totalPnlUsd ?? 0) +
 										' (' + escapeHtml(paperBt.totalPnlPct ?? 0) + '%) · trades ' + escapeHtml(paperBt.trades ?? 0) +
 										' · WR ' + escapeHtml(paperBt.winRatePct ?? 0) + '%' +
 										' · hit15m ' + escapeHtml(q15.hitRatePct ?? 0) + '%' +
-										' · bars ' + escapeHtml(item.evaluatedBars ?? item.bars ?? 0) + '</p>';
+										' · bars ' + escapeHtml(item.evaluatedBars ?? item.bars ?? 0) +
+										(cov.total ? ' · AI ok D' + escapeHtml(cov.deepseekOk) + '/C' + escapeHtml(cov.cursorOk) : '') +
+										(stratLine ? '</p><p class="tbp-muted">' + stratLine + '</p>' : '</p>');
 								}).join('') +
 							'</div>';
-						}).join('') : '<p class="tbp-muted">Бэктест ещё не запускался. На VPS: <code>npm run brain:backtest</code></p>');
+						}).join('') : '<p class="tbp-muted">Бэктест ещё не запускался. На VPS: <code>node trading-brain.js backtest --mode ai</code></p>');
 
 					const finamAccounts = finam.accounts || [];
 					document.getElementById('tbp-finam').innerHTML =

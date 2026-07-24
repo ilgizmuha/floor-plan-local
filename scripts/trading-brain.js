@@ -3952,24 +3952,34 @@ async function runBacktestReport(cliArgs = {}) {
     updatedAt: new Date().toISOString(),
     mode,
     options,
-    note: 'Rules-only historical replay. AI analysts are skipped. No live orders.',
+    note: modeNote(mode),
     runs: {}
   };
 
-  if (mode === 'rules' || mode === 'both') {
+  if (mode === 'rules' || mode === 'both' || mode === 'all') {
     const fixturePath = cliArgs.fixture ? path.resolve(String(cliArgs.fixture)) : null;
     report.runs.rules = await backtestRulesMode(symbols, options, fixturePath);
   }
-  if (mode === 'decisions' || mode === 'both') {
-    report.runs.decisions = backtestDecisionsMode(symbols, options);
+  if (mode === 'decisions' || mode === 'ai' || mode === 'both' || mode === 'all') {
+    report.runs.ai = backtestAiDecisionsMode(symbols, options);
   }
-  if (!report.runs.rules && !report.runs.decisions) {
-    throw new Error(`Unknown backtest mode: ${mode}. Use rules, decisions, or both.`);
+  if (!Object.keys(report.runs).length) {
+    throw new Error(`Unknown backtest mode: ${mode}. Use rules, ai/decisions, both, or all.`);
   }
 
   report.summary = summarizeBacktestReport(report);
   writeJson(path.join(config.dataDir, 'backtest-latest.json'), report);
   return report;
+}
+
+function modeNote(mode) {
+  if (mode === 'ai' || mode === 'decisions') {
+    return 'Replay of logged decisions.jsonl with DeepSeek/Cursor/rules breakdown. No new AI API calls. No live orders.';
+  }
+  if (mode === 'both' || mode === 'all') {
+    return 'Rules kline replay + AI decisions.jsonl replay. No live orders.';
+  }
+  return 'Rules-only historical kline replay. AI analysts are skipped. No live orders.';
 }
 
 async function backtestRulesMode(symbols, options, fixturePath = null) {
@@ -3994,7 +4004,7 @@ async function backtestRulesMode(symbols, options, fixturePath = null) {
   };
 }
 
-function backtestDecisionsMode(symbols, options) {
+function backtestAiDecisionsMode(symbols, options) {
   const rows = readAllDecisions().filter((row) => {
     if (!row || !row.symbol) {
       return false;
@@ -4010,38 +4020,186 @@ function backtestDecisionsMode(symbols, options) {
     grouped[row.symbol] = grouped[row.symbol] || [];
     grouped[row.symbol].push(row);
   }
+
   for (const [symbol, items] of Object.entries(grouped)) {
     items.sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
-    const decisions = items.map((item) => ({
-      timestamp: item.timestamp,
-      symbol,
-      finalAction: item.finalAction,
-      consensus: item.consensus || { confidence: 0 },
-      market: {
-        lastPrice: Number(item.market && item.market.lastPrice),
-        change24hPct: Number(item.market && item.market.change24hPct) || 0
-      },
-      signal: item.signal || {},
-      regime: item.regime || item.signal?.regime || {}
-    }));
-    const paper = simulateBacktestPaper(decisions, options);
+    const enriched = items.map((item) => normalizeLoggedDecision(item));
+    const strategies = {
+      final: mapDecisionsToStrategy(enriched, 'final'),
+      rules: mapDecisionsToStrategy(enriched, 'rules'),
+      deepseek: mapDecisionsToStrategy(enriched, 'deepseek'),
+      cursor: mapDecisionsToStrategy(enriched, 'cursor'),
+      aiAgree: mapDecisionsToStrategy(enriched, 'aiAgree'),
+      fullAgree: mapDecisionsToStrategy(enriched, 'fullAgree')
+    };
+
+    const strategyReports = {};
+    for (const [name, decisions] of Object.entries(strategies)) {
+      strategyReports[name] = {
+        actionCounts: countActions(decisions),
+        signalQuality: evaluateBacktestSignalQuality(decisions),
+        paper: simulateBacktestPaper(decisions, {
+          ...options,
+          // For logged final/AI actions trust the recorded call; still require minConfidence when available.
+          minConfidence: name === 'final' ? Math.min(options.minConfidence, 1) : options.minConfidence
+        })
+      };
+    }
+
     bySymbol[symbol] = {
       symbol,
       source: 'decisions.jsonl',
-      bars: decisions.length,
-      from: decisions[0] ? decisions[0].timestamp : null,
-      to: decisions.length ? decisions[decisions.length - 1].timestamp : null,
-      actionCounts: countActions(decisions),
-      signalQuality: evaluateBacktestSignalQuality(decisions),
-      paper,
-      sampleDecisions: decisions.filter((d) => ['BUY', 'SELL'].includes(d.finalAction)).slice(-8)
+      bars: enriched.length,
+      from: enriched[0] ? enriched[0].timestamp : null,
+      to: enriched.length ? enriched[enriched.length - 1].timestamp : null,
+      aiCoverage: summarizeAiCoverage(enriched),
+      strategies: strategyReports,
+      // Keep top-level paper/quality as the AI-aware "final" path for panel compatibility.
+      actionCounts: strategyReports.final.actionCounts,
+      signalQuality: strategyReports.final.signalQuality,
+      paper: strategyReports.final.paper,
+      sampleDecisions: enriched
+        .filter((d) => ['BUY', 'SELL'].includes(d.finalAction) || ['BUY', 'SELL'].includes(d.deepseekAction) || ['BUY', 'SELL'].includes(d.cursorAction))
+        .slice(-10)
+        .map((d) => ({
+          timestamp: d.timestamp,
+          finalAction: d.finalAction,
+          rulesAction: d.rulesAction,
+          deepseekAction: d.deepseekAction,
+          cursorAction: d.cursorAction,
+          confidence: d.confidence,
+          price: d.market.lastPrice
+        }))
     };
   }
+
+  const portfolioByStrategy = {};
+  for (const strategyName of ['final', 'rules', 'deepseek', 'cursor', 'aiAgree', 'fullAgree']) {
+    const fakeSymbols = {};
+    for (const [symbol, item] of Object.entries(bySymbol)) {
+      fakeSymbols[symbol] = {
+        symbol,
+        paper: item.strategies[strategyName].paper
+      };
+    }
+    portfolioByStrategy[strategyName] = aggregateBacktestPortfolio(fakeSymbols, options.startBalanceUsd);
+  }
+
   return {
-    kind: 'decisions',
+    kind: 'ai_decisions',
     sampleSize: rows.length,
     symbols: bySymbol,
-    portfolio: aggregateBacktestPortfolio(bySymbol, options.startBalanceUsd)
+    portfolio: portfolioByStrategy.final,
+    portfolioByStrategy,
+    strategyLegend: {
+      final: 'Logged finalAction after risk manager',
+      rules: 'Rules/ensemble signal only',
+      deepseek: 'DeepSeek action when status=ok',
+      cursor: 'Cursor action when status=ok',
+      aiAgree: 'Trade only when DeepSeek and Cursor agree BUY/SELL',
+      fullAgree: 'Trade only when rules + DeepSeek + Cursor agree'
+    }
+  };
+}
+
+function normalizeLoggedDecision(item) {
+  const signal = item.signal || {};
+  const consensus = item.consensus || {};
+  const ai = item.aiAnalyst || {};
+  const cursor = item.cursorAnalyst || {};
+  const confidence = Number(
+    consensus.confidence
+    ?? signal.confidence
+    ?? ai.confidence
+    ?? cursor.confidence
+    ?? 0
+  );
+  return {
+    timestamp: item.timestamp,
+    symbol: item.symbol,
+    finalAction: normalizeAction(item.finalAction) || 'WAIT',
+    rulesAction: normalizeAction(signal.action) || 'HOLD',
+    deepseekAction: ai.status === 'ok' ? (normalizeAction(ai.action) || 'HOLD') : null,
+    deepseekConfidence: Number(ai.confidence) || 0,
+    deepseekStatus: ai.status || 'missing',
+    cursorAction: cursor.status === 'ok' ? (normalizeAction(cursor.action) || 'HOLD') : null,
+    cursorConfidence: Number(cursor.confidence) || 0,
+    cursorStatus: cursor.status || 'missing',
+    confidence,
+    consensusSource: consensus.source || signal.source || null,
+    market: {
+      lastPrice: Number(item.market && item.market.lastPrice),
+      change24hPct: Number(item.market && item.market.change24hPct) || 0
+    },
+    riskAllowed: Boolean(item.risk && item.risk.allowed)
+  };
+}
+
+function mapDecisionsToStrategy(enriched, strategyName) {
+  return enriched.map((row) => {
+    let action = 'HOLD';
+    let confidence = row.confidence;
+
+    if (strategyName === 'final') {
+      action = row.finalAction;
+      confidence = Math.max(row.confidence, 1);
+    } else if (strategyName === 'rules') {
+      action = row.rulesAction;
+      confidence = row.confidence;
+    } else if (strategyName === 'deepseek') {
+      action = row.deepseekAction || 'WAIT';
+      confidence = row.deepseekConfidence || 0;
+    } else if (strategyName === 'cursor') {
+      action = row.cursorAction || 'WAIT';
+      confidence = row.cursorConfidence || 0;
+    } else if (strategyName === 'aiAgree') {
+      if (row.deepseekAction && row.cursorAction && row.deepseekAction === row.cursorAction
+        && ['BUY', 'SELL'].includes(row.deepseekAction)) {
+        action = row.deepseekAction;
+        confidence = average([row.deepseekConfidence, row.cursorConfidence]);
+      } else {
+        action = 'WAIT';
+        confidence = 0;
+      }
+    } else if (strategyName === 'fullAgree') {
+      if (row.rulesAction && row.deepseekAction && row.cursorAction
+        && row.rulesAction === row.deepseekAction
+        && row.rulesAction === row.cursorAction
+        && ['BUY', 'SELL'].includes(row.rulesAction)) {
+        action = row.rulesAction;
+        confidence = average([row.confidence, row.deepseekConfidence, row.cursorConfidence]);
+      } else {
+        action = 'WAIT';
+        confidence = 0;
+      }
+    }
+
+    return {
+      timestamp: row.timestamp,
+      symbol: row.symbol,
+      finalAction: action,
+      consensus: { confidence: Number(confidence) || 0, source: strategyName },
+      market: row.market
+    };
+  });
+}
+
+function summarizeAiCoverage(enriched) {
+  const total = enriched.length || 1;
+  const deepseekOk = enriched.filter((row) => row.deepseekStatus === 'ok').length;
+  const cursorOk = enriched.filter((row) => row.cursorStatus === 'ok').length;
+  const bothOk = enriched.filter((row) => row.deepseekStatus === 'ok' && row.cursorStatus === 'ok').length;
+  const bothBuy = enriched.filter((row) => row.deepseekAction === 'BUY' && row.cursorAction === 'BUY').length;
+  const bothSell = enriched.filter((row) => row.deepseekAction === 'SELL' && row.cursorAction === 'SELL').length;
+  return {
+    total: enriched.length,
+    deepseekOk,
+    cursorOk,
+    bothOk,
+    bothBuy,
+    bothSell,
+    deepseekOkPct: round((deepseekOk / total) * 100, 2),
+    cursorOkPct: round((cursorOk / total) * 100, 2)
   };
 }
 
@@ -4447,7 +4605,8 @@ function printHelp() {
   npm run brain:status
   npm run brain:backtest
   node scripts/trading-brain.js backtest --mode rules --symbols BTCUSDT,ETHUSDT --limit 500
-  node scripts/trading-brain.js backtest --mode decisions
+  node scripts/trading-brain.js backtest --mode ai --symbols BTCUSDT,ETHUSDT,SOLUSDT
+  node scripts/trading-brain.js backtest --mode all
   node scripts/trading-brain.js loop
 
 Environment:
@@ -4462,12 +4621,14 @@ Environment:
   CURSOR_API_KEY=cursor_...
   CURSOR_ANALYST_MODEL=auto
 
-Backtest (rules-only historical replay, writes data/backtest-latest.json):
+Backtest:
   BACKTEST_SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT
   BACKTEST_INTERVAL=15
   BACKTEST_CANDLE_LIMIT=500
   BACKTEST_MIN_CONFIDENCE=70
-  BACKTEST_MODE=rules
+  BACKTEST_MODE=ai
+  # modes: rules | ai/decisions | both | all
+  # ai mode replays decisions.jsonl and compares rules / DeepSeek / Cursor / agreement
 
 AlgoVault analyst (crypto-quant-signal-mcp):
   ALGOVAULT_ENABLED=true
