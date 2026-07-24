@@ -99,6 +99,25 @@ class FinamClient {
     return this.request('GET', `/v1/assets/${encodeURIComponent(symbol)}${q}`);
   }
 
+  async getOrders(accountId) {
+    return this.request('GET', `/v1/accounts/${encodeURIComponent(accountId)}/orders`);
+  }
+
+  async placeOrder(accountId, order) {
+    return this.request('POST', `/v1/accounts/${encodeURIComponent(accountId)}/orders`, {
+      body: order
+    });
+  }
+
+  async cancelOrder(accountId, orderId) {
+    return this.request('DELETE', `/v1/accounts/${encodeURIComponent(accountId)}/orders/${encodeURIComponent(orderId)}`);
+  }
+
+  async getAssetParams(symbol, accountId) {
+    const q = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+    return this.request('GET', `/v1/assets/${encodeURIComponent(symbol)}/params${q}`);
+  }
+
   async request(method, path, { body, auth = true } = {}) {
     const headers = { Accept: 'application/json' };
     if (auth) {
@@ -141,11 +160,11 @@ class FinamClient {
 
 function finamAssetClass(symbol) {
   const ticker = String(symbol || '').split('@')[0];
-  if (/^(USD|EUR|CNY|GBP|JPY)/.test(ticker) || /RUB/.test(ticker) || /UTSTOM|TOD|_TOM/.test(ticker)) {
-    return 'forex';
-  }
-  if (/^(GLD|GOLD|SLV|SILV|PLD|PLT)/i.test(ticker) || /GLDRUB|SLVRUB/.test(ticker)) {
+  if (/^(GLD|GOLD|SLV|SILV|PLD|PLT)/i.test(ticker) || /GLDRUB|SLVRUB|GOLDRUB/.test(ticker)) {
     return 'metal';
+  }
+  if (/^(USD|EUR|CNY|GBP|JPY)/.test(ticker) || /UTSTOM|TOD|_TOM/.test(ticker) || /RUB/.test(ticker)) {
+    return 'forex';
   }
   if (/@(XNGS|XNYS|XNAS|ARCX)$/.test(symbol)) {
     return 'stock';

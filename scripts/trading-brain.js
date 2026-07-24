@@ -159,7 +159,14 @@ const config = {
     timeframe: env('FINAM_TIMEFRAME', 'TIME_FRAME_M15'),
     barLookbackHours: numberEnv('FINAM_BAR_LOOKBACK_HOURS', 48),
     timeoutMs: numberEnv('FINAM_TIMEOUT_MS', 20000),
-    aiEnabled: env('FINAM_AI_ENABLED', 'false') === 'true'
+    aiEnabled: env('FINAM_AI_ENABLED', 'false') === 'true',
+    tradingEnabled: env('FINAM_TRADING_ENABLED', 'false') === 'true',
+    minConfidence: numberEnv('FINAM_MIN_CONFIDENCE', 65),
+    minSellConfidence: numberEnv('FINAM_MIN_SELL_CONFIDENCE', 50),
+    maxPositionRub: numberEnv('FINAM_MAX_POSITION_RUB', 500),
+    maxOpenPositions: numberEnv('FINAM_MAX_OPEN_POSITIONS', 3),
+    orderType: env('FINAM_ORDER_TYPE', 'LIMIT'), // LIMIT | MARKET
+    allowSellToClose: env('FINAM_ALLOW_SELL_CLOSE', 'true') === 'true'
   }
 };
 
@@ -191,6 +198,12 @@ async function main() {
 
   if (command === 'finam') {
     const report = await finamStatusReport();
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  if (command === 'stats') {
+    const report = await tradingStatsReport();
     console.log(JSON.stringify(report, null, 2));
     return;
   }
@@ -307,6 +320,11 @@ async function runBrainCycle() {
 
   appendJsonl(path.join(config.dataDir, 'decisions.jsonl'), decisions);
   const paper = updatePaperState(decisions);
+  const finamTrading = await executeFinamTrading(decisions, finamAccounts).catch((error) => ({
+    enabled: config.finam.tradingEnabled,
+    error: error.message,
+    events: []
+  }));
   const quality = computeSignalQuality(readAllDecisions());
   writeJson(path.join(config.dataDir, 'latest.json'), {
     timestamp: new Date().toISOString(),
@@ -314,7 +332,10 @@ async function runBrainCycle() {
     decisions,
     paper,
     quality,
-    finam: finamAccounts
+    finam: {
+      ...finamAccounts,
+      trading: finamTrading
+    }
   });
 
   return {
@@ -324,7 +345,10 @@ async function runBrainCycle() {
     decisions,
     paper,
     quality,
-    finam: finamAccounts
+    finam: {
+      ...finamAccounts,
+      trading: finamTrading
+    }
   };
 }
 
@@ -1958,6 +1982,55 @@ function marketAssetClass(symbol) {
   return 'other';
 }
 
+function tradingStatsReport() {
+  const paper = readJsonFile(path.join(config.dataDir, 'paper-state.json')) || {};
+  const finamState = readJsonFile(path.join(config.dataDir, 'finam-state.json')) || {};
+  const quality = readJsonFile(path.join(config.dataDir, 'quality.json')) || {};
+  const decisionsPath = path.join(config.dataDir, 'decisions.jsonl');
+  const recent = fs.existsSync(decisionsPath)
+    ? fs.readFileSync(decisionsPath, 'utf8').trim().split('\n').filter(Boolean).slice(-300).map((line) => parseJson(line)).filter(Boolean)
+    : [];
+  const actionCounts = {};
+  const finamActions = {};
+  for (const row of recent) {
+    actionCounts[row.finalAction] = (actionCounts[row.finalAction] || 0) + 1;
+    if (row.market && row.market.provider === 'finam') {
+      finamActions[row.finalAction] = (finamActions[row.finalAction] || 0) + 1;
+    }
+  }
+  return {
+    updatedAt: new Date().toISOString(),
+    paper: {
+      equityUsd: paper.equityUsd,
+      cashUsd: paper.cashUsd,
+      totalPnlUsd: paper.totalPnlUsd,
+      totalPnlPct: paper.totalPnlPct,
+      realizedPnlUsd: paper.realizedPnlUsd,
+      stats: paper.stats,
+      openPositions: Object.keys(paper.positions || {})
+    },
+    finam: {
+      tradingEnabled: config.finam.tradingEnabled,
+      stats: finamState.stats || {},
+      recentOrders: (finamState.orders || []).slice(0, 10),
+      accounts: finamState.accounts || []
+    },
+    recentDecisions: {
+      sampleSize: recent.length,
+      actions: actionCounts,
+      finamActions
+    },
+    qualitySymbols: Object.fromEntries(Object.entries(quality.symbols || {}).map(([symbol, data]) => [
+      symbol,
+      {
+        count: data.count,
+        hitRate15m: data.horizons && data.horizons['15m'] ? data.horizons['15m'].hitRatePct : null,
+        edge15m: data.horizons && data.horizons['15m'] ? data.horizons['15m'].avgEdgePct : null
+      }
+    ]))
+  };
+}
+
 function getFinamClient() {
   if (!config.finam.enabled) {
     return null;
@@ -2080,6 +2153,258 @@ async function collectFinamAccounts() {
     },
     accounts
   };
+}
+
+function finamDecimal(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return { value: '0' };
+  }
+  return { value: String(round(number, 8)) };
+}
+
+function availableCashRub(accountSummary, rawAccount = null) {
+  if (rawAccount && rawAccount.portfolio_mc && rawAccount.portfolio_mc.available_cash) {
+    const fromMc = finamNum(rawAccount.portfolio_mc.available_cash);
+    if (fromMc != null) {
+      return fromMc;
+    }
+  }
+  const rub = (accountSummary.cash || []).find((item) => item.currency === 'RUB' || item.currency_code === 'RUB');
+  if (!rub) {
+    return 0;
+  }
+  return Number(rub.amount != null ? rub.amount : 0);
+}
+
+function findFinamPosition(account, symbol) {
+  return (account.positions || []).find((pos) => pos.symbol === symbol) || null;
+}
+
+function countFinamOpenPositions(account) {
+  return (account.positions || []).filter((pos) => Number(pos.qty) > 0).length;
+}
+
+async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
+  const result = {
+    enabled: config.finam.tradingEnabled,
+    updatedAt: new Date().toISOString(),
+    events: []
+  };
+
+  if (!config.finam.enabled || !config.finam.tradingEnabled) {
+    result.reason = 'Finam trading disabled';
+    return result;
+  }
+
+  const client = getFinamClient();
+  const statePath = path.join(config.dataDir, 'finam-state.json');
+  const tradesPath = path.join(config.dataDir, 'finam-trades.jsonl');
+  const state = readJsonFile(statePath) || {
+    startedAt: new Date().toISOString(),
+    orders: [],
+    stats: { submitted: 0, bought: 0, sold: 0, skipped: 0, errors: 0 }
+  };
+
+  // Fresh account snapshots for sizing
+  const accountsById = {};
+  for (const accountId of config.finam.accountIds) {
+    try {
+      const raw = await client.getAccount(accountId);
+      accountsById[accountId] = enrichFinamAccount(summarizeAccount(raw), accountId);
+      accountsById[accountId]._raw = raw;
+    } catch (error) {
+      accountsById[accountId] = enrichFinamAccount({ accountId, error: error.message }, accountId);
+    }
+  }
+
+  const finamDecisions = decisions.filter((item) => (item.market && item.market.provider === 'finam'));
+  for (const decision of finamDecisions) {
+    const symbol = decision.symbol;
+    const route = (decision.market && decision.market.preferredAccount)
+      || resolveFinamAccountForSymbol(symbol);
+    const accountId = route.accountId;
+    const account = accountsById[accountId];
+    const action = decision.finalAction;
+    const confidence = Number((decision.consensus && decision.consensus.confidence) || 0);
+    const price = Number(decision.market && decision.market.lastPrice);
+    const eventBase = {
+      timestamp: new Date().toISOString(),
+      symbol,
+      action,
+      confidence,
+      accountId,
+      tradeCode: route.tradeCode,
+      role: route.role,
+      price
+    };
+
+    if (!account || account.error) {
+      const event = { ...eventBase, type: 'SKIP', reason: account && account.error ? account.error : 'account unavailable' };
+      result.events.push(event);
+      state.stats.skipped += 1;
+      continue;
+    }
+
+    const position = findFinamPosition(account, symbol);
+    const cashRub = availableCashRub(account, account._raw);
+
+    // Close long on SELL
+    if (action === 'SELL' && config.finam.allowSellToClose && position && Number(position.qty) > 0) {
+      if (confidence < config.finam.minSellConfidence) {
+        const event = {
+          ...eventBase,
+          type: 'SKIP',
+          reason: `sell confidence ${confidence} < ${config.finam.minSellConfidence}`
+        };
+        result.events.push(event);
+        state.stats.skipped += 1;
+        continue;
+      }
+      try {
+        const qty = Number(position.qty);
+        const bid = decision.market.finam && decision.market.finam.bid;
+        const limitPrice = bid || price;
+        const orderBody = {
+          symbol,
+          quantity: finamDecimal(qty),
+          side: 'SIDE_SELL',
+          type: config.finam.orderType === 'MARKET' ? 'ORDER_TYPE_MARKET' : 'ORDER_TYPE_LIMIT',
+          time_in_force: 'TIME_IN_FORCE_DAY'
+        };
+        if (orderBody.type === 'ORDER_TYPE_LIMIT') {
+          orderBody.limit_price = finamDecimal(limitPrice);
+        }
+        const orderResponse = await client.placeOrder(accountId, orderBody);
+        const event = {
+          ...eventBase,
+          type: 'SELL_SUBMIT',
+          qty,
+          limitPrice: orderBody.limit_price ? limitPrice : null,
+          order: orderResponse
+        };
+        result.events.push(event);
+        appendJsonl(tradesPath, [event]);
+        state.stats.submitted += 1;
+        state.stats.sold += 1;
+        state.orders = [event, ...(state.orders || [])].slice(0, 50);
+        // refresh local position cache
+        account.positions = (account.positions || []).filter((pos) => pos.symbol !== symbol);
+      } catch (error) {
+        const event = { ...eventBase, type: 'ERROR', reason: error.message, details: error.details || null };
+        result.events.push(event);
+        appendJsonl(tradesPath, [event]);
+        state.stats.errors += 1;
+      }
+      continue;
+    }
+
+    // Open long on BUY — long account only for equity/metal/fx list
+    if (action === 'BUY') {
+      if (route.role !== 'long' && route.role !== 'day') {
+        const event = { ...eventBase, type: 'SKIP', reason: 'unknown account role' };
+        result.events.push(event);
+        state.stats.skipped += 1;
+        continue;
+      }
+      if (confidence < config.finam.minConfidence) {
+        const event = { ...eventBase, type: 'SKIP', reason: `confidence ${confidence} < ${config.finam.minConfidence}` };
+        result.events.push(event);
+        state.stats.skipped += 1;
+        continue;
+      }
+      if (position && Number(position.qty) > 0) {
+        const event = { ...eventBase, type: 'SKIP', reason: 'already in position' };
+        result.events.push(event);
+        state.stats.skipped += 1;
+        continue;
+      }
+      if (countFinamOpenPositions(account) >= config.finam.maxOpenPositions) {
+        const event = { ...eventBase, type: 'SKIP', reason: 'max open positions reached' };
+        result.events.push(event);
+        state.stats.skipped += 1;
+        continue;
+      }
+      if (!price || price <= 0) {
+        const event = { ...eventBase, type: 'SKIP', reason: 'no price' };
+        result.events.push(event);
+        state.stats.skipped += 1;
+        continue;
+      }
+
+      let lotSize = 1;
+      try {
+        const asset = await client.getAsset(symbol, accountId);
+        lotSize = finamNum(asset.lot_size) || 1;
+      } catch (error) {
+        // keep default lot
+      }
+
+      const budget = Math.min(config.finam.maxPositionRub, cashRub);
+      const maxQty = Math.floor(budget / price / lotSize) * lotSize;
+      if (maxQty < lotSize) {
+        const event = {
+          ...eventBase,
+          type: 'SKIP',
+          reason: `insufficient cash: available ${round(cashRub, 2)} RUB, need ~${round(price * lotSize, 2)} for 1 lot`,
+          cashRub: round(cashRub, 2),
+          lotSize
+        };
+        result.events.push(event);
+        state.stats.skipped += 1;
+        continue;
+      }
+
+      try {
+        const ask = decision.market.finam && decision.market.finam.ask;
+        const limitPrice = ask || price;
+        const orderBody = {
+          symbol,
+          quantity: finamDecimal(maxQty),
+          side: 'SIDE_BUY',
+          type: config.finam.orderType === 'MARKET' ? 'ORDER_TYPE_MARKET' : 'ORDER_TYPE_LIMIT',
+          time_in_force: 'TIME_IN_FORCE_DAY'
+        };
+        if (orderBody.type === 'ORDER_TYPE_LIMIT') {
+          orderBody.limit_price = finamDecimal(limitPrice);
+        }
+        const orderResponse = await client.placeOrder(accountId, orderBody);
+        const event = {
+          ...eventBase,
+          type: 'BUY_SUBMIT',
+          qty: maxQty,
+          limitPrice: orderBody.limit_price ? limitPrice : null,
+          cashRub: round(cashRub, 2),
+          order: orderResponse
+        };
+        result.events.push(event);
+        appendJsonl(tradesPath, [event]);
+        state.stats.submitted += 1;
+        state.stats.bought += 1;
+        state.orders = [event, ...(state.orders || [])].slice(0, 50);
+      } catch (error) {
+        const event = { ...eventBase, type: 'ERROR', reason: error.message, details: error.details || null };
+        result.events.push(event);
+        appendJsonl(tradesPath, [event]);
+        state.stats.errors += 1;
+      }
+      continue;
+    }
+
+    // HOLD/WAIT — no trade
+  }
+
+  state.updatedAt = new Date().toISOString();
+  state.tradingEnabled = true;
+  state.accounts = Object.values(accountsById).map((account) => {
+    const copy = { ...account };
+    delete copy._raw;
+    return copy;
+  });
+  writeJson(statePath, state);
+  result.stats = state.stats;
+  result.accounts = state.accounts;
+  return result;
 }
 
 async function collectFinamMarkets() {

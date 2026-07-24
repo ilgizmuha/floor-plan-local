@@ -261,7 +261,13 @@ final class Trading_Brain_Panel {
 					const finam = data.finam || latest.finam || {};
 					const finamAccounts = finam.accounts || [];
 					document.getElementById('tbp-finam').innerHTML =
-						'<p><strong>Enabled:</strong> ' + escapeHtml(finam.enabled ?? false) + (finam.error ? ' | <strong>Error:</strong> ' + escapeHtml(finam.error) : '') + '</p>' +
+						'<p><strong>Enabled:</strong> ' + escapeHtml(finam.enabled ?? false) +
+						' | <strong>Trading:</strong> ' + escapeHtml((finam.trading && finam.trading.enabled) ?? false) +
+						(finam.error ? ' | <strong>Error:</strong> ' + escapeHtml(finam.error) : '') + '</p>' +
+						(finam.trading && finam.trading.stats ? '<p><strong>Orders:</strong> submitted ' + escapeHtml(finam.trading.stats.submitted ?? 0) + ', bought ' + escapeHtml(finam.trading.stats.bought ?? 0) + ', sold ' + escapeHtml(finam.trading.stats.sold ?? 0) + ', skipped ' + escapeHtml(finam.trading.stats.skipped ?? 0) + ', errors ' + escapeHtml(finam.trading.stats.errors ?? 0) + '</p>' : '') +
+						(finam.trading && finam.trading.events && finam.trading.events.length ? '<ul>' + finam.trading.events.slice(0, 8).map((ev) =>
+							'<li>' + escapeHtml(ev.type) + ' ' + escapeHtml(ev.symbol) + (ev.reason ? ' — ' + escapeHtml(ev.reason) : '') + (ev.qty ? ' qty ' + escapeHtml(ev.qty) : '') + '</li>'
+						).join('') + '</ul>' : '') +
 						(finamAccounts.length ? finamAccounts.map((acc) => {
 							const cash = (acc.cash || []).map((c) => escapeHtml(c.amount) + ' ' + escapeHtml(c.currency)).join(', ');
 							const positions = acc.positions || [];
