@@ -10,6 +10,7 @@ const {
   barsToCandles,
   summarizeAccount
 } = require('./finam-client');
+const { createStrategyEngine } = require('./strategy-engine');
 
 const ENV_PATHS = [
   path.join(process.cwd(), '.env'),
@@ -179,9 +180,25 @@ const config = {
     maxPositionUsd: numberEnv('BACKTEST_MAX_POSITION_USD', numberEnv('PAPER_MAX_POSITION_USD', 20)),
     minConfidence: numberEnv('BACKTEST_MIN_CONFIDENCE', numberEnv('PAPER_MIN_CONFIDENCE', 70)),
     feeRate: numberEnv('BACKTEST_FEE_RATE', numberEnv('PAPER_FEE_RATE', 0.001)),
-    mode: env('BACKTEST_MODE', 'rules') // rules | decisions | both
+    mode: env('BACKTEST_MODE', 'rules'), // rules | ai | both | all
+    walkForwardFolds: numberEnv('BACKTEST_WALK_FORWARD_FOLDS', 5)
+  },
+  strategy: {
+    profilesPath: env('STRATEGY_PROFILES_PATH', path.join(__dirname, 'knowledge', 'strategy-profiles.json')),
+    calibrationPath: env('STRATEGY_CALIBRATION_PATH', ''),
+    aiConfirmOnly: env('STRATEGY_AI_CONFIRM_ONLY', 'true') === 'true',
+    blockWhenAiUnavailable: env('STRATEGY_BLOCK_WHEN_AI_UNAVAILABLE', 'false') === 'true',
+    cursorRequired: env('STRATEGY_CURSOR_REQUIRED', 'false') === 'true',
+    sentimentVetoOnly: env('STRATEGY_SENTIMENT_VETO_ONLY', 'true') === 'true'
   }
 };
+
+const strategyEngine = createStrategyEngine({
+  profilesPath: config.strategy.profilesPath,
+  calibrationPath: config.strategy.calibrationPath || path.join(config.dataDir, 'calibration.json'),
+  dataDir: config.dataDir,
+  knowledgeDir: path.join(__dirname, 'knowledge')
+});
 
 main().catch((error) => {
   console.error('Error:', error.message);
@@ -227,6 +244,12 @@ async function main() {
     return;
   }
 
+  if (command === 'calibrate') {
+    const report = await runCalibrationReport(args);
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
   if (command === 'loop') {
     console.log(`Trading brain loop started. interval=${config.loopIntervalSeconds}s dryRun=${config.dryRun}`);
     while (true) {
@@ -247,6 +270,8 @@ async function runBrainCycle() {
   ensureDir(config.dataDir);
   const priorQuality = readJsonFile(path.join(config.dataDir, 'quality.json')) || { symbols: {} };
   const qualityFeedback = buildQualityFeedback(priorQuality);
+  const strategyProfiles = strategyEngine.loadProfiles();
+  const calibration = strategyEngine.loadCalibration();
   const [marketsBybit, marketsFinam, news, fearGreed, finamAccounts] = await Promise.all([
     collectMarkets(),
     collectFinamMarkets().catch((error) => {
@@ -273,7 +298,11 @@ async function runBrainCycle() {
 
   const decisions = await Promise.all(markets.map(async (market) => {
     const regime = detectMarketRegime(market);
-    let signal = analyzeMarket(market, news, fearGreed, qualityFeedback);
+    const profileBundle = strategyEngine.resolveProfilesForMarket(market, strategyProfiles);
+    const profile = profileBundle.primary;
+    const profileId = profileBundle.primaryId;
+    const calibrationEntry = strategyEngine.getCalibratedThresholds(market.symbol, profileId, calibration);
+    let signal = analyzeMarketWithProfile(market, news, fearGreed, qualityFeedback, profile, profileId, calibrationEntry);
     signal = applyRegimeToSignal(signal, regime, market);
     signal.regime = regime;
     const skipAi = market.provider === 'finam' && !config.finam.aiEnabled;
@@ -291,7 +320,13 @@ async function runBrainCycle() {
           reasoning: 'AI skipped for Finam (set FINAM_AI_ENABLED=true to enable)',
           factors: []
         })
-        : runAiAnalyst(market, news, signal, fearGreed),
+        : runAiAnalyst(market, news, signal, fearGreed, {
+          profile,
+          profileId,
+          regime,
+          qualityFeedback: getSymbolQualityFeedback(qualityFeedback, market.symbol),
+          calibration: calibrationEntry
+        }),
       runAlgoVaultAnalyst(market)
     ]);
     const cursorAnalyst = skipAi
@@ -307,10 +342,21 @@ async function runBrainCycle() {
         reasoning: 'Cursor skipped for Finam (set FINAM_AI_ENABLED=true to enable)',
         factors: []
       }
-      : await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed);
+      : await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed, {
+        profile,
+        profileId,
+        regime,
+        qualityFeedback: getSymbolQualityFeedback(qualityFeedback, market.symbol),
+        calibration: calibrationEntry
+      });
+    const combineFn = config.strategy.aiConfirmOnly ? strategyEngine.combineConfirmOnly : combineSignals;
+    const combineOpts = {
+      blockWhenAiUnavailable: config.strategy.blockWhenAiUnavailable,
+      cursorRequired: config.strategy.cursorRequired
+    };
     const consensus = applyRegimeToConsensus(
       applyAlgoVaultConsensus(
-        combineSignals(signal, aiAnalyst, cursorAnalyst),
+        combineFn(signal, aiAnalyst, cursorAnalyst, combineOpts),
         algoVaultAnalyst
       ),
       regime,
@@ -318,13 +364,22 @@ async function runBrainCycle() {
     );
     const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst, fearGreed, signal, regime);
     const scalpSignal = applyRegimeToScalp(analyzeScalpStrategy(market, fearGreed, regime), regime, market);
+    const primaryStrategy = profileBundle.strategyType || 'swing';
     return {
       timestamp: new Date().toISOString(),
       symbol: market.symbol,
       market,
       news: summarizeNewsForDecision(news),
       fearGreed,
+      strategy: {
+        primary: profileId,
+        secondary: profileBundle.secondaryId,
+        type: primaryStrategy,
+        label: profile ? profile.label : null,
+        calibration: calibrationEntry
+      },
       signal,
+      swingSignal: signal,
       scalpSignal,
       aiAnalyst,
       algoVaultAnalyst,
@@ -1437,70 +1492,57 @@ function scoreFearGreed(value) {
 }
 
 function analyzeMarket(market, news, fearGreed = {}, qualityFeedback = { symbols: {} }) {
+  const profiles = strategyEngine.loadProfiles();
+  const bundle = strategyEngine.resolveProfilesForMarket(market, profiles);
+  const profile = bundle.primary || {
+    strategyType: 'swing',
+    minConfidence: config.minConfidence,
+    sellThreshold: 35,
+    ensembleWeights: config.ensemble.weights,
+    sentimentMode: config.strategy.sentimentVetoOnly ? 'veto_only' : 'score',
+    longOnly: marketAssetClass(market.symbol) !== 'crypto'
+  };
+  const calibration = strategyEngine.getCalibratedThresholds(
+    market.symbol,
+    bundle.primaryId || 'swing_crypto',
+    strategyEngine.loadCalibration()
+  );
+  return analyzeMarketWithProfile(
+    market,
+    news,
+    fearGreed,
+    qualityFeedback,
+    profile,
+    bundle.primaryId || 'swing_crypto',
+    calibration
+  );
+}
+
+function analyzeMarketWithProfile(market, news, fearGreed = {}, qualityFeedback = { symbols: {} }, profile = {}, profileId = 'swing_crypto', calibrationEntry = {}) {
   const symbolFeedback = getSymbolQualityFeedback(qualityFeedback, market.symbol);
   const components = {
     technical: scoreTechnicalComponent(market),
-    sentiment: scoreSentimentComponent(news, fearGreed),
+    sentiment: strategyEngine.scoreSentimentForProfile(news, fearGreed, profile),
     microstructure: scoreMicrostructureComponent(market),
     derivatives: scoreDerivativesComponent(market)
   };
-  const ensembleWeights = resolveEnsembleWeights(market);
-  let score = 0;
-  const reasons = [];
-
-  if (config.ensemble.enabled) {
-    for (const [name, component] of Object.entries(components)) {
-      const weight = ensembleWeights[name] || 0;
-      score += component.score * weight;
-      if (component.reasons.length) {
-        reasons.push(`${name}: ${component.reasons.slice(0, 2).join('; ')}`);
-      }
-    }
-    score = round(score, 2);
-  } else {
-    score = components.technical.score
-      + components.sentiment.score
-      + components.microstructure.score
-      + components.derivatives.score;
-    reasons.push(...components.technical.reasons, ...components.sentiment.reasons);
-  }
-
-  let confidence = clamp(Math.round(50 + score + (symbolFeedback.confidenceDelta || 0)), 0, 100);
-  const effectiveMinConfidence = clamp(
-    config.minConfidence + (symbolFeedback.minConfidenceDelta || 0),
-    55,
-    90
-  );
-
-  let action = 'HOLD';
-  if (confidence >= effectiveMinConfidence) {
-    action = 'BUY';
-  } else if (confidence <= 35) {
-    action = 'SELL';
-  }
-
-  if (symbolFeedback.reason && symbolFeedback.reason !== 'no data' && symbolFeedback.reason !== 'neutral') {
-    reasons.push(`Quality feedback: ${symbolFeedback.reason}`);
-  }
-
-  return {
-    action,
-    confidence,
-    score,
-    components: Object.fromEntries(Object.entries(components).map(([name, component]) => [name, {
-      score: component.score,
-      weightedScore: round(component.score * (ensembleWeights[name] || 0), 2),
-      reasons: component.reasons
-    }])),
+  const ensembleWeights = strategyEngine.resolveProfileWeights(profile, market, config.ensemble.weights);
+  let signal = strategyEngine.buildSignalFromComponents({
+    market,
+    profile,
+    profileId,
+    components,
     ensembleWeights,
-    effectiveMinConfidence,
     qualityFeedback: symbolFeedback,
-    source: config.ensemble.enabled ? 'ensemble_rules' : 'rules_only',
-    reasons
-  };
+    calibrationEntry,
+    longOnlyAdjust: profile.longOnly || market.provider === 'finam'
+  });
+
+  signal = strategyEngine.applySentimentVeto(signal, news, fearGreed, profile);
+  return signal;
 }
 
-async function runAiAnalyst(market, news, signal, fearGreed = {}) {
+async function runAiAnalyst(market, news, signal, fearGreed = {}, strategyContext = {}) {
   if (!config.ai.enabled) {
     return {
       enabled: false,
@@ -1532,7 +1574,7 @@ async function runAiAnalyst(market, news, signal, fearGreed = {}) {
   }
 
   try {
-    const response = await aiRequest(buildAiMessages(market, news, signal, fearGreed));
+    const response = await aiRequest(buildAiMessages(market, news, signal, fearGreed, strategyContext));
     return normalizeAiVerdict(response);
   } catch (error) {
     return {
@@ -1550,38 +1592,24 @@ async function runAiAnalyst(market, news, signal, fearGreed = {}) {
   }
 }
 
-function buildAiMessages(market, news, signal, fearGreed = {}) {
-  const payload = {
-    symbol: market.symbol,
-    market: {
-      lastPrice: market.lastPrice,
-      change24hPct: market.change24hPct,
-      turnover24h: market.turnover24h,
-      volume24h: market.volume24h,
-      indicators: market.indicators,
-      orderBook: market.orderBook || { available: false },
-      derivatives: market.derivatives || { available: false }
-    },
-    news: summarizeNewsForDecision(news),
-    fearGreed: summarizeFearGreedForDecision(fearGreed),
-    ruleSignal: signal,
-    constraints: {
-      mode: 'dry-run analysis only',
-      allowedActions: ['BUY', 'SELL', 'HOLD', 'WAIT'],
-      noLeverage: true,
-      preferCapitalProtection: true
-    }
-  };
+function buildAiMessages(market, news, signal, fearGreed = {}, strategyContext = {}) {
+  const payload = strategyEngine.buildRichAiPayload(market, news, fearGreed, signal, {
+    profile: strategyContext.profile || {},
+    profileId: strategyContext.profileId,
+    regime: strategyContext.regime || signal.regime || {},
+    qualityFeedback: strategyContext.qualityFeedback || signal.qualityFeedback || {},
+    calibration: strategyContext.calibration || {}
+  });
 
   return [
     {
       role: 'system',
       content: [
-        'You are a conservative crypto trading analyst.',
+        'You are a conservative confirm-only trading judge.',
+        'Do NOT invent setups. Only confirm, veto, or downgrade the provided rule setup.',
         'Return only valid JSON.',
-        'Do not suggest leverage.',
-        'If data is mixed, uncertain, or news risk is elevated, prefer HOLD or WAIT.',
-        'JSON schema: {"action":"BUY|SELL|HOLD|WAIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}.'
+        'Prefer capital protection. Use verdict=veto on mixed/risky context.',
+        'JSON schema: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}.'
       ].join(' ')
     },
     {
@@ -1629,6 +1657,9 @@ async function aiRequest(messages) {
 
 function normalizeAiVerdict(raw) {
   const action = normalizeAction(raw.action);
+  const verdict = ['confirm', 'veto', 'downgrade'].includes(String(raw.verdict || '').toLowerCase())
+    ? String(raw.verdict).toLowerCase()
+    : null;
   const confidence = clamp(Math.round(Number(raw.confidence) || 0), 0, 100);
   const riskLevel = ['low', 'medium', 'high'].includes(String(raw.riskLevel || '').toLowerCase())
     ? String(raw.riskLevel).toLowerCase()
@@ -1640,16 +1671,17 @@ function normalizeAiVerdict(raw) {
     status: 'ok',
     provider: config.ai.provider,
     model: config.ai.model,
+    verdict,
     action,
     confidence,
     riskLevel,
-    veto: Boolean(raw.veto),
+    veto: Boolean(raw.veto) || verdict === 'veto',
     reasoning: String(raw.reasoning || '').slice(0, 500),
     factors
   };
 }
 
-async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst = {}, fearGreed = {}) {
+async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst = {}, fearGreed = {}, strategyContext = {}) {
   if (!config.cursor.enabled) {
     return {
       enabled: false,
@@ -1681,7 +1713,7 @@ async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalys
   }
 
   try {
-    const raw = await cursorRequest(buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed));
+    const raw = await cursorRequest(buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed, strategyContext));
     return normalizeCursorVerdict(raw);
   } catch (error) {
     return {
@@ -1699,36 +1731,24 @@ async function runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalys
   }
 }
 
-function buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst = {}, fearGreed = {}) {
+function buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst = {}, fearGreed = {}, strategyContext = {}) {
+  const payload = strategyEngine.buildRichAiPayload(market, news, fearGreed, signal, {
+    profile: strategyContext.profile || {},
+    profileId: strategyContext.profileId,
+    regime: strategyContext.regime || signal.regime || {},
+    qualityFeedback: strategyContext.qualityFeedback || signal.qualityFeedback || {},
+    calibration: strategyContext.calibration || {}
+  });
   return [
-    'You are Cursor Analyst, an independent conservative reviewer for a crypto trading brain.',
-    'Do not inspect or modify files. Use only the JSON payload in this prompt.',
-    'AlgoVault MCP quant signals are pre-fetched in algoVaultAnalyst. You may also call get_trade_call via MCP if needed.',
-    'Return only valid JSON with this schema:',
-    '{"action":"BUY|SELL|HOLD|WAIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}',
-    'Prefer HOLD or WAIT when signal quality is weak, AI providers disagree, news risk is high, Fear & Greed is extreme, or edge is unclear.',
+    'You are Cursor Analyst — a soft confirm-only veto layer for an automated trading brain.',
+    'Do not inspect files. Use only this JSON payload.',
+    'Your job: confirm the rule setup, veto it, or downgrade it. Do NOT invent new setups.',
+    'Return only valid JSON:',
+    '{"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}',
     JSON.stringify({
-      symbol: market.symbol,
-      market: {
-        lastPrice: market.lastPrice,
-        change24hPct: market.change24hPct,
-        turnover24h: market.turnover24h,
-        volume24h: market.volume24h,
-        indicators: market.indicators,
-        orderBook: market.orderBook || { available: false },
-        derivatives: market.derivatives || { available: false }
-      },
-      news: summarizeNewsForDecision(news),
-      fearGreed: summarizeFearGreedForDecision(fearGreed),
-      ruleSignal: signal,
+      ...payload,
       deepSeekAnalyst: aiAnalyst,
-      algoVaultAnalyst,
-      constraints: {
-        mode: 'dry-run analysis only',
-        allowedActions: ['BUY', 'SELL', 'HOLD', 'WAIT'],
-        noLeverage: true,
-        preferCapitalProtection: true
-      }
+      algoVaultAnalyst
     })
   ].join('\n\n');
 }
@@ -2782,7 +2802,7 @@ function combineWithCursorOnly(ruleSignal, cursorAnalyst) {
 
 function normalizeAction(action) {
   const value = String(action || '').toUpperCase();
-  return ['BUY', 'SELL', 'HOLD', 'WAIT'].includes(value) ? value : null;
+  return ['BUY', 'SELL', 'HOLD', 'WAIT', 'EXIT'].includes(value) ? value : null;
 }
 
 function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fearGreed = {}, ruleSignal = {}, regime = {}) {
@@ -3270,7 +3290,7 @@ function applyPaperDecision(state, decision) {
     return paperEvent('OPEN', decision, price, { qty, positionUsd, feeUsd });
   }
 
-  if (position && action === 'SELL') {
+  if (position && (action === 'SELL' || action === 'EXIT')) {
     const grossUsd = position.qty * price;
     const closeFeeUsd = grossUsd * config.paper.feeRate;
     const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
@@ -3967,6 +3987,11 @@ async function runBacktestReport(cliArgs = {}) {
     throw new Error(`Unknown backtest mode: ${mode}. Use rules, ai/decisions, both, or all.`);
   }
 
+  if (cliArgs.walkForward && report.runs.rules) {
+    const fixturePath = cliArgs.fixture ? path.resolve(String(cliArgs.fixture)) : null;
+    report.runs.walkForward = await backtestWalkForwardMode(symbols, options, fixturePath);
+  }
+
   report.summary = summarizeBacktestReport(report);
   writeJson(path.join(config.dataDir, 'backtest-latest.json'), report);
   return report;
@@ -4029,6 +4054,7 @@ function backtestAiDecisionsMode(symbols, options) {
       rules: mapDecisionsToStrategy(enriched, 'rules'),
       deepseek: mapDecisionsToStrategy(enriched, 'deepseek'),
       cursor: mapDecisionsToStrategy(enriched, 'cursor'),
+      aiConfirm: mapDecisionsToStrategy(enriched, 'aiConfirm'),
       aiAgree: mapDecisionsToStrategy(enriched, 'aiAgree'),
       fullAgree: mapDecisionsToStrategy(enriched, 'fullAgree')
     };
@@ -4074,7 +4100,7 @@ function backtestAiDecisionsMode(symbols, options) {
   }
 
   const portfolioByStrategy = {};
-  for (const strategyName of ['final', 'rules', 'deepseek', 'cursor', 'aiAgree', 'fullAgree']) {
+  for (const strategyName of ['final', 'rules', 'deepseek', 'cursor', 'aiConfirm', 'aiAgree', 'fullAgree']) {
     const fakeSymbols = {};
     for (const [symbol, item] of Object.entries(bySymbol)) {
       fakeSymbols[symbol] = {
@@ -4096,7 +4122,7 @@ function backtestAiDecisionsMode(symbols, options) {
       rules: 'Rules/ensemble signal only',
       deepseek: 'DeepSeek action when status=ok',
       cursor: 'Cursor action when status=ok',
-      aiAgree: 'Trade only when DeepSeek and Cursor agree BUY/SELL',
+      aiConfirm: 'Rules setup + DeepSeek confirm-only + Cursor soft veto',
       fullAgree: 'Trade only when rules + DeepSeek + Cursor agree'
     }
   };
@@ -4152,6 +4178,32 @@ function mapDecisionsToStrategy(enriched, strategyName) {
     } else if (strategyName === 'cursor') {
       action = row.cursorAction || 'WAIT';
       confidence = row.cursorConfidence || 0;
+    } else if (strategyName === 'aiConfirm') {
+      const ruleSignal = {
+        action: row.rulesAction,
+        confidence: row.confidence,
+        score: 0,
+        reasons: []
+      };
+      const ai = {
+        enabled: row.deepseekStatus === 'ok',
+        status: row.deepseekStatus,
+        action: row.deepseekAction,
+        confidence: row.deepseekConfidence,
+        veto: false,
+        reasoning: ''
+      };
+      const cur = {
+        enabled: row.cursorStatus === 'ok',
+        status: row.cursorStatus,
+        action: row.cursorAction,
+        confidence: row.cursorConfidence,
+        veto: false,
+        reasoning: ''
+      };
+      const combined = strategyEngine.combineConfirmOnly(ruleSignal, ai, cur, {});
+      action = combined.action;
+      confidence = combined.confidence;
     } else if (strategyName === 'aiAgree') {
       if (row.deepseekAction && row.cursorAction && row.deepseekAction === row.cursorAction
         && ['BUY', 'SELL'].includes(row.deepseekAction)) {
@@ -4225,6 +4277,12 @@ function backtestSymbolOnCandles(symbol, candles, options) {
   const decisions = [];
   const category = marketCategory(symbol);
   const assetClass = marketAssetClass(symbol);
+  const profilesDoc = strategyEngine.loadProfiles();
+  const calibrationDoc = strategyEngine.loadCalibration();
+  const bundle = strategyEngine.resolveProfilesForMarket({ symbol, provider: 'bybit', assetClass }, profilesDoc);
+  const profile = bundle.primary;
+  const profileId = bundle.primaryId;
+  const calibrationEntry = strategyEngine.getCalibratedThresholds(symbol, profileId, calibrationDoc);
 
   for (let index = warmup; index < candles.length; index += 1) {
     const end = index + 1;
@@ -4249,17 +4307,30 @@ function backtestSymbolOnCandles(symbol, candles, options) {
     });
 
     const regime = detectMarketRegime(market);
-    let signal = analyzeMarket(market, emptyBacktestNews(), emptyBacktestFearGreed(), { symbols: {} });
+    let signal = analyzeMarketWithProfile(
+      market,
+      emptyBacktestNews(),
+      emptyBacktestFearGreed(),
+      { symbols: {} },
+      profile,
+      profileId,
+      calibrationEntry
+    );
     signal = applyRegimeToSignal(signal, regime, market);
     signal.regime = regime;
     const consensus = {
       ...signal,
-      source: 'backtest_rules_only',
+      source: 'backtest_strategy_profile',
+      strategyProfile: profileId,
       aiAgreement: 'skipped',
       cursorAgreement: 'skipped',
-      reasons: [...(signal.reasons || []), 'Backtest: AI analysts skipped']
+      reasons: [...(signal.reasons || []), 'Backtest: strategy profile replay']
     };
-    const risk = applyBacktestRisk(consensus, market, signal, regime, options);
+    const riskOpts = {
+      ...options,
+      minConfidence: calibrationEntry.minConfidence || signal.effectiveMinConfidence || options.minConfidence
+    };
+    const risk = applyBacktestRisk(consensus, market, signal, regime, riskOpts);
     decisions.push({
       timestamp: new Date(last.start).toISOString(),
       symbol,
@@ -4268,12 +4339,14 @@ function backtestSymbolOnCandles(symbol, candles, options) {
         action: consensus.action,
         confidence: consensus.confidence,
         source: consensus.source,
-        score: consensus.score
+        score: consensus.score,
+        strategyProfile: profileId
       },
       signal: {
         action: signal.action,
         confidence: signal.confidence,
         effectiveMinConfidence: signal.effectiveMinConfidence,
+        strategyType: signal.strategyType,
         reasons: (signal.reasons || []).slice(0, 4)
       },
       risk: {
@@ -4295,11 +4368,16 @@ function backtestSymbolOnCandles(symbol, candles, options) {
     });
   }
 
-  const paper = simulateBacktestPaper(decisions, options);
+  const paper = simulateBacktestPaper(decisions, {
+    ...options,
+    minConfidence: calibrationEntry.minConfidence || options.minConfidence
+  });
   return {
     symbol,
     source: 'bybit_klines',
     interval: String(options.interval),
+    strategyProfile: profileId,
+    calibration: calibrationEntry,
     bars: candles.length,
     evaluatedBars: decisions.length,
     from: decisions[0] ? decisions[0].timestamp : null,
@@ -4307,8 +4385,159 @@ function backtestSymbolOnCandles(symbol, candles, options) {
     actionCounts: countActions(decisions),
     signalQuality: evaluateBacktestSignalQuality(decisions),
     paper,
-    sampleDecisions: decisions.filter((d) => ['BUY', 'SELL'].includes(d.finalAction)).slice(-8)
+    sampleDecisions: decisions.filter((d) => ['BUY', 'SELL', 'EXIT'].includes(d.finalAction)).slice(-8)
   };
+}
+
+function buildHistoricalSignalRows(symbol, candles, startIndex, endIndex, options = {}) {
+  const warmup = Math.max(55, Number(options.warmupBars) || 60);
+  const windowBars = Math.max(warmup, Number(options.windowBars) || 96);
+  const rows = [];
+  const category = marketCategory(symbol);
+  const assetClass = marketAssetClass(symbol);
+  const profilesDoc = strategyEngine.loadProfiles();
+  const bundle = strategyEngine.resolveProfilesForMarket({ symbol, provider: 'bybit', assetClass }, profilesDoc);
+  const profile = bundle.primary;
+  const profileId = bundle.primaryId;
+  const from = Math.max(startIndex, warmup);
+  const to = Math.min(endIndex, candles.length);
+
+  for (let index = from; index < to; index += 1) {
+    const end = index + 1;
+    const start = Math.max(0, end - windowBars);
+    const window = candles.slice(start, end);
+    const last = window[window.length - 1];
+    const lookback24h = Math.min(window.length, barsForApproxDay(options.interval));
+    const price24hAgo = window[window.length - lookback24h].close;
+    const market = assembleMarketFromCandles({
+      symbol,
+      provider: 'bybit',
+      category,
+      assetClass,
+      lastPrice: last.close,
+      change24hPct: percentChange(price24hAgo, last.close),
+      turnover24h: 0,
+      volume24h: average(window.slice(-lookback24h).map((c) => c.volume)),
+      candles: window,
+      orderBook: { available: false },
+      derivatives: { available: false },
+      scalpCandles: []
+    });
+    const regime = detectMarketRegime(market);
+    let signal = analyzeMarketWithProfile(market, emptyBacktestNews(), emptyBacktestFearGreed(), { symbols: {} }, profile, profileId, {});
+    signal = applyRegimeToSignal(signal, regime, market);
+    rows.push({
+      timestamp: new Date(last.start).toISOString(),
+      rawAction: signal.action,
+      confidence: signal.confidence,
+      price: market.lastPrice,
+      strategyProfile: profileId
+    });
+  }
+  return { rows, profile, profileId };
+}
+
+async function backtestWalkForwardMode(symbols, options, fixturePath = null) {
+  const folds = numberArg(options.walkForwardFolds, config.backtest.walkForwardFolds);
+  const bySymbol = {};
+  for (const symbol of symbols) {
+    let candles;
+    const fixture = fixturePath ? readJsonFile(fixturePath) : null;
+    if (fixture && Array.isArray(fixture[symbol])) {
+      candles = fixture[symbol];
+    } else {
+      candles = await fetchBacktestCandles(symbol, options.interval, options.candleLimit);
+    }
+    const segments = strategyEngine.splitWalkForwardIndices(candles.length, folds, options.warmupBars);
+    const foldReports = [];
+    let bestAggregate = null;
+
+    for (const segment of segments) {
+      const train = buildHistoricalSignalRows(symbol, candles, options.warmupBars, segment.trainEnd, options);
+      const tuned = strategyEngine.calibrateThresholds(train.rows, train.profile);
+      const testSlice = buildHistoricalSignalRows(symbol, candles, segment.testStart, segment.testEnd, options);
+      const testMetrics = strategyEngine.evaluateThresholdOnSlice(
+        testSlice.rows,
+        tuned.minConfidence,
+        tuned.sellThreshold,
+        options.feeRate
+      );
+      foldReports.push({
+        fold: segment.fold,
+        trainBars: train.rows.length,
+        testBars: testSlice.rows.length,
+        tuned,
+        test: testMetrics
+      });
+      if (!bestAggregate || (testMetrics.hitRatePct || 0) > (bestAggregate.test.hitRatePct || 0)) {
+        bestAggregate = { fold: segment.fold, tuned, test: testMetrics };
+      }
+    }
+
+    bySymbol[symbol] = {
+      symbol,
+      folds: foldReports,
+      bestFold: bestAggregate,
+      avgTestHitRatePct: foldReports.length
+        ? round(average(foldReports.map((f) => f.test.hitRatePct || 0)), 2)
+        : 0
+    };
+  }
+
+  return {
+    kind: 'walk_forward',
+    folds,
+    symbols: bySymbol
+  };
+}
+
+async function runCalibrationReport(cliArgs = {}) {
+  ensureDir(config.dataDir);
+  const symbols = splitList(cliArgs.symbols || config.backtest.symbols.join(','));
+  const folds = numberArg(cliArgs.folds, config.backtest.walkForwardFolds);
+  const options = {
+    interval: String(cliArgs.interval || config.backtest.interval),
+    candleLimit: numberArg(cliArgs.limit || cliArgs.candles, config.backtest.candleLimit),
+    warmupBars: numberArg(cliArgs.warmup, config.backtest.warmupBars),
+    windowBars: numberArg(cliArgs.window, config.backtest.windowBars),
+    walkForwardFolds: folds,
+    feeRate: numberArg(cliArgs.fee, config.backtest.feeRate)
+  };
+
+  const calibration = strategyEngine.loadCalibration();
+  calibration.updatedAt = new Date().toISOString();
+  calibration.symbols = calibration.symbols || {};
+  calibration.note = 'Walk-forward tuned thresholds per symbol/strategy profile';
+  const report = { updatedAt: calibration.updatedAt, symbols: {} };
+
+  for (const symbol of symbols) {
+    const candles = await fetchBacktestCandles(symbol, options.interval, options.candleLimit);
+    const wf = await backtestWalkForwardMode([symbol], options);
+    const symbolWf = wf.symbols[symbol] || {};
+    const best = symbolWf.bestFold && symbolWf.bestFold.tuned;
+    const trainBundle = buildHistoricalSignalRows(symbol, candles, options.warmupBars, candles.length - 1, options);
+    const fullTune = strategyEngine.calibrateThresholds(trainBundle.rows, trainBundle.profile);
+    const chosen = best && best.evaluated >= 8 ? best : fullTune;
+
+    calibration.symbols[symbol] = calibration.symbols[symbol] || { profiles: {} };
+    calibration.symbols[symbol].profiles[trainBundle.profileId] = {
+      minConfidence: chosen.minConfidence,
+      sellThreshold: chosen.sellThreshold,
+      hitRatePct: chosen.hitRatePct,
+      evaluated: chosen.evaluated,
+      walkForwardAvgHitRatePct: symbolWf.avgTestHitRatePct,
+      updatedAt: calibration.updatedAt
+    };
+    report.symbols[symbol] = {
+      profileId: trainBundle.profileId,
+      thresholds: calibration.symbols[symbol].profiles[trainBundle.profileId],
+      walkForward: symbolWf
+    };
+  }
+
+  strategyEngine.saveCalibration(calibration);
+  writeJson(path.join(config.dataDir, 'calibration-report.json'), report);
+  return report;
 }
 
 function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options = {}) {
@@ -4404,7 +4633,7 @@ function simulateBacktestPaper(decisions, options = {}) {
           confidence
         });
       }
-    } else if (position && decision.finalAction === 'SELL') {
+    } else if (position && (decision.finalAction === 'SELL' || decision.finalAction === 'EXIT')) {
       const grossUsd = position.qty * price;
       const closeFeeUsd = grossUsd * feeRate;
       const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;

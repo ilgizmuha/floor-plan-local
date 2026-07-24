@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Trading Brain Panel
  * Description: Admin trading terminal for the hybrid trading brain (Bybit + Finam).
- * Version: 0.2.2
+ * Version: 0.3.0
  * Author: Cursor
  */
 

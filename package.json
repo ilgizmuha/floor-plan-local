@@ -12,7 +12,8 @@
     "bybit:order": "node scripts/bybit-trader.js order",
     "brain:once": "node scripts/trading-brain.js once",
     "brain:status": "node scripts/trading-brain.js status",
-    "brain:backtest": "node scripts/trading-brain.js backtest"
+    "brain:backtest": "node scripts/trading-brain.js backtest",
+    "brain:calibrate": "node scripts/trading-brain.js calibrate"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.24",

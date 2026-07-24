@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "profiles": {
+    "scalp": {
+      "label": "Scalp 5m",
+      "strategyType": "scalp",
+      "timeframe": "5m",
+      "providers": ["bybit"],
+      "assetClasses": ["crypto"],
+      "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+      "minConfidence": 62,
+      "sellThreshold": 38,
+      "ensembleWeights": {
+        "technical": 0.28,
+        "microstructure": 0.42,
+        "derivatives": 0.25,
+        "sentiment": 0.05
+      },
+      "sentimentMode": "veto_only",
+      "longOnly": false,
+      "regimeProfile": "scalp",
+      "aiMode": "confirm_only"
+    },
+    "swing_crypto": {
+      "label": "Swing crypto 15m",
+      "strategyType": "swing",
+      "timeframe": "15m",
+      "providers": ["bybit"],
+      "assetClasses": ["crypto"],
+      "minConfidence": 70,
+      "sellThreshold": 32,
+      "ensembleWeights": {
+        "technical": 0.45,
+        "microstructure": 0.18,
+        "derivatives": 0.27,
+        "sentiment": 0.10
+      },
+      "sentimentMode": "veto_only",
+      "longOnly": false,
+      "regimeProfile": "swing",
+      "aiMode": "confirm_only"
+    },
+    "swing_tradfi": {
+      "label": "Swing TradFi 15m",
+      "strategyType": "swing",
+      "timeframe": "15m",
+      "providers": ["bybit"],
+      "assetClasses": ["metal", "commodity", "stock", "forex"],
+      "minConfidence": 72,
+      "sellThreshold": 30,
+      "ensembleWeights": {
+        "technical": 0.52,
+        "microstructure": 0.13,
+        "derivatives": 0.30,
+        "sentiment": 0.05
+      },
+      "sentimentMode": "veto_only",
+      "longOnly": true,
+      "regimeProfile": "swing",
+      "aiMode": "confirm_only"
+    },
+    "long_finam": {
+      "label": "Long Finam swing",
+      "strategyType": "long",
+      "timeframe": "15m",
+      "providers": ["finam"],
+      "assetClasses": ["equity", "fx", "metal", "crypto"],
+      "minConfidence": 68,
+      "sellThreshold": 28,
+      "ensembleWeights": {
+        "technical": 0.58,
+        "microstructure": 0.07,
+        "derivatives": 0.05,
+        "sentiment": 0.30
+      },
+      "sentimentMode": "veto_only",
+      "longOnly": true,
+      "regimeProfile": "long",
+      "aiMode": "confirm_only"
+    }
+  },
+  "symbolPrimary": {
+    "BTCUSDT": "swing_crypto",
+    "ETHUSDT": "swing_crypto",
+    "SOLUSDT": "swing_crypto",
+    "XRPUSDT": "swing_crypto",
+    "LINKUSDT": "swing_crypto",
+    "XAUUSDT": "swing_tradfi",
+    "XAGUSDT": "swing_tradfi",
+    "TSLAUSDT": "swing_tradfi",
+    "NVDAUSDT": "swing_tradfi",
+    "CLUSDT": "swing_tradfi",
+    "XAUTUSDT": "swing_tradfi",
+    "USDTEUR": "swing_tradfi",
+    "BTCEUR": "swing_tradfi",
+    "ETHEUR": "swing_tradfi"
+  },
+  "symbolSecondary": {
+    "BTCUSDT": "scalp",
+    "ETHUSDT": "scalp",
+    "SOLUSDT": "scalp"
+  }
+}
