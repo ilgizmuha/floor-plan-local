@@ -21,11 +21,16 @@
     },
     "finamWhenConnected": {
       "accounts": {
-        "791750REXQ4": "long / swing only",
-        "791750RM43P": "daily tariff / intraday (futures, FX maker >=50 lots)"
+        "791750REXQ4": "long / swing only — equities, metals, US stocks",
+        "791750RM43P": "day / intraday / Finam scalp — FX, futures"
       },
-      "scalpOk": ["futures_moex_0.45rub", "fx_maker_ge_50_lots"],
-      "longOnly": ["moex_equities", "us_equities", "metals_spot", "fx_taker_small", "fx_tms_taker"]
+      "strategies": {
+        "long_finam": "REXQ4, conf≥70, max 500₽, close-only SELL",
+        "day_finam": "RM43P, conf≥65, max 400₽, intraday",
+        "scalp_finam": "RM43P secondary, conf≥68, max 300₽, spread/TP gates"
+      },
+      "scalpOk": ["futures_moex", "fx_maker_ge_50_lots", "USD000UTSTOM", "CNYRUB_TOM"],
+      "longOnly": ["moex_equities", "us_equities", "metals_spot", "fx_taker_small"]
     }
   }
 }

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Trading Brain Panel
  * Description: Admin trading terminal for the hybrid trading brain (Bybit + Finam).
- * Version: 0.3.0
+ * Version: 0.3.1
  * Author: Cursor
  */
 
@@ -379,17 +379,20 @@ final class Trading_Brain_Panel {
 					const orderBook = market.orderBook || {};
 					const derivatives = market.derivatives || {};
 					const account = market.preferredAccount || {};
+					const strategy = item.strategy || {};
 
 					box.innerHTML =
 						'<h3>' + escapeHtml(item.symbol) + ' <span class="tbp-badge tbp-badge-' + escapeHtml(action.toLowerCase()) + '">' + escapeHtml(action) + '</span></h3>' +
 						'<div class="tbp-meta">' + escapeHtml(market.assetClass || '') + ' / ' + escapeHtml(market.provider || market.category || '') +
-						(account.tradeCode ? ' · счёт ' + escapeHtml(account.tradeCode) + ' (' + escapeHtml(account.roleLabel || account.role || '') + ')' : '') + '</div>' +
+						(account.tradeCode ? ' · счёт ' + escapeHtml(account.tradeCode) + ' (' + escapeHtml(account.roleLabel || account.role || '') + ')' : '') +
+						(strategy.label || strategy.type ? ' · ' + escapeHtml(strategy.label || strategy.type) : '') + '</div>' +
 						'<p><strong>Conf</strong> ' + escapeHtml(consensus.confidence) + ' · <strong>Risk</strong> ' + escapeHtml(risk.riskScore) +
 						(risk.effectiveMinConfidence ? ' · min ' + escapeHtml(risk.effectiveMinConfidence) : '') + '</p>' +
 						'<p><strong>Price</strong> ' + escapeHtml(market.lastPrice) + ' · <strong>24h</strong> <span class="' + pctClass(market.change24hPct) + '">' + escapeHtml(market.change24hPct) + '%</span></p>' +
 						'<p><strong>RSI</strong> ' + escapeHtml(indicators.rsi14) + ' · <strong>ADX</strong> ' + escapeHtml(indicators.adx14) + ' · <strong>SMA</strong> ' + escapeHtml(indicators.sma20) + '/' + escapeHtml(indicators.sma50) + '</p>' +
 						(regime.regime ? '<p><strong>Regime</strong> ' + escapeHtml(regime.regime) + ' / ' + escapeHtml(regime.preferredStrategy || '') + '</p>' : '') +
-						(scalp.enabled ? '<p><strong>Scalp</strong> ' + escapeHtml(scalp.action || 'WAIT') + ' / ' + escapeHtml(scalp.confidence) + ' · ' + escapeHtml(scalp.horizon || '') + '</p>' : '') +
+						(strategy.primary ? '<p><strong>Strategy</strong> ' + escapeHtml(strategy.primary) + (strategy.secondary ? ' + ' + escapeHtml(strategy.secondary) : '') + '</p>' : '') +
+						(scalp.enabled ? '<p><strong>Scalp</strong> ' + escapeHtml(scalp.action || 'WAIT') + ' / ' + escapeHtml(scalp.confidence) + ' · ' + escapeHtml(scalp.horizon || '') + (scalp.strategy ? ' · ' + escapeHtml(scalp.strategy) : '') + '</p>' : '') +
 						(orderBook.available ? '<p><strong>Book</strong> spread ' + escapeHtml(orderBook.spreadPct) + '% · imb ' + escapeHtml(orderBook.imbalance) + ' · ' + escapeHtml(orderBook.pressure) + '</p>' : '') +
 						(derivatives.available ? '<p><strong>Deriv</strong> fund ' + escapeHtml(derivatives.fundingRatePct) + '% · OIΔ ' + escapeHtml(derivatives.openInterestChangePct) + '%</p>' : '') +
 						'<p><strong>AI</strong> ' + escapeHtml(ai.status || '—') + (ai.action ? ' → ' + escapeHtml(ai.action) + '/' + escapeHtml(ai.confidence) : '') + '</p>' +
@@ -488,17 +491,35 @@ final class Trading_Brain_Panel {
 						}).join('') : '<p class="tbp-muted">Бэктест ещё не запускался. На VPS: <code>node trading-brain.js backtest --mode ai</code></p>');
 
 					const finamAccounts = finam.accounts || [];
+					const finamDecisions = (state.decisions || []).filter((d) => (d.market && d.market.provider === 'finam'));
+					const byStrategy = (finam.trading && finam.trading.byStrategy) || {};
 					document.getElementById('tbp-finam').innerHTML =
 						'<p><strong>Trading</strong> ' + escapeHtml((finam.trading && finam.trading.enabled) ?? false) +
 						(finam.trading && finam.trading.stats ? ' · submitted ' + escapeHtml(finam.trading.stats.submitted ?? 0) + ', bought ' + escapeHtml(finam.trading.stats.bought ?? 0) + ', sold ' + escapeHtml(finam.trading.stats.sold ?? 0) + ', skipped ' + escapeHtml(finam.trading.stats.skipped ?? 0) : '') + '</p>' +
+						'<p><strong>Strategies</strong> long ' + escapeHtml(byStrategy.long ?? 0) + ' · day ' + escapeHtml(byStrategy.day ?? 0) + ' · scalp ' + escapeHtml(byStrategy.scalp ?? 0) + '</p>' +
 						(finam.trading && finam.trading.events && finam.trading.events.length ? '<ul>' + finam.trading.events.slice(0, 10).map((ev) =>
-							'<li>' + escapeHtml(ev.type) + ' ' + escapeHtml(ev.symbol) + (ev.reason ? ' — ' + escapeHtml(ev.reason) : '') + (ev.qty ? ' qty ' + escapeHtml(ev.qty) : '') + '</li>'
+							'<li>' + escapeHtml(ev.type) + ' ' + escapeHtml(ev.symbol) +
+							(ev.strategyType ? ' [' + escapeHtml(ev.strategyType) + ']' : '') +
+							(ev.reason ? ' — ' + escapeHtml(ev.reason) : '') +
+							(ev.qty ? ' qty ' + escapeHtml(ev.qty) : '') + '</li>'
 						).join('') + '</ul>' : '') +
+						(finamDecisions.length ? '<div class="tbp-account"><strong>Сигналы Finam</strong><ul>' + finamDecisions.map((d) => {
+							const st = d.strategy || {};
+							const sc = d.scalpSignal || {};
+							const acc = (d.market && d.market.preferredAccount) || {};
+							return '<li>' + escapeHtml(d.symbol) + ': ' + escapeHtml(d.finalAction) +
+								' · ' + escapeHtml(st.primary || st.type || '—') +
+								' · ' + escapeHtml(acc.tradeCode || acc.role || '') +
+								(sc.enabled ? ' · scalp ' + escapeHtml(sc.action) + '/' + escapeHtml(sc.confidence) : '') +
+								'</li>';
+						}).join('') + '</ul></div>' : '') +
 						(finamAccounts.length ? finamAccounts.map((acc) => {
 							const cash = (acc.cash || []).map((c) => escapeHtml(c.amount) + ' ' + escapeHtml(c.currency)).join(', ');
 							const pos = (acc.positions || []).filter((p) => Number(p.qty) > 0);
 							return '<div class="tbp-account">' +
-								'<p><strong>' + escapeHtml(acc.tradeCode || acc.accountId) + '</strong> · ' + escapeHtml(acc.roleLabel || acc.role || '') + ' · ' + escapeHtml(acc.status || acc.error || '') + '</p>' +
+								'<p><strong>' + escapeHtml(acc.tradeCode || acc.accountId) + '</strong> · ' + escapeHtml(acc.roleLabel || acc.role || '') +
+								(acc.horizon ? ' · ' + escapeHtml(acc.horizon) : '') +
+								' · ' + escapeHtml(acc.status || acc.error || '') + '</p>' +
 								'<p>Equity ' + escapeHtml(acc.equity ?? '—') + ' · Cash ' + (cash || '—') + ' · uPnL ' + escapeHtml(acc.unrealizedProfit ?? 0) + '</p>' +
 								(pos.length ? '<ul>' + pos.map((p) => '<li>' + escapeHtml(p.symbol) + ': ' + escapeHtml(p.qty) + ' @ ' + escapeHtml(p.averagePrice) + ' → ' + escapeHtml(p.currentPrice) + ' (uPnL ' + escapeHtml(p.unrealizedPnl) + ')</li>').join('') + '</ul>' : '<p class="tbp-muted">Позиций нет</p>') +
 							'</div>';

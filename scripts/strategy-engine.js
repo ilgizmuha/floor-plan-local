@@ -64,14 +64,7 @@ function createStrategyEngine(options = {}) {
     const symbol = market.symbol;
 
     if (provider === 'finam') {
-      const profile = getProfile(profilesDoc, 'long_finam');
-      return {
-        primary: profile,
-        primaryId: 'long_finam',
-        secondary: null,
-        secondaryId: null,
-        strategyType: 'long'
-      };
+      return resolveFinamProfiles(market, profilesDoc);
     }
 
     const primaryId = (profilesDoc.symbolPrimary && profilesDoc.symbolPrimary[symbol])
@@ -86,6 +79,46 @@ function createStrategyEngine(options = {}) {
       secondary,
       secondaryId,
       strategyType: primary ? primary.strategyType : 'swing'
+    };
+  }
+
+  function resolveFinamProfiles(market, profilesDoc = loadProfiles()) {
+    const finamMeta = profilesDoc.finam || {};
+    const symbol = market.symbol;
+    const horizon = (market.preferredAccount && market.preferredAccount.horizon)
+      || (market.finam && market.finam.account && market.finam.account.horizon)
+      || null;
+    const role = (market.preferredAccount && market.preferredAccount.role)
+      || (market.finam && market.finam.account && market.finam.account.role)
+      || null;
+    const mapped = profilesDoc.symbolPrimary && profilesDoc.symbolPrimary[symbol];
+    const assetClass = market.assetClass || 'other';
+
+    let primaryId = mapped || finamMeta.longProfile || 'long_finam';
+    if (!mapped) {
+      if (role === 'day' || horizon === 'intraday' || (finamMeta.dayAssetClasses || []).includes(assetClass)) {
+        primaryId = finamMeta.dayProfile || 'day_finam';
+      } else {
+        primaryId = finamMeta.longProfile || 'long_finam';
+      }
+    }
+
+    const secondaryId = (profilesDoc.symbolSecondary && profilesDoc.symbolSecondary[symbol])
+      || ((primaryId === (finamMeta.dayProfile || 'day_finam')
+        && (finamMeta.scalpAssetClasses || []).includes(assetClass))
+        ? (finamMeta.scalpProfile || 'scalp_finam')
+        : null);
+
+    const primary = getProfile(profilesDoc, primaryId);
+    const secondary = secondaryId ? getProfile(profilesDoc, secondaryId) : null;
+    return {
+      primary,
+      primaryId,
+      secondary,
+      secondaryId,
+      strategyType: primary ? primary.strategyType : 'long',
+      accountRole: (primary && primary.accountRole) || role || 'long',
+      trading: (primary && primary.trading) || {}
     };
   }
 
@@ -568,6 +601,7 @@ function createStrategyEngine(options = {}) {
     saveCalibration,
     getProfile,
     resolveProfilesForMarket,
+    resolveFinamProfiles,
     getCalibratedThresholds,
     applySentimentVeto,
     combineConfirmOnly,

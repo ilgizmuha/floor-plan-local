@@ -163,7 +163,13 @@ function finamAssetClass(symbol) {
   if (/^(GLD|GOLD|SLV|SILV|PLD|PLT)/i.test(ticker) || /GLDRUB|SLVRUB|GOLDRUB/.test(ticker)) {
     return 'metal';
   }
-  if (/^(USD|EUR|CNY|GBP|JPY)/.test(ticker) || /UTSTOM|TOD|_TOM/.test(ticker) || /RUB/.test(ticker)) {
+  if (/F$|_|H\d|M\d|U\d|Z\d/.test(ticker) && /@(SPBFX|FORTS|RTSX)$/i.test(symbol)) {
+    return 'futures';
+  }
+  if (/^(Si|RI|BR|GD|SV|MX|Na)/i.test(ticker) && /@/.test(symbol) && !/@MISX$/.test(symbol)) {
+    return 'futures';
+  }
+  if (/^(USD|EUR|CNY|GBP|JPY)/.test(ticker) || /UTSTOM|TOD|_TOM/.test(ticker) || (/RUB/.test(ticker) && !/GLDRUB|SLVRUB/.test(ticker))) {
     return 'forex';
   }
   if (/@(XNGS|XNYS|XNAS|ARCX)$/.test(symbol)) {

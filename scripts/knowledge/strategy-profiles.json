@@ -1,8 +1,8 @@
 {
-  "version": 1,
+  "version": 2,
   "profiles": {
     "scalp": {
-      "label": "Scalp 5m",
+      "label": "Scalp 5m Bybit",
       "strategyType": "scalp",
       "timeframe": "5m",
       "providers": ["bybit"],
@@ -60,23 +60,96 @@
       "aiMode": "confirm_only"
     },
     "long_finam": {
-      "label": "Long Finam swing",
+      "label": "Finam long / swing (REXQ4)",
       "strategyType": "long",
       "timeframe": "15m",
       "providers": ["finam"],
-      "assetClasses": ["equity", "fx", "metal", "crypto"],
-      "minConfidence": 68,
+      "accountRole": "long",
+      "assetClasses": ["stock", "metal", "other"],
+      "minConfidence": 70,
       "sellThreshold": 28,
       "ensembleWeights": {
-        "technical": 0.58,
-        "microstructure": 0.07,
-        "derivatives": 0.05,
+        "technical": 0.60,
+        "microstructure": 0.08,
+        "derivatives": 0.02,
         "sentiment": 0.30
       },
       "sentimentMode": "veto_only",
       "longOnly": true,
       "regimeProfile": "long",
-      "aiMode": "confirm_only"
+      "aiMode": "confirm_only",
+      "trading": {
+        "minConfidence": 70,
+        "minSellConfidence": 50,
+        "maxPositionRub": 500,
+        "maxOpenPositions": 3,
+        "orderType": "LIMIT",
+        "timeInForce": "TIME_IN_FORCE_DAY",
+        "allowSellToClose": true,
+        "allowOpenShort": false
+      }
+    },
+    "day_finam": {
+      "label": "Finam day / intraday (RM43P)",
+      "strategyType": "day",
+      "timeframe": "15m",
+      "providers": ["finam"],
+      "accountRole": "day",
+      "assetClasses": ["forex", "futures", "other"],
+      "minConfidence": 65,
+      "sellThreshold": 34,
+      "ensembleWeights": {
+        "technical": 0.42,
+        "microstructure": 0.30,
+        "derivatives": 0.03,
+        "sentiment": 0.25
+      },
+      "sentimentMode": "veto_only",
+      "longOnly": false,
+      "regimeProfile": "swing",
+      "aiMode": "confirm_only",
+      "trading": {
+        "minConfidence": 65,
+        "minSellConfidence": 48,
+        "maxPositionRub": 400,
+        "maxOpenPositions": 2,
+        "orderType": "LIMIT",
+        "timeInForce": "TIME_IN_FORCE_DAY",
+        "allowSellToClose": true,
+        "allowOpenShort": false
+      }
+    },
+    "scalp_finam": {
+      "label": "Finam scalp (RM43P futures/FX maker)",
+      "strategyType": "scalp",
+      "timeframe": "5m",
+      "providers": ["finam"],
+      "accountRole": "day",
+      "assetClasses": ["futures", "forex"],
+      "minConfidence": 68,
+      "sellThreshold": 40,
+      "ensembleWeights": {
+        "technical": 0.25,
+        "microstructure": 0.50,
+        "derivatives": 0.05,
+        "sentiment": 0.20
+      },
+      "sentimentMode": "veto_only",
+      "longOnly": false,
+      "regimeProfile": "scalp",
+      "aiMode": "confirm_only",
+      "trading": {
+        "minConfidence": 68,
+        "minSellConfidence": 45,
+        "maxPositionRub": 300,
+        "maxOpenPositions": 2,
+        "orderType": "LIMIT",
+        "timeInForce": "TIME_IN_FORCE_DAY",
+        "allowSellToClose": true,
+        "allowOpenShort": false,
+        "takeProfitPct": 0.25,
+        "stopLossPct": 0.15
+      }
     }
   },
   "symbolPrimary": {
@@ -93,11 +166,30 @@
     "XAUTUSDT": "swing_tradfi",
     "USDTEUR": "swing_tradfi",
     "BTCEUR": "swing_tradfi",
-    "ETHEUR": "swing_tradfi"
+    "ETHEUR": "swing_tradfi",
+    "SBER@MISX": "long_finam",
+    "GAZP@MISX": "long_finam",
+    "LKOH@MISX": "long_finam",
+    "ROSN@MISX": "long_finam",
+    "GLDRUB_TOM@MISX": "long_finam",
+    "AAPL@XNGS": "long_finam",
+    "TSLA@XNGS": "long_finam",
+    "USD000UTSTOM@MISX": "day_finam",
+    "CNYRUB_TOM@MISX": "day_finam"
   },
   "symbolSecondary": {
     "BTCUSDT": "scalp",
     "ETHUSDT": "scalp",
-    "SOLUSDT": "scalp"
+    "SOLUSDT": "scalp",
+    "USD000UTSTOM@MISX": "scalp_finam",
+    "CNYRUB_TOM@MISX": "scalp_finam"
+  },
+  "finam": {
+    "longProfile": "long_finam",
+    "dayProfile": "day_finam",
+    "scalpProfile": "scalp_finam",
+    "longAssetClasses": ["stock", "metal"],
+    "dayAssetClasses": ["forex", "futures"],
+    "scalpAssetClasses": ["futures", "forex"]
   }
 }

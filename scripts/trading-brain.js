@@ -150,24 +150,67 @@ const config = {
     },
     longAccountId: env('FINAM_LONG_ACCOUNT_ID', '1748987'),
     dayAccountId: env('FINAM_DAY_ACCOUNT_ID', '2076665'),
-    // Long/swing symbols route to long account (fee gate blocks scalp).
+    // Long/swing symbols → REXQ4. Equities / metals / US stocks.
     symbols: splitList(env(
       'FINAM_SYMBOLS',
-      'SBER@MISX,GAZP@MISX,LKOH@MISX,ROSN@MISX,USD000UTSTOM@MISX,CNYRUB_TOM@MISX,GLDRUB_TOM@MISX,AAPL@XNGS,TSLA@XNGS'
+      'SBER@MISX,GAZP@MISX,LKOH@MISX,ROSN@MISX,GLDRUB_TOM@MISX,AAPL@XNGS,TSLA@XNGS'
     )),
-    // Day-tariff symbols (futures / FX maker-friendly) — empty until short-trade list is ready.
-    daySymbols: splitList(env('FINAM_DAY_SYMBOLS', '')),
+    // Day/intraday (+ Finam scalp secondary) → RM43P. FX / futures / maker-friendly.
+    daySymbols: splitList(env(
+      'FINAM_DAY_SYMBOLS',
+      'USD000UTSTOM@MISX,CNYRUB_TOM@MISX'
+    )),
+    // Explicit Finam scalp list (subset of daySymbols). Empty = use daySymbols + scalp_finam profile when eligible.
+    scalpSymbols: splitList(env('FINAM_SCALP_SYMBOLS', 'USD000UTSTOM@MISX,CNYRUB_TOM@MISX')),
     timeframe: env('FINAM_TIMEFRAME', 'TIME_FRAME_M15'),
+    dayTimeframe: env('FINAM_DAY_TIMEFRAME', 'TIME_FRAME_M5'),
     barLookbackHours: numberEnv('FINAM_BAR_LOOKBACK_HOURS', 48),
     timeoutMs: numberEnv('FINAM_TIMEOUT_MS', 20000),
     aiEnabled: env('FINAM_AI_ENABLED', 'false') === 'true',
     tradingEnabled: env('FINAM_TRADING_ENABLED', 'false') === 'true',
+    // Legacy flat defaults (overridden by strategy.trading / horizon policies below).
     minConfidence: numberEnv('FINAM_MIN_CONFIDENCE', 65),
     minSellConfidence: numberEnv('FINAM_MIN_SELL_CONFIDENCE', 50),
     maxPositionRub: numberEnv('FINAM_MAX_POSITION_RUB', 500),
     maxOpenPositions: numberEnv('FINAM_MAX_OPEN_POSITIONS', 3),
     orderType: env('FINAM_ORDER_TYPE', 'LIMIT'), // LIMIT | MARKET
-    allowSellToClose: env('FINAM_ALLOW_SELL_CLOSE', 'true') === 'true'
+    allowSellToClose: env('FINAM_ALLOW_SELL_CLOSE', 'true') === 'true',
+    strategies: {
+      long: {
+        minConfidence: numberEnv('FINAM_LONG_MIN_CONFIDENCE', 70),
+        minSellConfidence: numberEnv('FINAM_LONG_MIN_SELL_CONFIDENCE', 50),
+        maxPositionRub: numberEnv('FINAM_LONG_MAX_POSITION_RUB', 500),
+        maxOpenPositions: numberEnv('FINAM_LONG_MAX_OPEN_POSITIONS', 3),
+        orderType: env('FINAM_LONG_ORDER_TYPE', env('FINAM_ORDER_TYPE', 'LIMIT')),
+        timeInForce: env('FINAM_LONG_TIME_IN_FORCE', 'TIME_IN_FORCE_DAY'),
+        allowSellToClose: env('FINAM_LONG_ALLOW_SELL_CLOSE', 'true') === 'true',
+        allowOpenShort: false
+      },
+      day: {
+        minConfidence: numberEnv('FINAM_DAY_MIN_CONFIDENCE', 65),
+        minSellConfidence: numberEnv('FINAM_DAY_MIN_SELL_CONFIDENCE', 48),
+        maxPositionRub: numberEnv('FINAM_DAY_MAX_POSITION_RUB', 400),
+        maxOpenPositions: numberEnv('FINAM_DAY_MAX_OPEN_POSITIONS', 2),
+        orderType: env('FINAM_DAY_ORDER_TYPE', env('FINAM_ORDER_TYPE', 'LIMIT')),
+        timeInForce: env('FINAM_DAY_TIME_IN_FORCE', 'TIME_IN_FORCE_DAY'),
+        allowSellToClose: env('FINAM_DAY_ALLOW_SELL_CLOSE', 'true') === 'true',
+        allowOpenShort: false
+      },
+      scalp: {
+        enabled: env('FINAM_SCALP_ENABLED', 'true') === 'true',
+        minConfidence: numberEnv('FINAM_SCALP_MIN_CONFIDENCE', 68),
+        minSellConfidence: numberEnv('FINAM_SCALP_MIN_SELL_CONFIDENCE', 45),
+        maxPositionRub: numberEnv('FINAM_SCALP_MAX_POSITION_RUB', 300),
+        maxOpenPositions: numberEnv('FINAM_SCALP_MAX_OPEN_POSITIONS', 2),
+        orderType: env('FINAM_SCALP_ORDER_TYPE', 'LIMIT'),
+        timeInForce: env('FINAM_SCALP_TIME_IN_FORCE', 'TIME_IN_FORCE_DAY'),
+        allowSellToClose: true,
+        allowOpenShort: false,
+        takeProfitPct: numberEnv('FINAM_SCALP_TAKE_PROFIT_PCT', 0.25),
+        stopLossPct: numberEnv('FINAM_SCALP_STOP_LOSS_PCT', 0.15),
+        maxSpreadPct: numberEnv('FINAM_SCALP_MAX_SPREAD_PCT', 0.06)
+      }
+    }
   },
   backtest: {
     // Rules-only historical replay (no DeepSeek/Cursor). Default symbols keep the run fast.
@@ -363,21 +406,30 @@ async function runBrainCycle() {
       signal
     );
     const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst, fearGreed, signal, regime);
-    const scalpSignal = applyRegimeToScalp(analyzeScalpStrategy(market, fearGreed, regime), regime, market);
+    const scalpSignal = market.provider === 'finam'
+      ? applyRegimeToScalp(
+        analyzeFinamScalpStrategy(market, fearGreed, regime, profileBundle.secondary || {}),
+        regime,
+        market
+      )
+      : applyRegimeToScalp(analyzeScalpStrategy(market, fearGreed, regime), regime, market);
     const primaryStrategy = profileBundle.strategyType || 'swing';
+    const strategyMeta = {
+      primary: profileId,
+      secondary: profileBundle.secondaryId,
+      type: primaryStrategy,
+      label: profile ? profile.label : null,
+      accountRole: profileBundle.accountRole || (profile && profile.accountRole) || null,
+      trading: (profile && profile.trading) || profileBundle.trading || {},
+      calibration: calibrationEntry
+    };
     return {
       timestamp: new Date().toISOString(),
       symbol: market.symbol,
       market,
       news: summarizeNewsForDecision(news),
       fearGreed,
-      strategy: {
-        primary: profileId,
-        secondary: profileBundle.secondaryId,
-        type: primaryStrategy,
-        label: profile ? profile.label : null,
-        calibration: calibrationEntry
-      },
+      strategy: strategyMeta,
       signal,
       swingSignal: signal,
       scalpSignal,
@@ -1527,7 +1579,7 @@ function analyzeMarketWithProfile(market, news, fearGreed = {}, qualityFeedback 
     derivatives: scoreDerivativesComponent(market)
   };
   const ensembleWeights = strategyEngine.resolveProfileWeights(profile, market, config.ensemble.weights);
-  let signal = strategyEngine.buildSignalFromComponents({
+  let   signal = strategyEngine.buildSignalFromComponents({
     market,
     profile,
     profileId,
@@ -1535,7 +1587,7 @@ function analyzeMarketWithProfile(market, news, fearGreed = {}, qualityFeedback 
     ensembleWeights,
     qualityFeedback: symbolFeedback,
     calibrationEntry,
-    longOnlyAdjust: profile.longOnly || market.provider === 'finam'
+    longOnlyAdjust: Boolean(profile.longOnly)
   });
 
   signal = strategyEngine.applySentimentVeto(signal, news, fearGreed, profile);
@@ -2096,7 +2148,13 @@ function enrichFinamAccount(summary, accountId) {
 }
 
 function resolveFinamAccountForSymbol(symbol) {
-  if (config.finam.daySymbols.includes(symbol)) {
+  const assetClass = finamAssetClass(symbol);
+  const isDay = config.finam.daySymbols.includes(symbol)
+    || config.finam.scalpSymbols.includes(symbol)
+    || assetClass === 'futures'
+    || (assetClass === 'forex' && !config.finam.symbols.includes(symbol));
+
+  if (isDay) {
     const accountId = config.finam.dayAccountId;
     const role = config.finam.accountRoles[accountId] || {};
     return {
@@ -2104,7 +2162,8 @@ function resolveFinamAccountForSymbol(symbol) {
       tradeCode: role.tradeCode || config.finam.accountMap[accountId],
       role: role.role || 'day',
       roleLabel: role.label || 'Дневной тариф / intraday',
-      horizon: 'intraday'
+      horizon: 'intraday',
+      strategyHint: config.finam.scalpSymbols.includes(symbol) ? 'scalp' : 'day'
     };
   }
   const accountId = config.finam.longAccountId;
@@ -2114,7 +2173,171 @@ function resolveFinamAccountForSymbol(symbol) {
     tradeCode: role.tradeCode || config.finam.accountMap[accountId],
     role: role.role || 'long',
     roleLabel: role.label || 'Длинные / свинг',
-    horizon: 'long'
+    horizon: 'long',
+    strategyHint: 'long'
+  };
+}
+
+function resolveFinamTradingPolicy(decision = {}) {
+  const strategy = decision.strategy || {};
+  const profileTrading = (strategy.trading && Object.keys(strategy.trading).length)
+    ? strategy.trading
+    : {};
+  const type = strategy.type || strategy.primaryType || 'long';
+  const horizonDefaults = config.finam.strategies[type]
+    || config.finam.strategies[strategy.accountRole]
+    || config.finam.strategies.long;
+  const calibrated = (strategy.calibration && strategy.calibration.minConfidence)
+    ? { minConfidence: strategy.calibration.minConfidence }
+    : {};
+
+  return {
+    strategyType: type,
+    accountRole: strategy.accountRole || (type === 'long' ? 'long' : 'day'),
+    minConfidence: Number(profileTrading.minConfidence
+      || calibrated.minConfidence
+      || horizonDefaults.minConfidence
+      || config.finam.minConfidence),
+    minSellConfidence: Number(profileTrading.minSellConfidence
+      || horizonDefaults.minSellConfidence
+      || config.finam.minSellConfidence),
+    maxPositionRub: Number(profileTrading.maxPositionRub
+      || horizonDefaults.maxPositionRub
+      || config.finam.maxPositionRub),
+    maxOpenPositions: Number(profileTrading.maxOpenPositions
+      || horizonDefaults.maxOpenPositions
+      || config.finam.maxOpenPositions),
+    orderType: profileTrading.orderType || horizonDefaults.orderType || config.finam.orderType,
+    timeInForce: profileTrading.timeInForce || horizonDefaults.timeInForce || 'TIME_IN_FORCE_DAY',
+    allowSellToClose: profileTrading.allowSellToClose != null
+      ? Boolean(profileTrading.allowSellToClose)
+      : (horizonDefaults.allowSellToClose != null
+        ? Boolean(horizonDefaults.allowSellToClose)
+        : config.finam.allowSellToClose),
+    allowOpenShort: Boolean(profileTrading.allowOpenShort || horizonDefaults.allowOpenShort),
+    takeProfitPct: Number(profileTrading.takeProfitPct || horizonDefaults.takeProfitPct || 0),
+    stopLossPct: Number(profileTrading.stopLossPct || horizonDefaults.stopLossPct || 0),
+    maxSpreadPct: Number(profileTrading.maxSpreadPct || horizonDefaults.maxSpreadPct || 0)
+  };
+}
+
+function analyzeFinamScalpStrategy(market, fearGreed = {}, regime = {}, profile = {}) {
+  if (!config.finam.strategies.scalp.enabled) {
+    return {
+      enabled: false,
+      strategy: 'scalp_finam',
+      action: null,
+      confidence: 0,
+      reasons: ['Finam scalp disabled']
+    };
+  }
+
+  const route = market.preferredAccount || resolveFinamAccountForSymbol(market.symbol);
+  if (route.role !== 'day') {
+    return {
+      enabled: true,
+      strategy: 'scalp_finam',
+      action: 'WAIT',
+      confidence: 0,
+      horizon: 'long_only',
+      reasons: ['Finam scalp only on day account (RM43P)']
+    };
+  }
+
+  const assetClass = market.assetClass || finamAssetClass(market.symbol);
+  if (!['forex', 'futures'].includes(assetClass) && !config.finam.scalpSymbols.includes(market.symbol)) {
+    return {
+      enabled: true,
+      strategy: 'scalp_finam',
+      action: 'WAIT',
+      confidence: 0,
+      horizon: 'long_only',
+      reasons: [`Fee gate: ${assetClass} is long/swing on Finam — scalp only forex/futures`]
+    };
+  }
+
+  const indicators = market.indicators || {};
+  const orderBook = market.orderBook || {};
+  const trading = { ...config.finam.strategies.scalp, ...(profile.trading || {}) };
+  let score = 0;
+  const reasons = [];
+
+  if (indicators.sma20 > indicators.sma50) {
+    score += 10;
+    reasons.push('15m uptrend');
+  } else {
+    score -= 12;
+    reasons.push('15m downtrend');
+  }
+
+  if (indicators.rsi14 < 35) {
+    score += 8;
+    reasons.push('RSI oversold bounce candidate');
+  } else if (indicators.rsi14 > 70) {
+    score -= 8;
+    reasons.push('RSI overbought');
+  }
+
+  if (indicators.momentumPct > 0.05) {
+    score += 6;
+    reasons.push('positive momentum');
+  } else if (indicators.momentumPct < -0.05) {
+    score -= 6;
+    reasons.push('negative momentum');
+  }
+
+  if (orderBook.available) {
+    if (orderBook.pressure === 'buy') {
+      score += 8;
+      reasons.push('order book buy pressure');
+    } else if (orderBook.pressure === 'sell') {
+      score -= 8;
+      reasons.push('order book sell pressure');
+    }
+    if (orderBook.spreadPct != null && orderBook.spreadPct > trading.maxSpreadPct) {
+      score -= 15;
+      reasons.push(`spread ${orderBook.spreadPct}% > ${trading.maxSpreadPct}%`);
+    }
+  } else {
+    score -= 4;
+    reasons.push('order book unavailable');
+  }
+
+  if (regime.regime === 'volatile') {
+    score -= 12;
+    reasons.push('volatile regime');
+  } else if (regime.regime === 'trend_up') {
+    score += 6;
+  } else if (regime.regime === 'trend_down') {
+    score -= 8;
+  }
+
+  if (fearGreed.available && fearGreed.value >= 80) {
+    score -= 6;
+    reasons.push('extreme greed veto');
+  }
+
+  const confidence = clamp(Math.round(50 + score), 0, 100);
+  const minConfidence = trading.minConfidence || 68;
+  let action = 'HOLD';
+  if (confidence >= minConfidence && indicators.sma20 > indicators.sma50) {
+    action = 'BUY';
+  } else if (confidence <= (profile.sellThreshold || 40)) {
+    action = 'SELL';
+  }
+
+  return {
+    enabled: true,
+    strategy: 'scalp_finam',
+    action,
+    confidence,
+    horizon: 'scalp',
+    accountRole: 'day',
+    takeProfitPct: trading.takeProfitPct,
+    stopLossPct: trading.stopLossPct,
+    maxSpreadPct: trading.maxSpreadPct,
+    minConfidence,
+    reasons
   };
 }
 
@@ -2228,7 +2451,8 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
   const result = {
     enabled: config.finam.tradingEnabled,
     updatedAt: new Date().toISOString(),
-    events: []
+    events: [],
+    byStrategy: { long: 0, day: 0, scalp: 0 }
   };
 
   if (!config.finam.enabled || !config.finam.tradingEnabled) {
@@ -2245,7 +2469,6 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
     stats: { submitted: 0, bought: 0, sold: 0, skipped: 0, errors: 0 }
   };
 
-  // Fresh account snapshots for sizing
   const accountsById = {};
   for (const accountId of config.finam.accountIds) {
     try {
@@ -2262,19 +2485,51 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
     const symbol = decision.symbol;
     const route = (decision.market && decision.market.preferredAccount)
       || resolveFinamAccountForSymbol(symbol);
+    const policy = resolveFinamTradingPolicy(decision);
+    let tradeAction = decision.finalAction;
+    let tradeConfidence = Number((decision.consensus && decision.consensus.confidence) || 0);
+    let tradeSource = (decision.consensus && decision.consensus.source) || 'final';
+    let activePolicy = { ...policy };
+    const scalp = decision.scalpSignal || {};
+    if (
+      policy.strategyType === 'day'
+      && config.finam.strategies.scalp.enabled
+      && scalp.enabled
+      && scalp.horizon === 'scalp'
+      && scalp.action === 'BUY'
+      && (scalp.confidence || 0) >= (scalp.minConfidence || policy.minConfidence)
+      && decision.finalAction !== 'SELL'
+      && decision.finalAction !== 'EXIT'
+    ) {
+      tradeAction = 'BUY';
+      tradeConfidence = scalp.confidence;
+      tradeSource = 'scalp_finam';
+      activePolicy = resolveFinamTradingPolicy({
+        ...decision,
+        strategy: {
+          ...(decision.strategy || {}),
+          type: 'scalp',
+          accountRole: 'day',
+          trading: (decision.strategy && decision.strategy.trading) || {}
+        }
+      });
+    }
+
     const accountId = route.accountId;
     const account = accountsById[accountId];
-    const action = decision.finalAction;
-    const confidence = Number((decision.consensus && decision.consensus.confidence) || 0);
     const price = Number(decision.market && decision.market.lastPrice);
     const eventBase = {
       timestamp: new Date().toISOString(),
       symbol,
-      action,
-      confidence,
+      action: tradeAction,
+      confidence: tradeConfidence,
       accountId,
       tradeCode: route.tradeCode,
       role: route.role,
+      horizon: route.horizon,
+      strategyType: activePolicy.strategyType,
+      strategyProfile: decision.strategy && decision.strategy.primary,
+      tradeSource,
       price
     };
 
@@ -2285,16 +2540,26 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
       continue;
     }
 
+    if (activePolicy.accountRole && route.role && activePolicy.accountRole !== route.role) {
+      const event = {
+        ...eventBase,
+        type: 'SKIP',
+        reason: `strategy ${activePolicy.strategyType} expects account role ${activePolicy.accountRole}, got ${route.role}`
+      };
+      result.events.push(event);
+      state.stats.skipped += 1;
+      continue;
+    }
+
     const position = findFinamPosition(account, symbol);
     const cashRub = availableCashRub(account, account._raw);
 
-    // Close long on SELL
-    if (action === 'SELL' && config.finam.allowSellToClose && position && Number(position.qty) > 0) {
-      if (confidence < config.finam.minSellConfidence) {
+    if ((tradeAction === 'SELL' || tradeAction === 'EXIT') && activePolicy.allowSellToClose && position && Number(position.qty) > 0) {
+      if (tradeConfidence < activePolicy.minSellConfidence) {
         const event = {
           ...eventBase,
           type: 'SKIP',
-          reason: `sell confidence ${confidence} < ${config.finam.minSellConfidence}`
+          reason: `sell confidence ${tradeConfidence} < ${activePolicy.minSellConfidence}`
         };
         result.events.push(event);
         state.stats.skipped += 1;
@@ -2308,8 +2573,8 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
           symbol,
           quantity: finamDecimal(qty),
           side: 'SIDE_SELL',
-          type: config.finam.orderType === 'MARKET' ? 'ORDER_TYPE_MARKET' : 'ORDER_TYPE_LIMIT',
-          time_in_force: 'TIME_IN_FORCE_DAY'
+          type: activePolicy.orderType === 'MARKET' ? 'ORDER_TYPE_MARKET' : 'ORDER_TYPE_LIMIT',
+          time_in_force: activePolicy.timeInForce || 'TIME_IN_FORCE_DAY'
         };
         if (orderBody.type === 'ORDER_TYPE_LIMIT') {
           orderBody.limit_price = finamDecimal(limitPrice);
@@ -2326,8 +2591,8 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
         appendJsonl(tradesPath, [event]);
         state.stats.submitted += 1;
         state.stats.sold += 1;
+        result.byStrategy[activePolicy.strategyType] = (result.byStrategy[activePolicy.strategyType] || 0) + 1;
         state.orders = [event, ...(state.orders || [])].slice(0, 50);
-        // refresh local position cache
         account.positions = (account.positions || []).filter((pos) => pos.symbol !== symbol);
       } catch (error) {
         const event = { ...eventBase, type: 'ERROR', reason: error.message, details: error.details || null };
@@ -2338,16 +2603,19 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
       continue;
     }
 
-    // Open long on BUY — long account only for equity/metal/fx list
-    if (action === 'BUY') {
+    if (tradeAction === 'BUY') {
       if (route.role !== 'long' && route.role !== 'day') {
         const event = { ...eventBase, type: 'SKIP', reason: 'unknown account role' };
         result.events.push(event);
         state.stats.skipped += 1;
         continue;
       }
-      if (confidence < config.finam.minConfidence) {
-        const event = { ...eventBase, type: 'SKIP', reason: `confidence ${confidence} < ${config.finam.minConfidence}` };
+      if (tradeConfidence < activePolicy.minConfidence) {
+        const event = {
+          ...eventBase,
+          type: 'SKIP',
+          reason: `confidence ${tradeConfidence} < ${activePolicy.minConfidence} (${activePolicy.strategyType})`
+        };
         result.events.push(event);
         state.stats.skipped += 1;
         continue;
@@ -2358,14 +2626,31 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
         state.stats.skipped += 1;
         continue;
       }
-      if (countFinamOpenPositions(account) >= config.finam.maxOpenPositions) {
-        const event = { ...eventBase, type: 'SKIP', reason: 'max open positions reached' };
+      if (countFinamOpenPositions(account) >= activePolicy.maxOpenPositions) {
+        const event = {
+          ...eventBase,
+          type: 'SKIP',
+          reason: `max open positions (${activePolicy.maxOpenPositions}) reached for ${activePolicy.strategyType}`
+        };
         result.events.push(event);
         state.stats.skipped += 1;
         continue;
       }
       if (!price || price <= 0) {
         const event = { ...eventBase, type: 'SKIP', reason: 'no price' };
+        result.events.push(event);
+        state.stats.skipped += 1;
+        continue;
+      }
+
+      const orderBook = decision.market.orderBook || {};
+      if (activePolicy.strategyType === 'scalp' && orderBook.available && activePolicy.maxSpreadPct
+        && orderBook.spreadPct > activePolicy.maxSpreadPct) {
+        const event = {
+          ...eventBase,
+          type: 'SKIP',
+          reason: `scalp spread ${orderBook.spreadPct}% > ${activePolicy.maxSpreadPct}%`
+        };
         result.events.push(event);
         state.stats.skipped += 1;
         continue;
@@ -2379,7 +2664,7 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
         // keep default lot
       }
 
-      const budget = Math.min(config.finam.maxPositionRub, cashRub);
+      const budget = Math.min(activePolicy.maxPositionRub, cashRub);
       const maxQty = Math.floor(budget / price / lotSize) * lotSize;
       if (maxQty < lotSize) {
         const event = {
@@ -2387,7 +2672,8 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
           type: 'SKIP',
           reason: `insufficient cash: available ${round(cashRub, 2)} RUB, need ~${round(price * lotSize, 2)} for 1 lot`,
           cashRub: round(cashRub, 2),
-          lotSize
+          lotSize,
+          maxPositionRub: activePolicy.maxPositionRub
         };
         result.events.push(event);
         state.stats.skipped += 1;
@@ -2401,8 +2687,8 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
           symbol,
           quantity: finamDecimal(maxQty),
           side: 'SIDE_BUY',
-          type: config.finam.orderType === 'MARKET' ? 'ORDER_TYPE_MARKET' : 'ORDER_TYPE_LIMIT',
-          time_in_force: 'TIME_IN_FORCE_DAY'
+          type: activePolicy.orderType === 'MARKET' ? 'ORDER_TYPE_MARKET' : 'ORDER_TYPE_LIMIT',
+          time_in_force: activePolicy.timeInForce || 'TIME_IN_FORCE_DAY'
         };
         if (orderBody.type === 'ORDER_TYPE_LIMIT') {
           orderBody.limit_price = finamDecimal(limitPrice);
@@ -2414,12 +2700,14 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
           qty: maxQty,
           limitPrice: orderBody.limit_price ? limitPrice : null,
           cashRub: round(cashRub, 2),
+          maxPositionRub: activePolicy.maxPositionRub,
           order: orderResponse
         };
         result.events.push(event);
         appendJsonl(tradesPath, [event]);
         state.stats.submitted += 1;
         state.stats.bought += 1;
+        result.byStrategy[activePolicy.strategyType] = (result.byStrategy[activePolicy.strategyType] || 0) + 1;
         state.orders = [event, ...(state.orders || [])].slice(0, 50);
       } catch (error) {
         const event = { ...eventBase, type: 'ERROR', reason: error.message, details: error.details || null };
@@ -2429,8 +2717,6 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
       }
       continue;
     }
-
-    // HOLD/WAIT — no trade
   }
 
   state.updatedAt = new Date().toISOString();
@@ -2440,6 +2726,8 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
     delete copy._raw;
     return copy;
   });
+  state.lastEvents = result.events.slice(0, 20);
+  state.byStrategy = result.byStrategy;
   writeJson(statePath, state);
   result.stats = state.stats;
   result.accounts = state.accounts;
@@ -2450,7 +2738,11 @@ async function collectFinamMarkets() {
   if (!config.finam.enabled) {
     return [];
   }
-  const symbols = [...new Set([...config.finam.symbols, ...config.finam.daySymbols])];
+  const symbols = [...new Set([
+    ...config.finam.symbols,
+    ...config.finam.daySymbols,
+    ...config.finam.scalpSymbols
+  ])];
   if (!symbols.length) {
     return [];
   }
@@ -2463,10 +2755,14 @@ async function collectFinamMarkets() {
 
   for (const symbol of symbols) {
     try {
+      const accountRoute = resolveFinamAccountForSymbol(symbol);
+      const timeframe = accountRoute.horizon === 'intraday'
+        ? (config.finam.dayTimeframe || config.finam.timeframe)
+        : config.finam.timeframe;
       const [quotePayload, barsPayload, orderBookPayload] = await Promise.all([
         client.lastQuote(symbol),
         client.bars(symbol, {
-          timeframe: config.finam.timeframe,
+          timeframe,
           startTime,
           endTime
         }),
@@ -2484,7 +2780,6 @@ async function collectFinamMarkets() {
       const orderBook = orderBookPayload
         ? summarizeFinamOrderBook(orderBookPayload)
         : { available: false };
-      const accountRoute = resolveFinamAccountForSymbol(symbol);
       const market = assembleMarketFromCandles({
         symbol,
         provider: 'finam',
@@ -2503,9 +2798,11 @@ async function collectFinamMarkets() {
         bid: finamNum(quote.bid),
         ask: finamNum(quote.ask),
         quoteTimestamp: quote.timestamp || null,
-        account: accountRoute
+        account: accountRoute,
+        timeframe
       };
       market.preferredAccount = accountRoute;
+      market.strategyHint = accountRoute.strategyHint;
       results.push(market);
     } catch (error) {
       console.error(new Date().toISOString(), `Finam ${symbol}:`, error.message);
@@ -4123,6 +4420,7 @@ function backtestAiDecisionsMode(symbols, options) {
       deepseek: 'DeepSeek action when status=ok',
       cursor: 'Cursor action when status=ok',
       aiConfirm: 'Rules setup + DeepSeek confirm-only + Cursor soft veto',
+      aiAgree: 'Trade only when DeepSeek and Cursor agree BUY/SELL',
       fullAgree: 'Trade only when rules + DeepSeek + Cursor agree'
     }
   };

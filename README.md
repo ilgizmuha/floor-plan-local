@@ -81,7 +81,11 @@ Paper-trading включается настройками `PAPER_*`. Это ви
 
 **Quality feedback** (`QUALITY_FEEDBACK_*`) автоматически повышает/понижает порог confidence для символов с плохим/хорошим hit-rate на 15m.
 
-**Стратегии** (`scripts/knowledge/strategy-profiles.json`): отдельные профили **scalp** (5m, crypto), **swing_crypto**, **swing_tradfi** (long-only), **long_finam**. Новости/Fear&Greed — только veto, не score. AI — confirm-only (`STRATEGY_AI_CONFIRM_ONLY=true`).
+**Стратегии** (`scripts/knowledge/strategy-profiles.json`):  
+- Bybit: `scalp`, `swing_crypto`, `swing_tradfi`  
+- Finam: `long_finam` (REXQ4 акции/металлы), `day_finam` (RM43P FX/фьючи), `scalp_finam` (вторичный скальп на RM43P)  
+
+Исполнение Finam раздельно: свои `minConfidence`, лимит позиции и max open positions на long/day/scalp.
 
 **Калибровка** (`npm run brain:calibrate`): walk-forward подбор `minConfidence` / `sellThreshold` → `data/calibration.json`.
 
