@@ -204,8 +204,10 @@ final class Trading_Brain_Panel {
 								if (!scalp.enabled) {
 									return '';
 								}
-								return '<p><strong>Scalp (Murphy+Solabuto):</strong> ' + escapeHtml(scalp.action || 'WAIT') + ' / ' + escapeHtml(scalp.confidence) + ' | 15m trend ' + escapeHtml(scalp.trend15m) + ' | TP ' + escapeHtml(scalp.takeProfitPct) + '% SL ' + escapeHtml(scalp.stopLossPct) + '%</p>' +
-									(scalp.reasons && scalp.reasons.length ? '<p class="tbp-muted"><strong>Scalp:</strong> ' + escapeHtml(scalp.reasons.slice(0, 4).join(', ')) + '</p>' : '');
+								return '<p><strong>Scalp (KB):</strong> ' + escapeHtml(scalp.action || 'WAIT') + ' / ' + escapeHtml(scalp.confidence) + ' | 15m trend ' + escapeHtml(scalp.trend15m) + (scalp.setupReady !== undefined ? ' | setup ' + escapeHtml(scalp.setupReady) : '') + ' | TP ' + escapeHtml(scalp.takeProfitPct) + '% SL ' + escapeHtml(scalp.stopLossPct) + '%</p>' +
+									(scalp.pivots ? '<p class="tbp-muted"><strong>Pivots (Shiryaev):</strong> PP ' + escapeHtml(scalp.pivots.pp) + ' S1 ' + escapeHtml(scalp.pivots.s1) + ' R1 ' + escapeHtml(scalp.pivots.r1) + '</p>' : '') +
+									(scalp.appliedRules && scalp.appliedRules.length ? '<p class="tbp-muted"><strong>KB rules:</strong> ' + escapeHtml(scalp.appliedRules.join(', ')) + '</p>' : '') +
+									(scalp.reasons && scalp.reasons.length ? '<p class="tbp-muted"><strong>Scalp:</strong> ' + escapeHtml(scalp.reasons.slice(0, 5).join(', ')) + '</p>' : '');
 							})() +
 							'<p><strong>Bollinger:</strong> pos ' + escapeHtml(indicators.bollingerPosition) + ', width ' + escapeHtml(indicators.bollingerWidthPct) + '% | <strong>S/R:</strong> ' + escapeHtml(indicators.support) + ' / ' + escapeHtml(indicators.resistance) + '</p>' +
 							(orderBook.available ? '<p><strong>Order book:</strong> spread ' + escapeHtml(orderBook.spreadPct) + '%, imbalance ' + escapeHtml(orderBook.imbalance) + ', pressure ' + escapeHtml(orderBook.pressure) + ' | depth bid/ask ' + escapeHtml(orderBook.bidDepthUsd) + ' / ' + escapeHtml(orderBook.askDepthUsd) + '</p>' +

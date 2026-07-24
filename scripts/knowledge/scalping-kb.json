@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "title": "Scalping knowledge base",
+  "books": [
+    {
+      "id": "borovkov",
+      "title": "Скальпинг: Искусство микроскопической прибыли. Полное руководство для трейдера",
+      "author": "Боровков А. Д.",
+      "focus": [
+        "дисциплина",
+        "микроструктура рынка",
+        "пошаговый план от брокера до стратегии"
+      ],
+      "rules": [
+        {
+          "id": "microstructure_spread",
+          "summary": "Не входить при широком спреде — микроскопическая прибыль съедается комиссией и проскальзыванием",
+          "code": "max_spread"
+        },
+        {
+          "id": "no_chase",
+          "summary": "Не догонять импульс далеко от EMA/справедливой цены — ждать откат",
+          "code": "no_chase"
+        },
+        {
+          "id": "session_discipline",
+          "summary": "После серии убыточных скальпов — пауза; не увеличивать размер",
+          "code": "loss_streak_pause"
+        }
+      ]
+    },
+    {
+      "id": "cscalp",
+      "title": "Профессиональный скальпинг",
+      "author": "Команда терминала CScalp",
+      "focus": [
+        "биржевой стакан",
+        "кластеры",
+        "лента сделок",
+        "внутридневной график"
+      ],
+      "rules": [
+        {
+          "id": "orderbook_confirm",
+          "summary": "Вход только при подтверждении стакана: давление на стороне входа, нет доминирующей стены против",
+          "code": "orderbook_confirm"
+        },
+        {
+          "id": "wall_block",
+          "summary": "Близкая ask-стена блокирует long; близкая bid-стена усиливает long",
+          "code": "wall_filter"
+        },
+        {
+          "id": "imbalance",
+          "summary": "Сильный дисбаланс глубины в сторону покупки — подтверждение long-скальпа",
+          "code": "depth_imbalance"
+        }
+      ]
+    },
+    {
+      "id": "shiryaev",
+      "title": "Консервативный скальпинг intraday",
+      "author": "Ширяев Н. А.",
+      "focus": [
+        "Pivot Points",
+        "поддержка и сопротивление",
+        "управление капиталом",
+        "психология intraday",
+        "примеры GBP/USD"
+      ],
+      "rules": [
+        {
+          "id": "pivot_levels",
+          "summary": "Строить уровни Pivot (PP, S1/R1); long предпочтителен от S1/PP вверх, не от R1",
+          "code": "pivot_sr"
+        },
+        {
+          "id": "conservative_rr",
+          "summary": "Консервативный R:R — фиксированный TP чуть больше SL, без агрессивного усреднения",
+          "code": "conservative_exits"
+        },
+        {
+          "id": "avoid_mid_range",
+          "summary": "Не входить в середине диапазона между S1 и R1 без импульса и объёма",
+          "code": "avoid_mid_range"
+        }
+      ]
+    },
+    {
+      "id": "young_benner",
+      "title": "Trading the Short-Term Markets",
+      "author": "Michael W. Young / Самюэль Беннер (по списку источников)",
+      "focus": [
+        "краткосрочная торговля",
+        "методы и типичные ошибки",
+        "ожидание сетапа"
+      ],
+      "rules": [
+        {
+          "id": "wait_setup",
+          "summary": "Торговать только готовый сетап: тренд старшего ТФ + импульс + откат; иначе WAIT",
+          "code": "wait_setup"
+        },
+        {
+          "id": "overtrade_guard",
+          "summary": "Не открывать скальп, если уже есть открытая позиция по символу или сигнал противоречивый",
+          "code": "overtrade_guard"
+        },
+        {
+          "id": "cut_noise",
+          "summary": "При низкой волатильности и слабом объёме — пропускать микро-шум",
+          "code": "cut_noise"
+        }
+      ]
+    }
+  ],
+  "legacy": [
+    {
+      "id": "murphy",
+      "title": "Technical Analysis of the Futures Markets",
+      "author": "John J. Murphy",
+      "rules": ["trade_with_higher_tf_trend", "volume_confirm", "support_resistance"]
+    },
+    {
+      "id": "solabuto",
+      "title": "Short-term / impulse scalping notes",
+      "author": "Solabuto",
+      "rules": ["impulse_entry", "quick_exits", "spread_filter"]
+    }
+  ]
+}

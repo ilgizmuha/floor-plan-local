@@ -19,7 +19,7 @@ const args = parseArgs(process.argv.slice(3));
 const config = {
   baseUrl: env('BYBIT_BASE_URL', 'https://api.bybit.com').replace(/\/+$/, ''),
   category: env('BRAIN_CATEGORY', 'spot'),
-  symbols: splitList(env('BRAIN_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,LINKUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT')),
+  symbols: splitList(env('BRAIN_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,LINKUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT,USDTEUR,BTCEUR,ETHEUR')),
   linearSymbols: new Set(splitList(env('BRAIN_LINEAR_SYMBOLS', 'XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT'))),
   interval: env('BRAIN_INTERVAL', '15'),
   klineLimit: numberEnv('BRAIN_KLINE_LIMIT', 96),
@@ -70,7 +70,7 @@ const config = {
     maxPositionUsd: numberEnv('PAPER_MAX_POSITION_USD', 20),
     minConfidence: numberEnv('PAPER_MIN_CONFIDENCE', 70),
     feeRate: numberEnv('PAPER_FEE_RATE', 0.001),
-    symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT')),
+    symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT,USDTEUR,BTCEUR,ETHEUR')),
     requireDeepSeekOk: env('PAPER_REQUIRE_DEEPSEEK_OK', 'true') === 'true',
     requireCursorOk: env('PAPER_REQUIRE_CURSOR_OK', 'true') === 'true'
   },
@@ -84,7 +84,8 @@ const config = {
     maxSpreadPct: numberEnv('SCALP_MAX_SPREAD_PCT', 0.08),
     paperEnabled: env('SCALP_PAPER_ENABLED', 'true') === 'true',
     maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 15),
-    symbols: splitList(env('SCALP_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT'))
+    symbols: splitList(env('SCALP_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,USDTEUR,BTCEUR,ETHEUR')),
+    knowledgePath: env('SCALP_KNOWLEDGE_PATH', path.join(__dirname, 'knowledge', 'scalping-kb.json'))
   },
   regime: {
     enabled: env('REGIME_GATE_ENABLED', 'true') === 'true',
@@ -388,6 +389,20 @@ function buildScalpIndicators(candles) {
   const impulseDown = last3.length === 3 && last3[2] < last3[1] && last3[1] < last3[0];
   const volumeRatio = safeDivide(average(volumes.slice(-3)), average(volumes.slice(-20)));
   const distanceToEma21Pct = percentChange(ema21, last);
+  const pivotWindow = candles.slice(-13, -1);
+  const pivotHigh = Math.max(...pivotWindow.map((candle) => candle.high));
+  const pivotLow = Math.min(...pivotWindow.map((candle) => candle.low));
+  const pivotClose = pivotWindow[pivotWindow.length - 1].close;
+  const pivot = (pivotHigh + pivotLow + pivotClose) / 3;
+  const pivotR1 = (2 * pivot) - pivotLow;
+  const pivotS1 = (2 * pivot) - pivotHigh;
+  const pivotR2 = pivot + (pivotHigh - pivotLow);
+  const pivotS2 = pivot - (pivotHigh - pivotLow);
+  const nearPivotS1 = Math.abs(percentChange(pivotS1, last)) <= 0.12;
+  const nearPivot = Math.abs(percentChange(pivot, last)) <= 0.12;
+  const nearPivotR1 = Math.abs(percentChange(pivotR1, last)) <= 0.12;
+  const midPivotRange = last > pivotS1 && last < pivotR1
+    && !nearPivotS1 && !nearPivot && !nearPivotR1;
 
   return {
     available: true,
@@ -405,53 +420,99 @@ function buildScalpIndicators(candles) {
     resistance: round(resistance, 4),
     distanceToSupportPct: round(percentChange(support, last), 3),
     distanceToResistancePct: round(percentChange(last, resistance), 3),
-    momentumPct: round(percentChange(closes[closes.length - 2], last), 3)
+    momentumPct: round(percentChange(closes[closes.length - 2], last), 3),
+    pivots: {
+      pp: round(pivot, 4),
+      r1: round(pivotR1, 4),
+      s1: round(pivotS1, 4),
+      r2: round(pivotR2, 4),
+      s2: round(pivotS2, 4),
+      nearS1: nearPivotS1,
+      nearPp: nearPivot,
+      nearR1: nearPivotR1,
+      midRange: midPivotRange,
+      distanceToPpPct: round(percentChange(pivot, last), 3),
+      distanceToS1Pct: round(percentChange(pivotS1, last), 3),
+      distanceToR1Pct: round(percentChange(last, pivotR1), 3)
+    }
   };
+}
+
+function loadScalpingKnowledge() {
+  const filePath = config.scalp.knowledgePath;
+  const fallback = {
+    version: 0,
+    books: [],
+    sources: [
+      'Murphy — trend / volume / S/R',
+      'Solabuto — impulse / quick exits'
+    ]
+  };
+  try {
+    const data = readJsonFile(filePath);
+    if (!data) {
+      return fallback;
+    }
+    return data;
+  } catch (error) {
+    return { ...fallback, error: error.message };
+  }
 }
 
 function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
   if (!config.scalp.enabled) {
     return {
       enabled: false,
-      strategy: 'murphy_solabuto_scalp',
+      strategy: 'scalping_kb_v1',
       action: null,
       confidence: 0,
       reasons: ['Scalp strategy disabled']
     };
   }
 
+  const knowledge = loadScalpingKnowledge();
+  const bookSources = (knowledge.books || []).map((book) => `${book.author} — ${book.title}`);
   const scalp = market.scalpIndicators || {};
+  const pivots = scalp.pivots || {};
   const trend15m = market.indicators.sma20 > market.indicators.sma50 ? 'up' : 'down';
   if (!scalp.available) {
     return {
       enabled: true,
-      strategy: 'murphy_solabuto_scalp',
+      strategy: 'scalping_kb_v1',
       action: 'WAIT',
       confidence: 0,
       trend15m,
+      knowledgeBooks: bookSources,
       reasons: ['Not enough 5m data for scalp']
     };
   }
 
   let score = 0;
   const reasons = [];
+  const appliedRules = [];
 
+  // Murphy / Young: higher-TF trend filter + wait for setup
   if (trend15m === 'up') {
     score += 12;
-    reasons.push('Murphy: trade with 15m uptrend');
+    reasons.push('Murphy/Young: trade with 15m uptrend');
+    appliedRules.push('wait_setup');
   } else {
     score -= 14;
-    reasons.push('Murphy: 15m downtrend, long scalp filtered');
+    reasons.push('Murphy/Young: 15m downtrend, long scalp filtered');
+    appliedRules.push('wait_setup');
   }
 
+  // Murphy / Borovkov: volume confirms move; cut noise when volume dead
   if (scalp.volumeRatio > 1.12) {
     score += 8;
     reasons.push('Murphy: volume confirms short-term move');
   } else if (scalp.volumeRatio < 0.85) {
-    score -= 5;
-    reasons.push('Murphy: weak volume, skip scalp');
+    score -= 6;
+    reasons.push('Borovkov/Young: weak volume — cut noise, skip scalp');
+    appliedRules.push('cut_noise');
   }
 
+  // Solabuto: impulse
   if (scalp.impulseUp) {
     score += 10;
     reasons.push('Solabuto: bullish 5m impulse');
@@ -460,9 +521,15 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     reasons.push('Solabuto: bearish 5m impulse');
   }
 
+  // Borovkov: no chase — only pullback to EMA21
   if (trend15m === 'up' && scalp.priceAboveEma21 && scalp.distanceToEma21Pct >= 0 && scalp.distanceToEma21Pct <= 0.35) {
-    score += 7;
-    reasons.push('Murphy: pullback to EMA21 in uptrend');
+    score += 8;
+    reasons.push('Borovkov: pullback to fair price (EMA21), no chase');
+    appliedRules.push('no_chase');
+  } else if (trend15m === 'up' && scalp.distanceToEma21Pct > 0.55) {
+    score -= 8;
+    reasons.push('Borovkov: stretched from EMA21 — do not chase');
+    appliedRules.push('no_chase');
   }
 
   if (scalp.ema9 > scalp.ema21) {
@@ -471,9 +538,28 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     score -= 5;
   }
 
+  // Shiryaev: Pivot Points S/R
+  if (pivots.nearS1 && trend15m === 'up' && scalp.rsi7 >= 34) {
+    score += 9;
+    reasons.push('Shiryaev: Pivot S1 bounce zone (conservative long)');
+    appliedRules.push('pivot_sr');
+  } else if (pivots.nearPp && trend15m === 'up' && scalp.impulseUp) {
+    score += 5;
+    reasons.push('Shiryaev: Pivot PP with impulse');
+    appliedRules.push('pivot_sr');
+  } else if (pivots.nearR1) {
+    score -= 8;
+    reasons.push('Shiryaev: near Pivot R1 — avoid new long');
+    appliedRules.push('pivot_sr');
+  } else if (pivots.midRange && !scalp.impulseUp) {
+    score -= 5;
+    reasons.push('Shiryaev: mid Pivot range without impulse — wait');
+    appliedRules.push('avoid_mid_range');
+  }
+
   if (scalp.distanceToResistancePct >= 0 && scalp.distanceToResistancePct < 0.25) {
     score -= 9;
-    reasons.push('Solabuto: too close to resistance for scalp entry');
+    reasons.push('Solabuto/Shiryaev: too close to resistance');
   }
 
   if (scalp.distanceToSupportPct >= 0 && scalp.distanceToSupportPct < 0.35 && scalp.rsi7 >= 34) {
@@ -489,16 +575,48 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     reasons.push('RSI7 overheated for scalp long');
   }
 
+  // CScalp: order book / walls / imbalance
   const orderBook = market.orderBook || {};
   if (orderBook.available) {
     if (orderBook.pressure === 'buy') {
-      score += 4;
+      score += 5;
+      reasons.push('CScalp: order book buy pressure');
+      appliedRules.push('orderbook_confirm');
     } else if (orderBook.pressure === 'sell') {
-      score -= 4;
+      score -= 6;
+      reasons.push('CScalp: order book sell pressure — no long');
+      appliedRules.push('orderbook_confirm');
     }
+
+    if (orderBook.imbalance > 0.3) {
+      score += 4;
+      reasons.push('CScalp: bid depth imbalance supports long');
+      appliedRules.push('depth_imbalance');
+    } else if (orderBook.imbalance < -0.3) {
+      score -= 4;
+      reasons.push('CScalp: ask depth imbalance blocks long');
+      appliedRules.push('depth_imbalance');
+    }
+
+    const askWall = orderBook.askWall || {};
+    const bidWall = orderBook.bidWall || {};
+    const lastPrice = market.lastPrice;
+    if (askWall.price && lastPrice && percentChange(lastPrice, askWall.price) < 0.2 && askWall.usd > (orderBook.askDepthUsd || 0) * 0.25) {
+      score -= 7;
+      reasons.push('CScalp: nearby ask wall blocks long');
+      appliedRules.push('wall_filter');
+    }
+    if (bidWall.price && lastPrice && percentChange(bidWall.price, lastPrice) < 0.2 && bidWall.usd > (orderBook.bidDepthUsd || 0) * 0.25) {
+      score += 4;
+      reasons.push('CScalp: nearby bid wall supports long');
+      appliedRules.push('wall_filter');
+    }
+
+    // Borovkov: microstructure — max spread
     if (orderBook.spreadPct > config.scalp.maxSpreadPct) {
-      score -= 10;
-      reasons.push('Solabuto: spread too wide for scalp');
+      score -= 12;
+      reasons.push('Borovkov: spread too wide for microscopic profit');
+      appliedRules.push('max_spread');
     }
   }
 
@@ -507,10 +625,24 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     reasons.push('Macro greed filter: avoid aggressive scalp long');
   }
 
+  // Young: incomplete setup → force WAIT bias
+  const setupReady = trend15m === 'up'
+    && scalp.impulseUp
+    && scalp.volumeRatio >= 0.95
+    && (scalp.distanceToEma21Pct <= 0.4 || pivots.nearS1 || pivots.nearPp);
+  if (!setupReady && score > 0) {
+    score -= 4;
+    reasons.push('Young: incomplete short-term setup — reduce conviction');
+    appliedRules.push('wait_setup');
+  }
+
   const confidence = clamp(Math.round(50 + score), 0, 100);
   let action = 'WAIT';
-  if (trend15m === 'up' && confidence >= config.scalp.minConfidence) {
+  if (trend15m === 'up' && confidence >= config.scalp.minConfidence && setupReady) {
     action = 'BUY';
+  } else if (trend15m === 'up' && confidence >= config.scalp.minConfidence && !setupReady) {
+    action = 'WAIT';
+    reasons.push('Young/Borovkov: confidence ok but setup incomplete — WAIT');
   } else if (trend15m === 'down' && confidence <= 38) {
     action = 'SELL';
   } else if (confidence >= 52) {
@@ -519,13 +651,18 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
 
   return {
     enabled: true,
-    strategy: 'murphy_solabuto_scalp',
+    strategy: 'scalping_kb_v1',
     sources: [
+      ...bookSources,
       'Murphy — Technical Analysis of the Futures Markets (trend, volume, S/R)',
-      'Solabuto — Short-term Trading (impulse, sizing, quick exits)'
+      'Solabuto — impulse, sizing, quick exits'
     ],
+    knowledgeVersion: knowledge.version || 1,
+    appliedRules: [...new Set(appliedRules)],
     timeframe: scalp.timeframe,
     trend15m,
+    setupReady,
+    pivots,
     action,
     confidence,
     score: round(score, 2),
@@ -1646,6 +1783,9 @@ function marketAssetClass(symbol) {
   }
   if (/^(TSLA|AAPL|NVDA|MSFT|GOOGL|META|COIN|MSTR|HOOD|ORCL|INTC|MU|TSM|SNDK|CRCL)USDT$/.test(symbol)) {
     return 'stock';
+  }
+  if (/^(USDT|USDC)(EUR|GBP)$/.test(symbol) || /^(BTC|ETH)(EUR|GBP)$/.test(symbol)) {
+    return 'forex';
   }
   if (symbol.endsWith('USDT')) {
     return 'crypto';

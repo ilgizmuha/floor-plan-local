@@ -57,7 +57,11 @@
 
 `scripts/trading-brain.js` — read-only анализатор для VPS. Он не отправляет ордера: собирает рынок Bybit, считает индикаторы, читает публичные RSS-новости, прогоняет сигнал через risk manager и пишет решения в JSONL.
 
-Технический анализ использует SMA20/SMA50, EMA12/EMA26, RSI14, MACD, Bollinger Bands, momentum, volatility, volume ratio, support/resistance, стакан, деривативы и Fear & Greed. Помимо крипты поддерживаются TradFi-инструменты Bybit: металлы (`XAUUSDT`, `XAGUSDT`, `XAUTUSDT`), нефть (`CLUSDT`), акции (`TSLAUSDT`, `NVDAUSDT` и др.) через `BRAIN_LINEAR_SYMBOLS`. Класс актива (`crypto` / `metal` / `commodity` / `stock`) виден в WordPress-панели.
+Технический анализ использует SMA20/SMA50, EMA12/EMA26, RSI14, MACD, Bollinger Bands, momentum, volatility, volume ratio, support/resistance, стакан, деривативы и Fear & Greed. Помимо крипты поддерживаются TradFi-инструменты Bybit: металлы (`XAUUSDT`, `XAGUSDT`, `XAUTUSDT`), нефть (`CLUSDT`), акции (`TSLAUSDT`, `NVDAUSDT` и др.) через `BRAIN_LINEAR_SYMBOLS`. Класс актива (`crypto` / `metal` / `commodity` / `stock` / `forex`) виден в WordPress-панели.
+
+**Валюты:** классический `EURUSD`/`GBPUSD` на Bybit доступен только через MT5 TradFi (не V5 market API). В мозг добавлены spot-прокси: `USDTEUR` (доллар/евро), `BTCEUR`, `ETHEUR`. Класс `forex`.
+
+**База знаний скальпинга** (`scripts/knowledge/scalping-kb.json`): Боровков (микроструктура/дисциплина), CScalp (стакан/стены), Ширяев (Pivot Points), Young/Benner (ожидание сетапа) + Murphy/Solabuto. Правила применяются в `analyzeScalpStrategy`.
 
 Опциональные AI-аналитики подключаются через DeepSeek/OpenAI-compatible API (`AI_ANALYST_*`) и Cursor SDK (`CURSOR_ANALYST_*`). Сейчас VPS настроен на DeepSeek (`AI_ANALYST_BASE_URL=https://api.deepseek.com`, `AI_ANALYST_MODEL=deepseek-chat`). Для Cursor Analyst нужен `CURSOR_API_KEY` из Cursor Dashboard. Базовые правила дают первый сигнал, DeepSeek и Cursor подтверждают/отклоняют его, затем risk manager принимает финальное разрешение.
 
