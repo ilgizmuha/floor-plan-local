@@ -594,7 +594,15 @@ async function collectMarkets() {
       },
       orderBook,
       derivatives,
-      scalpIndicators
+      scalpIndicators,
+      recentCandles: candles.slice(-24).map((candle) => ({
+        start: candle.start,
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume
+      }))
     });
   }
   return results;
@@ -1657,11 +1665,13 @@ function buildAiMessages(market, news, signal, fearGreed = {}, strategyContext =
     {
       role: 'system',
       content: [
-        'You are a conservative confirm-only trading judge.',
-        'Do NOT invent setups. Only confirm, veto, or downgrade the provided rule setup.',
+        'You are an indicator analyst and conservative confirm-only trading judge.',
+        'First analyze indicatorAnalysis, recentCandles, order book and derivatives in the payload.',
+        'Then confirm, veto, or downgrade the provided rule setup — do NOT invent new setups.',
+        'Cite concrete metric values in indicatorSummary, reasoning and factors (e.g. RSI 72, ADX 18, MACD hist -0.4, book imbalance).',
+        'If metrics contradict the setup, veto or downgrade. Prefer capital protection.',
         'Return only valid JSON.',
-        'Prefer capital protection. Use verdict=veto on mixed/risky context.',
-        'JSON schema: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}.'
+        'JSON schema: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short metric analysis","reasoning":"short reason","factors":["RSI ...","MACD ..."]}.'
       ].join(' ')
     },
     {
@@ -1716,7 +1726,8 @@ function normalizeAiVerdict(raw) {
   const riskLevel = ['low', 'medium', 'high'].includes(String(raw.riskLevel || '').toLowerCase())
     ? String(raw.riskLevel).toLowerCase()
     : 'unknown';
-  const factors = Array.isArray(raw.factors) ? raw.factors.map((item) => String(item)).slice(0, 6) : [];
+  const factors = Array.isArray(raw.factors) ? raw.factors.map((item) => String(item)).slice(0, 8) : [];
+  const indicatorSummary = String(raw.indicatorSummary || raw.indicator_summary || '').slice(0, 600);
 
   return {
     enabled: true,
@@ -1728,6 +1739,7 @@ function normalizeAiVerdict(raw) {
     confidence,
     riskLevel,
     veto: Boolean(raw.veto) || verdict === 'veto',
+    indicatorSummary,
     reasoning: String(raw.reasoning || '').slice(0, 500),
     factors
   };
@@ -1792,11 +1804,14 @@ function buildCursorPrompt(market, news, signal, aiAnalyst, algoVaultAnalyst = {
     calibration: strategyContext.calibration || {}
   });
   return [
-    'You are Cursor Analyst — a soft confirm-only veto layer for an automated trading brain.',
+    'You are Cursor Analyst — an indicator analyst and soft confirm-only veto layer.',
     'Do not inspect files. Use only this JSON payload.',
-    'Your job: confirm the rule setup, veto it, or downgrade it. Do NOT invent new setups.',
+    'First analyze indicatorAnalysis, recentCandles, order book and derivatives.',
+    'Then confirm, veto, or downgrade the rule setup. Do NOT invent new setups.',
+    'Cite concrete metric values in indicatorSummary, reasoning and factors.',
+    'If metrics contradict the setup, veto or downgrade.',
     'Return only valid JSON:',
-    '{"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short reason","factors":["factor"]}',
+    '{"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short metric analysis","reasoning":"short reason","factors":["RSI ...","MACD ..."]}',
     JSON.stringify({
       ...payload,
       deepSeekAnalyst: aiAnalyst,
@@ -2892,7 +2907,15 @@ function assembleMarketFromCandles({
     },
     orderBook: orderBook || { available: false },
     derivatives: derivatives || { available: false },
-    scalpIndicators: buildScalpIndicators(scalpCandles || [])
+    scalpIndicators: buildScalpIndicators(scalpCandles || []),
+    recentCandles: candles.slice(-24).map((candle) => ({
+      start: candle.start,
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+      volume: candle.volume
+    }))
   };
 }
 

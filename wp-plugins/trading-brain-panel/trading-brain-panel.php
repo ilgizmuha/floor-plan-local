@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Trading Brain Panel
  * Description: Admin trading terminal for the hybrid trading brain (Bybit + Finam).
- * Version: 0.3.1
+ * Version: 0.3.2
  * Author: Cursor
  */
 
@@ -395,9 +395,13 @@ final class Trading_Brain_Panel {
 						(scalp.enabled ? '<p><strong>Scalp</strong> ' + escapeHtml(scalp.action || 'WAIT') + ' / ' + escapeHtml(scalp.confidence) + ' · ' + escapeHtml(scalp.horizon || '') + (scalp.strategy ? ' · ' + escapeHtml(scalp.strategy) : '') + '</p>' : '') +
 						(orderBook.available ? '<p><strong>Book</strong> spread ' + escapeHtml(orderBook.spreadPct) + '% · imb ' + escapeHtml(orderBook.imbalance) + ' · ' + escapeHtml(orderBook.pressure) + '</p>' : '') +
 						(derivatives.available ? '<p><strong>Deriv</strong> fund ' + escapeHtml(derivatives.fundingRatePct) + '% · OIΔ ' + escapeHtml(derivatives.openInterestChangePct) + '%</p>' : '') +
-						'<p><strong>AI</strong> ' + escapeHtml(ai.status || '—') + (ai.action ? ' → ' + escapeHtml(ai.action) + '/' + escapeHtml(ai.confidence) : '') + '</p>' +
+						'<p><strong>AI</strong> ' + escapeHtml(ai.status || '—') + (ai.action ? ' → ' + escapeHtml(ai.action) + '/' + escapeHtml(ai.confidence) : '') + (ai.verdict ? ' · ' + escapeHtml(ai.verdict) : '') + '</p>' +
+						(ai.indicatorSummary ? '<p><strong>AI metrics</strong> ' + escapeHtml(ai.indicatorSummary) + '</p>' : '') +
 						(ai.reasoning ? '<p class="tbp-muted">' + escapeHtml(ai.reasoning) + '</p>' : '') +
-						'<p><strong>Cursor</strong> ' + escapeHtml(cursor.status || '—') + (cursor.action ? ' → ' + escapeHtml(cursor.action) + '/' + escapeHtml(cursor.confidence) : '') + '</p>' +
+						(ai.factors && ai.factors.length ? '<p class="tbp-muted">' + escapeHtml(ai.factors.slice(0, 6).join(' · ')) + '</p>' : '') +
+						'<p><strong>Cursor</strong> ' + escapeHtml(cursor.status || '—') + (cursor.action ? ' → ' + escapeHtml(cursor.action) + '/' + escapeHtml(cursor.confidence) : '') + (cursor.verdict ? ' · ' + escapeHtml(cursor.verdict) : '') + '</p>' +
+						(cursor.indicatorSummary ? '<p><strong>Cursor metrics</strong> ' + escapeHtml(cursor.indicatorSummary) + '</p>' : '') +
+						(cursor.reasoning ? '<p class="tbp-muted">' + escapeHtml(cursor.reasoning) + '</p>' : '') +
 						'<p><strong>AlgoVault</strong> ' + escapeHtml(algoVault.status || '—') + '</p>' +
 						'<p class="tbp-muted">' + escapeHtml((consensus.reasons || signal.reasons || []).slice(0, 8).join(' · ')) + '</p>' +
 						(risk.blocks && risk.blocks.length ? '<p><strong>Blocks</strong> ' + escapeHtml(risk.blocks.join(', ')) + '</p>' : '');

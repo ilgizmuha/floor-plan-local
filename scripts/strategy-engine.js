@@ -344,13 +344,209 @@ function createStrategyEngine(options = {}) {
     };
   }
 
+  function summarizeIndicatorsForAi(market = {}) {
+    const i = market.indicators || {};
+    const orderBook = market.orderBook || {};
+    const derivatives = market.derivatives || {};
+    const scalp = market.scalpIndicators || {};
+    const readings = [];
+
+    if (i.sma20 != null && i.sma50 != null) {
+      readings.push({
+        name: 'trend_sma',
+        value: `${i.sma20}/${i.sma50}`,
+        bias: i.sma20 > i.sma50 ? 'bullish' : 'bearish',
+        note: i.sma20 > i.sma50 ? 'SMA20 above SMA50' : 'SMA20 below SMA50'
+      });
+    }
+    if (i.ema12 != null && i.ema26 != null) {
+      readings.push({
+        name: 'trend_ema',
+        value: `${i.ema12}/${i.ema26}`,
+        bias: i.ema12 > i.ema26 ? 'bullish' : 'bearish',
+        note: i.ema12 > i.ema26 ? 'EMA12 above EMA26' : 'EMA12 below EMA26'
+      });
+    }
+    if (i.rsi14 != null) {
+      let bias = 'neutral';
+      let note = 'RSI mid-range';
+      if (i.rsi14 >= 70) {
+        bias = 'overbought';
+        note = 'RSI overbought risk';
+      } else if (i.rsi14 <= 30) {
+        bias = 'oversold';
+        note = 'RSI oversold bounce candidate';
+      } else if (i.rsi14 >= 55) {
+        bias = 'bullish';
+        note = 'RSI bullish zone';
+      } else if (i.rsi14 <= 45) {
+        bias = 'bearish';
+        note = 'RSI bearish zone';
+      }
+      readings.push({ name: 'rsi14', value: i.rsi14, bias, note });
+    }
+    if (i.macdHistogram != null) {
+      readings.push({
+        name: 'macd',
+        value: {
+          line: i.macdLine,
+          signal: i.macdSignal,
+          hist: i.macdHistogram,
+          delta: i.macdHistogramDelta
+        },
+        bias: i.macdHistogram > 0 ? 'bullish' : 'bearish',
+        note: i.macdHistogramDelta > 0 ? 'MACD histogram improving' : 'MACD histogram weakening'
+      });
+    }
+    if (i.bollingerPosition != null) {
+      let bias = 'neutral';
+      if (i.bollingerPosition >= 0.85) {
+        bias = 'overbought';
+      } else if (i.bollingerPosition <= 0.15) {
+        bias = 'oversold';
+      }
+      readings.push({
+        name: 'bollinger',
+        value: {
+          position: i.bollingerPosition,
+          widthPct: i.bollingerWidthPct,
+          upper: i.bollingerUpper,
+          lower: i.bollingerLower
+        },
+        bias,
+        note: `price at ${round((i.bollingerPosition || 0) * 100, 1)}% of BB range`
+      });
+    }
+    if (i.adx14 != null) {
+      readings.push({
+        name: 'adx14',
+        value: i.adx14,
+        bias: i.adx14 >= 22 ? 'trending' : 'ranging',
+        note: i.adx14 >= 22 ? 'ADX shows trend strength' : 'ADX weak / range'
+      });
+    }
+    if (i.momentumPct != null) {
+      readings.push({
+        name: 'momentum',
+        value: i.momentumPct,
+        bias: i.momentumPct > 0 ? 'bullish' : 'bearish',
+        note: `short momentum ${i.momentumPct}%`
+      });
+    }
+    if (i.volatilityPct != null) {
+      readings.push({
+        name: 'volatility',
+        value: i.volatilityPct,
+        bias: i.volatilityPct >= 3.2 ? 'high' : 'normal',
+        note: `ATR% ${i.volatilityPct}`
+      });
+    }
+    if (i.volumeRatio != null) {
+      readings.push({
+        name: 'volume',
+        value: i.volumeRatio,
+        bias: i.volumeRatio >= 1.15 ? 'expanding' : (i.volumeRatio <= 0.85 ? 'dry' : 'normal'),
+        note: `volume ratio ${i.volumeRatio}`
+      });
+    }
+    if (i.distanceToSupportPct != null || i.distanceToResistancePct != null) {
+      readings.push({
+        name: 'levels',
+        value: {
+          support: i.support,
+          resistance: i.resistance,
+          distanceToSupportPct: i.distanceToSupportPct,
+          distanceToResistancePct: i.distanceToResistancePct
+        },
+        bias: 'context',
+        note: `support ${i.distanceToSupportPct}% / resistance ${i.distanceToResistancePct}%`
+      });
+    }
+    if (orderBook.available) {
+      readings.push({
+        name: 'orderbook',
+        value: {
+          spreadPct: orderBook.spreadPct,
+          imbalance: orderBook.imbalance,
+          pressure: orderBook.pressure,
+          bidDepthUsd: orderBook.bidDepthUsd,
+          askDepthUsd: orderBook.askDepthUsd
+        },
+        bias: orderBook.pressure || 'neutral',
+        note: `book ${orderBook.pressure}, spread ${orderBook.spreadPct}%`
+      });
+    }
+    if (derivatives.available) {
+      readings.push({
+        name: 'derivatives',
+        value: {
+          fundingRatePct: derivatives.fundingRatePct,
+          basisPct: derivatives.basisPct,
+          openInterestChangePct: derivatives.openInterestChangePct
+        },
+        bias: derivatives.fundingRatePct > 0.03 ? 'crowded_long'
+          : (derivatives.fundingRatePct < -0.03 ? 'crowded_short' : 'neutral'),
+        note: `funding ${derivatives.fundingRatePct}%, OIΔ ${derivatives.openInterestChangePct}%`
+      });
+    }
+    if (scalp.available) {
+      readings.push({
+        name: 'scalp_5m',
+        value: {
+          rsi: scalp.rsi,
+          momentumPct: scalp.momentumPct,
+          volumeRatio: scalp.volumeRatio,
+          pivots: scalp.pivots || null
+        },
+        bias: (scalp.momentumPct || 0) > 0 ? 'bullish' : 'bearish',
+        note: '5m scalp indicators available'
+      });
+    }
+
+    const bullish = readings.filter((item) => ['bullish', 'oversold', 'expanding'].includes(item.bias)).length;
+    const bearish = readings.filter((item) => ['bearish', 'overbought', 'dry', 'crowded_long', 'high'].includes(item.bias)).length;
+    return {
+      readings,
+      tally: { bullish, bearish, total: readings.length },
+      netBias: bullish > bearish + 1 ? 'bullish' : (bearish > bullish + 1 ? 'bearish' : 'mixed')
+    };
+  }
+
+  function summarizeRecentCandles(market = {}, limit = 12) {
+    const candles = market.recentCandles || market.candles || [];
+    if (!Array.isArray(candles) || !candles.length) {
+      return { available: false, count: 0, bars: [] };
+    }
+    const slice = candles.slice(-limit).map((candle) => ({
+      t: candle.start || candle.timestamp || null,
+      o: round(Number(candle.open), 6),
+      h: round(Number(candle.high), 6),
+      l: round(Number(candle.low), 6),
+      c: round(Number(candle.close), 6),
+      v: round(Number(candle.volume) || 0, 4)
+    }));
+    const closes = slice.map((bar) => bar.c).filter((value) => Number.isFinite(value));
+    const first = closes[0];
+    const last = closes[closes.length - 1];
+    return {
+      available: true,
+      count: slice.length,
+      rangePct: first ? round(((last - first) / first) * 100, 4) : 0,
+      higherHighs: slice.length > 2 ? slice[slice.length - 1].h >= Math.max(...slice.slice(0, -1).map((b) => b.h)) : false,
+      lowerLows: slice.length > 2 ? slice[slice.length - 1].l <= Math.min(...slice.slice(0, -1).map((b) => b.l)) : false,
+      bars: slice
+    };
+  }
+
   function buildRichAiPayload(market, news, fearGreed, ruleSignal, context = {}) {
     const profile = context.profile || {};
     const regime = context.regime || {};
     const quality = context.qualityFeedback || {};
     const calibration = context.calibration || {};
+    const indicatorAnalysis = summarizeIndicatorsForAi(market);
+    const recentCandles = summarizeRecentCandles(market, 12);
     return {
-      role: 'confirm_only_judge',
+      role: 'indicator_analyst_and_confirm_judge',
       symbol: market.symbol,
       strategy: {
         profileId: context.profileId,
@@ -376,6 +572,25 @@ function createStrategyEngine(options = {}) {
         reasons: (regime.reasons || []).slice(0, 4)
       },
       qualityFeedback: quality,
+      analysisRequired: {
+        mustReview: [
+          'trend (SMA/EMA/ADX)',
+          'momentum (RSI/MACD/momentumPct)',
+          'volatility and Bollinger position',
+          'volume ratio',
+          'order book pressure/spread if available',
+          'derivatives funding/OI if available',
+          'recent candle structure',
+          'news score and Fear & Greed as veto context only'
+        ],
+        outputMustInclude: [
+          'indicatorSummary citing concrete values',
+          'factors[] with specific metric names',
+          'verdict confirm|veto|downgrade based on indicator agreement with setup'
+        ]
+      },
+      indicatorAnalysis,
+      recentCandles,
       market: {
         lastPrice: market.lastPrice,
         change24hPct: market.change24hPct,
@@ -397,11 +612,12 @@ function createStrategyEngine(options = {}) {
         classification: fearGreed.classification
       },
       instructions: [
-        'You are a confirm-only judge. Do NOT invent new setups.',
-        'If the rule setup is valid, respond verdict=confirm with the SAME action.',
-        'If news/regime/risk is bad, respond verdict=veto.',
-        'If uncertain, respond verdict=downgrade.',
-        'JSON: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"reasoning":"short","factors":["..."]}'
+        'First ANALYZE indicators, order book, derivatives and recent candles.',
+        'Then judge the rule setup: confirm only if metrics support it.',
+        'Do NOT invent a new unrelated setup.',
+        'If indicators contradict the setup, veto or downgrade.',
+        'In reasoning and factors cite concrete numbers (e.g. RSI 72, ADX 18, spread 0.12%).',
+        'JSON: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short analysis of metrics","reasoning":"short","factors":["RSI ...","MACD ...","book ..."]}'
       ]
     };
   }
@@ -605,6 +821,8 @@ function createStrategyEngine(options = {}) {
     getCalibratedThresholds,
     applySentimentVeto,
     combineConfirmOnly,
+    summarizeIndicatorsForAi,
+    summarizeRecentCandles,
     buildRichAiPayload,
     scoreSentimentForProfile,
     resolveProfileWeights,
