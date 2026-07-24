@@ -5,6 +5,7 @@ COMMAND="${1:-}"
 LATEST_FILE="/opt/trading-brain/data/latest.json"
 PAPER_FILE="/opt/trading-brain/data/paper-state.json"
 QUALITY_FILE="/opt/trading-brain/data/quality.json"
+BACKTEST_FILE="/opt/trading-brain/data/backtest-latest.json"
 SERVICE_NAME="trading-brain.service"
 
 case "$COMMAND" in
@@ -32,6 +33,13 @@ case "$COMMAND" in
       printf '{}\n'
     fi
     ;;
+  backtest)
+    if [[ -r "$BACKTEST_FILE" ]]; then
+      cat "$BACKTEST_FILE"
+    else
+      printf '{}\n'
+    fi
+    ;;
   start)
     systemctl start "$SERVICE_NAME"
     systemctl is-active "$SERVICE_NAME"
@@ -45,7 +53,7 @@ case "$COMMAND" in
     systemctl is-active "$SERVICE_NAME"
     ;;
   *)
-    echo "Usage: trading-brain-panel {latest|status|paper|quality|start|stop|restart}" >&2
+    echo "Usage: trading-brain-panel {latest|status|paper|quality|backtest|start|stop|restart}" >&2
     exit 2
     ;;
 esac

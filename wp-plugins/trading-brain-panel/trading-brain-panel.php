@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Trading Brain Panel
  * Description: Admin trading terminal for the hybrid trading brain (Bybit + Finam).
- * Version: 0.2.0
+ * Version: 0.2.1
  * Author: Cursor
  */
 
@@ -69,6 +69,7 @@ final class Trading_Brain_Panel {
 				<button type="button" class="tbp-tab is-active" data-tab="markets">Рынки</button>
 				<button type="button" class="tbp-tab" data-tab="finam">Finam</button>
 				<button type="button" class="tbp-tab" data-tab="paper">Paper</button>
+				<button type="button" class="tbp-tab" data-tab="backtest">Бэктест</button>
 				<button type="button" class="tbp-tab" data-tab="news">Новости</button>
 				<button type="button" class="tbp-tab" data-tab="quality">Качество</button>
 				<button type="button" class="tbp-tab" data-tab="log">Лог</button>
@@ -116,6 +117,9 @@ final class Trading_Brain_Panel {
 				</section>
 				<section class="tbp-pane" data-pane="paper">
 					<div id="tbp-paper" class="tbp-scroll">loading…</div>
+				</section>
+				<section class="tbp-pane" data-pane="backtest">
+					<div id="tbp-backtest" class="tbp-scroll">loading…</div>
 				</section>
 				<section class="tbp-pane" data-pane="news">
 					<div id="tbp-news" class="tbp-scroll">loading…</div>
@@ -430,6 +434,34 @@ final class Trading_Brain_Panel {
 						}).join('') + '</ul>' : '<p class="tbp-muted">Нет открытых paper-позиций</p>') +
 						'</div>';
 
+					const backtest = data.backtest || {};
+					const backtestRuns = backtest.runs || {};
+					document.getElementById('tbp-backtest').innerHTML =
+						'<p><strong>Updated</strong> ' + escapeHtml(backtest.updatedAt || '—') +
+						' · <strong>Mode</strong> ' + escapeHtml(backtest.mode || '—') + '</p>' +
+						(backtest.note ? '<p class="tbp-muted">' + escapeHtml(backtest.note) + '</p>' : '') +
+						(Object.keys(backtestRuns).length ? Object.keys(backtestRuns).map((runName) => {
+							const run = backtestRuns[runName] || {};
+							const portfolio = run.portfolio || {};
+							const symbolsMap = run.symbols || {};
+							return '<div class="tbp-account">' +
+								'<p><strong>' + escapeHtml(runName) + '</strong> · trades ' + escapeHtml(portfolio.totalTrades ?? 0) +
+								' · WR ' + escapeHtml(portfolio.winRatePct ?? 0) + '%' +
+								' · avg PnL ' + escapeHtml(portfolio.avgTotalPnlPct ?? 0) + '%' +
+								' · max DD ' + escapeHtml(portfolio.worstMaxDrawdownPct ?? 0) + '%</p>' +
+								Object.keys(symbolsMap).map((symbol) => {
+									const item = symbolsMap[symbol] || {};
+									const paperBt = item.paper || {};
+									const q15 = (item.signalQuality && item.signalQuality['15m']) || {};
+									return '<p><strong>' + escapeHtml(symbol) + '</strong>: PnL ' + escapeHtml(paperBt.totalPnlUsd ?? 0) +
+										' (' + escapeHtml(paperBt.totalPnlPct ?? 0) + '%) · trades ' + escapeHtml(paperBt.trades ?? 0) +
+										' · WR ' + escapeHtml(paperBt.winRatePct ?? 0) + '%' +
+										' · hit15m ' + escapeHtml(q15.hitRatePct ?? 0) + '%' +
+										' · bars ' + escapeHtml(item.evaluatedBars ?? item.bars ?? 0) + '</p>';
+								}).join('') +
+							'</div>';
+						}).join('') : '<p class="tbp-muted">Бэктест ещё не запускался. На VPS: <code>npm run brain:backtest</code></p>');
+
 					const finamAccounts = finam.accounts || [];
 					document.getElementById('tbp-finam').innerHTML =
 						'<p><strong>Trading</strong> ' + escapeHtml((finam.trading && finam.trading.enabled) ?? false) +
@@ -557,9 +589,11 @@ final class Trading_Brain_Panel {
 		$latest = self::run_helper( 'latest' );
 		$paper = self::run_helper( 'paper' );
 		$quality = self::run_helper( 'quality' );
+		$backtest = self::run_helper( 'backtest' );
 		$decoded_latest = array();
 		$decoded_paper = array();
 		$decoded_quality = array();
+		$decoded_backtest = array();
 
 		if ( 0 === $latest['code'] && '' !== $latest['output'] ) {
 			$decoded = json_decode( $latest['output'], true );
@@ -579,18 +613,25 @@ final class Trading_Brain_Panel {
 				$decoded_quality = $decoded;
 			}
 		}
+		if ( 0 === $backtest['code'] && '' !== $backtest['output'] ) {
+			$decoded = json_decode( $backtest['output'], true );
+			if ( is_array( $decoded ) ) {
+				$decoded_backtest = $decoded;
+			}
+		}
 
 		return array(
 			'service_status' => trim( $status['output'] ) ?: 'unknown',
 			'latest'         => $decoded_latest,
 			'paper'          => $decoded_paper,
 			'quality'        => $decoded_quality,
+			'backtest'       => $decoded_backtest,
 			'finam'          => isset( $decoded_latest['finam'] ) && is_array( $decoded_latest['finam'] ) ? $decoded_latest['finam'] : array(),
 		);
 	}
 
 	private static function run_helper( string $command ): array {
-		$allowed = array( 'latest', 'status', 'paper', 'quality', 'start', 'stop', 'restart' );
+		$allowed = array( 'latest', 'status', 'paper', 'quality', 'backtest', 'start', 'stop', 'restart' );
 		if ( ! in_array( $command, $allowed, true ) ) {
 			return array(
 				'code'   => 1,

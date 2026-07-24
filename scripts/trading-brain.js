@@ -167,6 +167,19 @@ const config = {
     maxOpenPositions: numberEnv('FINAM_MAX_OPEN_POSITIONS', 3),
     orderType: env('FINAM_ORDER_TYPE', 'LIMIT'), // LIMIT | MARKET
     allowSellToClose: env('FINAM_ALLOW_SELL_CLOSE', 'true') === 'true'
+  },
+  backtest: {
+    // Rules-only historical replay (no DeepSeek/Cursor). Default symbols keep the run fast.
+    symbols: splitList(env('BACKTEST_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT')),
+    interval: env('BACKTEST_INTERVAL', env('BRAIN_INTERVAL', '15')),
+    candleLimit: numberEnv('BACKTEST_CANDLE_LIMIT', 500),
+    warmupBars: numberEnv('BACKTEST_WARMUP_BARS', 60),
+    windowBars: numberEnv('BACKTEST_WINDOW_BARS', numberEnv('BRAIN_KLINE_LIMIT', 96)),
+    startBalanceUsd: numberEnv('BACKTEST_START_BALANCE_USD', numberEnv('PAPER_START_BALANCE_USD', 1000)),
+    maxPositionUsd: numberEnv('BACKTEST_MAX_POSITION_USD', numberEnv('PAPER_MAX_POSITION_USD', 20)),
+    minConfidence: numberEnv('BACKTEST_MIN_CONFIDENCE', numberEnv('PAPER_MIN_CONFIDENCE', 70)),
+    feeRate: numberEnv('BACKTEST_FEE_RATE', numberEnv('PAPER_FEE_RATE', 0.001)),
+    mode: env('BACKTEST_MODE', 'rules') // rules | decisions | both
   }
 };
 
@@ -204,6 +217,12 @@ async function main() {
 
   if (command === 'stats') {
     const report = await tradingStatsReport();
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+
+  if (command === 'backtest') {
+    const report = await runBacktestReport(args);
     console.log(JSON.stringify(report, null, 2));
     return;
   }
@@ -3906,10 +3925,529 @@ function withTimeout(promise, ms, message) {
   });
 }
 
+async function runBacktestReport(cliArgs = {}) {
+  ensureDir(config.dataDir);
+  const mode = String(cliArgs.mode || config.backtest.mode || 'rules').toLowerCase();
+  const symbols = splitList(cliArgs.symbols || config.backtest.symbols.join(','));
+  const interval = String(cliArgs.interval || config.backtest.interval);
+  const candleLimit = numberArg(cliArgs.limit || cliArgs.candles, config.backtest.candleLimit);
+  const warmupBars = numberArg(cliArgs.warmup, config.backtest.warmupBars);
+  const windowBars = numberArg(cliArgs.window, config.backtest.windowBars);
+  const startBalanceUsd = numberArg(cliArgs.startBalance, config.backtest.startBalanceUsd);
+  const maxPositionUsd = numberArg(cliArgs.maxPosition, config.backtest.maxPositionUsd);
+  const minConfidence = numberArg(cliArgs.minConfidence, config.backtest.minConfidence);
+  const feeRate = numberArg(cliArgs.fee, config.backtest.feeRate);
+  const options = {
+    interval,
+    candleLimit,
+    warmupBars,
+    windowBars,
+    startBalanceUsd,
+    maxPositionUsd,
+    minConfidence,
+    feeRate
+  };
+
+  const report = {
+    updatedAt: new Date().toISOString(),
+    mode,
+    options,
+    note: 'Rules-only historical replay. AI analysts are skipped. No live orders.',
+    runs: {}
+  };
+
+  if (mode === 'rules' || mode === 'both') {
+    const fixturePath = cliArgs.fixture ? path.resolve(String(cliArgs.fixture)) : null;
+    report.runs.rules = await backtestRulesMode(symbols, options, fixturePath);
+  }
+  if (mode === 'decisions' || mode === 'both') {
+    report.runs.decisions = backtestDecisionsMode(symbols, options);
+  }
+  if (!report.runs.rules && !report.runs.decisions) {
+    throw new Error(`Unknown backtest mode: ${mode}. Use rules, decisions, or both.`);
+  }
+
+  report.summary = summarizeBacktestReport(report);
+  writeJson(path.join(config.dataDir, 'backtest-latest.json'), report);
+  return report;
+}
+
+async function backtestRulesMode(symbols, options, fixturePath = null) {
+  const bySymbol = {};
+  const fixture = fixturePath ? readJsonFile(fixturePath) : null;
+  for (const symbol of symbols) {
+    let candles;
+    if (fixture && Array.isArray(fixture[symbol])) {
+      candles = fixture[symbol];
+    } else if (fixture && Array.isArray(fixture.candles) && symbols.length === 1) {
+      candles = fixture.candles;
+    } else {
+      candles = await fetchBacktestCandles(symbol, options.interval, options.candleLimit);
+    }
+    bySymbol[symbol] = backtestSymbolOnCandles(symbol, candles, options);
+  }
+  return {
+    kind: 'rules',
+    symbols: bySymbol,
+    portfolio: aggregateBacktestPortfolio(bySymbol, options.startBalanceUsd),
+    fixture: fixturePath || null
+  };
+}
+
+function backtestDecisionsMode(symbols, options) {
+  const rows = readAllDecisions().filter((row) => {
+    if (!row || !row.symbol) {
+      return false;
+    }
+    if (symbols.length && !symbols.includes(row.symbol)) {
+      return false;
+    }
+    return true;
+  });
+  const bySymbol = {};
+  const grouped = {};
+  for (const row of rows) {
+    grouped[row.symbol] = grouped[row.symbol] || [];
+    grouped[row.symbol].push(row);
+  }
+  for (const [symbol, items] of Object.entries(grouped)) {
+    items.sort((a, b) => String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+    const decisions = items.map((item) => ({
+      timestamp: item.timestamp,
+      symbol,
+      finalAction: item.finalAction,
+      consensus: item.consensus || { confidence: 0 },
+      market: {
+        lastPrice: Number(item.market && item.market.lastPrice),
+        change24hPct: Number(item.market && item.market.change24hPct) || 0
+      },
+      signal: item.signal || {},
+      regime: item.regime || item.signal?.regime || {}
+    }));
+    const paper = simulateBacktestPaper(decisions, options);
+    bySymbol[symbol] = {
+      symbol,
+      source: 'decisions.jsonl',
+      bars: decisions.length,
+      from: decisions[0] ? decisions[0].timestamp : null,
+      to: decisions.length ? decisions[decisions.length - 1].timestamp : null,
+      actionCounts: countActions(decisions),
+      signalQuality: evaluateBacktestSignalQuality(decisions),
+      paper,
+      sampleDecisions: decisions.filter((d) => ['BUY', 'SELL'].includes(d.finalAction)).slice(-8)
+    };
+  }
+  return {
+    kind: 'decisions',
+    sampleSize: rows.length,
+    symbols: bySymbol,
+    portfolio: aggregateBacktestPortfolio(bySymbol, options.startBalanceUsd)
+  };
+}
+
+async function fetchBacktestCandles(symbol, interval, limit) {
+  const category = marketCategory(symbol);
+  const capped = Math.min(Math.max(Number(limit) || 100, 50), 1000);
+  const data = await bybitPublic('/v5/market/kline', {
+    category,
+    symbol,
+    interval: String(interval),
+    limit: String(capped)
+  });
+  const candles = parseKlineRows(data);
+  if (candles.length < 80) {
+    throw new Error(`Not enough klines for backtest ${symbol}: got ${candles.length}`);
+  }
+  return candles;
+}
+
+function backtestSymbolOnCandles(symbol, candles, options) {
+  const warmup = Math.max(55, Number(options.warmupBars) || 60);
+  const windowBars = Math.max(warmup, Number(options.windowBars) || 96);
+  const decisions = [];
+  const category = marketCategory(symbol);
+  const assetClass = marketAssetClass(symbol);
+
+  for (let index = warmup; index < candles.length; index += 1) {
+    const end = index + 1;
+    const start = Math.max(0, end - windowBars);
+    const window = candles.slice(start, end);
+    const last = window[window.length - 1];
+    const lookback24h = Math.min(window.length, barsForApproxDay(options.interval));
+    const price24hAgo = window[window.length - lookback24h].close;
+    const market = assembleMarketFromCandles({
+      symbol,
+      provider: 'bybit',
+      category,
+      assetClass,
+      lastPrice: last.close,
+      change24hPct: percentChange(price24hAgo, last.close),
+      turnover24h: 0,
+      volume24h: average(window.slice(-lookback24h).map((c) => c.volume)),
+      candles: window,
+      orderBook: { available: false },
+      derivatives: { available: false },
+      scalpCandles: []
+    });
+
+    const regime = detectMarketRegime(market);
+    let signal = analyzeMarket(market, emptyBacktestNews(), emptyBacktestFearGreed(), { symbols: {} });
+    signal = applyRegimeToSignal(signal, regime, market);
+    signal.regime = regime;
+    const consensus = {
+      ...signal,
+      source: 'backtest_rules_only',
+      aiAgreement: 'skipped',
+      cursorAgreement: 'skipped',
+      reasons: [...(signal.reasons || []), 'Backtest: AI analysts skipped']
+    };
+    const risk = applyBacktestRisk(consensus, market, signal, regime, options);
+    decisions.push({
+      timestamp: new Date(last.start).toISOString(),
+      symbol,
+      finalAction: risk.allowed ? consensus.action : (consensus.action === 'BUY' ? 'WAIT' : consensus.action),
+      consensus: {
+        action: consensus.action,
+        confidence: consensus.confidence,
+        source: consensus.source,
+        score: consensus.score
+      },
+      signal: {
+        action: signal.action,
+        confidence: signal.confidence,
+        effectiveMinConfidence: signal.effectiveMinConfidence,
+        reasons: (signal.reasons || []).slice(0, 4)
+      },
+      risk: {
+        allowed: risk.allowed,
+        riskScore: risk.riskScore,
+        blocks: risk.blocks
+      },
+      regime,
+      market: {
+        lastPrice: market.lastPrice,
+        change24hPct: market.change24hPct,
+        indicators: {
+          rsi14: market.indicators.rsi14,
+          trendPct: market.indicators.trendPct,
+          volatilityPct: market.indicators.volatilityPct,
+          adx14: market.indicators.adx14
+        }
+      }
+    });
+  }
+
+  const paper = simulateBacktestPaper(decisions, options);
+  return {
+    symbol,
+    source: 'bybit_klines',
+    interval: String(options.interval),
+    bars: candles.length,
+    evaluatedBars: decisions.length,
+    from: decisions[0] ? decisions[0].timestamp : null,
+    to: decisions.length ? decisions[decisions.length - 1].timestamp : null,
+    actionCounts: countActions(decisions),
+    signalQuality: evaluateBacktestSignalQuality(decisions),
+    paper,
+    sampleDecisions: decisions.filter((d) => ['BUY', 'SELL'].includes(d.finalAction)).slice(-8)
+  };
+}
+
+function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options = {}) {
+  const indicators = market.indicators || {};
+  let riskScore = 0;
+  const blocks = [];
+  const minConfidence = Number(options.minConfidence) || Number(ruleSignal.effectiveMinConfidence) || config.minConfidence;
+
+  if (signal.action === 'BUY' && (signal.confidence || 0) < minConfidence) {
+    blocks.push(`confidence below backtest minimum (${minConfidence})`);
+  }
+
+  if (config.regime.enabled && regime.regime === 'volatile' && signal.action === 'BUY') {
+    riskScore += 20;
+    blocks.push('volatile regime blocks entries');
+  }
+
+  if (config.regime.enabled && regime.regime === 'trend_down' && signal.action === 'BUY') {
+    riskScore += 15;
+    blocks.push('downtrend regime blocks swing BUY');
+  }
+
+  if (indicators.volatilityPct > 3.5) {
+    riskScore += 25;
+    blocks.push('volatility too high');
+  } else {
+    riskScore += (indicators.volatilityPct || 0) * 4;
+  }
+
+  if (indicators.rsi14 > 76) {
+    riskScore += 18;
+    blocks.push('RSI extreme');
+  }
+
+  if (market.change24hPct < -8 || market.change24hPct > 12) {
+    riskScore += 18;
+    blocks.push('24h move outside safe range');
+  }
+
+  if (riskScore > config.maxRiskScore) {
+    blocks.push('risk score above maximum');
+  }
+
+  return {
+    allowed: blocks.length === 0,
+    riskScore: round(riskScore, 2),
+    blocks,
+    minConfidence
+  };
+}
+
+function simulateBacktestPaper(decisions, options = {}) {
+  const startBalanceUsd = Number(options.startBalanceUsd) || config.backtest.startBalanceUsd;
+  const maxPositionUsd = Number(options.maxPositionUsd) || config.backtest.maxPositionUsd;
+  const feeRate = Number(options.feeRate) || config.backtest.feeRate;
+  const minConfidence = Number(options.minConfidence) || config.backtest.minConfidence;
+  let cashUsd = startBalanceUsd;
+  let realizedPnlUsd = 0;
+  let position = null;
+  const trades = [];
+  const equityCurve = [];
+  let peakEquity = startBalanceUsd;
+  let maxDrawdownPct = 0;
+
+  for (const decision of decisions) {
+    const price = Number(decision.market && decision.market.lastPrice);
+    const confidence = Number(decision.consensus && decision.consensus.confidence) || 0;
+    if (!price) {
+      continue;
+    }
+
+    if (!position && decision.finalAction === 'BUY' && confidence >= minConfidence) {
+      const positionUsd = Math.min(maxPositionUsd, cashUsd);
+      if (positionUsd > 0) {
+        const feeUsd = positionUsd * feeRate;
+        const qty = positionUsd / price;
+        position = {
+          entryPrice: price,
+          entryTime: decision.timestamp,
+          qty,
+          costUsd: positionUsd,
+          openFeeUsd: feeUsd,
+          confidence
+        };
+        cashUsd = round(cashUsd - positionUsd - feeUsd, 4);
+        trades.push({
+          type: 'OPEN',
+          timestamp: decision.timestamp,
+          price,
+          qty,
+          positionUsd,
+          feeUsd,
+          confidence
+        });
+      }
+    } else if (position && decision.finalAction === 'SELL') {
+      const grossUsd = position.qty * price;
+      const closeFeeUsd = grossUsd * feeRate;
+      const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
+      cashUsd = round(cashUsd + grossUsd - closeFeeUsd, 4);
+      realizedPnlUsd = round(realizedPnlUsd + pnlUsd, 4);
+      trades.push({
+        type: 'CLOSE',
+        timestamp: decision.timestamp,
+        price,
+        qty: position.qty,
+        pnlUsd: round(pnlUsd, 4),
+        pnlPct: round(percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd), 4),
+        holdBars: null,
+        confidence
+      });
+      position = null;
+    }
+
+    const openValue = position ? position.qty * price : 0;
+    const equityUsd = round(cashUsd + openValue, 4);
+    peakEquity = Math.max(peakEquity, equityUsd);
+    const drawdownPct = peakEquity > 0 ? percentChange(peakEquity, equityUsd) : 0;
+    if (drawdownPct < maxDrawdownPct) {
+      maxDrawdownPct = drawdownPct;
+    }
+    equityCurve.push({
+      timestamp: decision.timestamp,
+      equityUsd,
+      cashUsd: round(cashUsd, 4),
+      open: Boolean(position)
+    });
+  }
+
+  if (position) {
+    const last = decisions[decisions.length - 1];
+    const price = Number(last.market && last.market.lastPrice) || position.entryPrice;
+    const grossUsd = position.qty * price;
+    const closeFeeUsd = grossUsd * feeRate;
+    const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
+    cashUsd = round(cashUsd + grossUsd - closeFeeUsd, 4);
+    realizedPnlUsd = round(realizedPnlUsd + pnlUsd, 4);
+    trades.push({
+      type: 'FORCE_CLOSE',
+      timestamp: last.timestamp,
+      price,
+      qty: position.qty,
+      pnlUsd: round(pnlUsd, 4),
+      pnlPct: round(percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd), 4),
+      confidence: position.confidence
+    });
+    position = null;
+  }
+
+  const closed = trades.filter((trade) => trade.type === 'CLOSE' || trade.type === 'FORCE_CLOSE');
+  const wins = closed.filter((trade) => trade.pnlUsd >= 0).length;
+  const endEquity = equityCurve.length ? equityCurve[equityCurve.length - 1].equityUsd : startBalanceUsd;
+  return {
+    startBalanceUsd,
+    endEquityUsd: round(cashUsd, 4),
+    totalPnlUsd: round(cashUsd - startBalanceUsd, 4),
+    totalPnlPct: round(percentChange(startBalanceUsd, cashUsd), 4),
+    realizedPnlUsd,
+    maxDrawdownPct: round(maxDrawdownPct, 4),
+    trades: closed.length,
+    opens: trades.filter((trade) => trade.type === 'OPEN').length,
+    wins,
+    losses: closed.length - wins,
+    winRatePct: closed.length ? round((wins / closed.length) * 100, 2) : 0,
+    avgTradePnlUsd: closed.length ? round(average(closed.map((trade) => trade.pnlUsd)), 4) : 0,
+    recentTrades: trades.slice(-12),
+    equityPoints: equityCurve.length,
+    lastEquityUsd: round(endEquity, 4)
+  };
+}
+
+function evaluateBacktestSignalQuality(decisions) {
+  const horizons = [
+    { label: '15m', steps: 1 },
+    { label: '1h', steps: 4 },
+    { label: '4h', steps: 16 }
+  ];
+  // decisions are sampled every brain bar (default 15m), so 1 step ≈ interval.
+  const intervalMinutes = Number(config.backtest.interval) || 15;
+  const scaled = horizons.map((horizon) => ({
+    label: horizon.label,
+    steps: Math.max(1, Math.round((horizon.steps * 15) / intervalMinutes))
+  }));
+
+  const result = {};
+  for (const horizon of scaled) {
+    const evaluated = [];
+    for (let index = 0; index + horizon.steps < decisions.length; index += 1) {
+      const current = decisions[index];
+      const future = decisions[index + horizon.steps];
+      if (!['BUY', 'SELL'].includes(current.finalAction)) {
+        continue;
+      }
+      const currentPrice = Number(current.market && current.market.lastPrice);
+      const futurePrice = Number(future.market && future.market.lastPrice);
+      if (!currentPrice || !futurePrice) {
+        continue;
+      }
+      const rawChangePct = percentChange(currentPrice, futurePrice);
+      const edgePct = current.finalAction === 'BUY' ? rawChangePct : -rawChangePct;
+      evaluated.push({ hit: edgePct > 0, edgePct });
+    }
+    const hits = evaluated.filter((item) => item.hit).length;
+    const edges = evaluated.map((item) => item.edgePct);
+    result[horizon.label] = {
+      evaluated: evaluated.length,
+      hits,
+      hitRatePct: evaluated.length ? round((hits / evaluated.length) * 100, 2) : 0,
+      avgEdgePct: edges.length ? round(average(edges), 4) : 0
+    };
+  }
+  return result;
+}
+
+function aggregateBacktestPortfolio(bySymbol, startBalanceUsd) {
+  const symbols = Object.values(bySymbol || {});
+  if (!symbols.length) {
+    return {
+      startBalanceUsd,
+      endEquityUsd: startBalanceUsd,
+      totalPnlUsd: 0,
+      totalPnlPct: 0,
+      trades: 0,
+      winRatePct: 0,
+      maxDrawdownPct: 0
+    };
+  }
+
+  // Each symbol is simulated on its own virtual purse starting at startBalanceUsd.
+  // Portfolio summary averages relative performance so multi-symbol runs stay comparable.
+  const pnls = symbols.map((item) => item.paper.totalPnlPct);
+  const trades = symbols.reduce((sum, item) => sum + item.paper.trades, 0);
+  const wins = symbols.reduce((sum, item) => sum + item.paper.wins, 0);
+  const maxDrawdownPct = Math.min(...symbols.map((item) => item.paper.maxDrawdownPct));
+  const avgPnlPct = average(pnls);
+  return {
+    symbolCount: symbols.length,
+    startBalanceUsdPerSymbol: startBalanceUsd,
+    avgTotalPnlPct: round(avgPnlPct, 4),
+    totalTrades: trades,
+    winRatePct: trades ? round((wins / trades) * 100, 2) : 0,
+    worstMaxDrawdownPct: round(maxDrawdownPct, 4),
+    bySymbolPnlPct: Object.fromEntries(symbols.map((item) => [item.symbol, item.paper.totalPnlPct]))
+  };
+}
+
+function summarizeBacktestReport(report) {
+  const summary = { modes: Object.keys(report.runs || {}) };
+  for (const [name, run] of Object.entries(report.runs || {})) {
+    summary[name] = {
+      symbols: Object.keys(run.symbols || {}),
+      portfolio: run.portfolio
+    };
+  }
+  return summary;
+}
+
+function countActions(decisions) {
+  const counts = {};
+  for (const decision of decisions) {
+    const action = decision.finalAction || 'UNKNOWN';
+    counts[action] = (counts[action] || 0) + 1;
+  }
+  return counts;
+}
+
+function barsForApproxDay(interval) {
+  const minutes = Number(interval) || 15;
+  return Math.max(1, Math.round((24 * 60) / minutes));
+}
+
+function emptyBacktestNews() {
+  return {
+    score: 0,
+    itemCount: 0,
+    sourceCount: 0,
+    top: [],
+    sourceCounts: {}
+  };
+}
+
+function emptyBacktestFearGreed() {
+  return {
+    available: false,
+    value: null,
+    classification: 'unavailable',
+    score: 0
+  };
+}
+
 function printHelp() {
   console.log(`Usage:
   npm run brain:once
   npm run brain:status
+  npm run brain:backtest
+  node scripts/trading-brain.js backtest --mode rules --symbols BTCUSDT,ETHUSDT --limit 500
+  node scripts/trading-brain.js backtest --mode decisions
   node scripts/trading-brain.js loop
 
 Environment:
@@ -3923,6 +4461,13 @@ Environment:
   CURSOR_ANALYST_ENABLED=false
   CURSOR_API_KEY=cursor_...
   CURSOR_ANALYST_MODEL=auto
+
+Backtest (rules-only historical replay, writes data/backtest-latest.json):
+  BACKTEST_SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT
+  BACKTEST_INTERVAL=15
+  BACKTEST_CANDLE_LIMIT=500
+  BACKTEST_MIN_CONFIDENCE=70
+  BACKTEST_MODE=rules
 
 AlgoVault analyst (crypto-quant-signal-mcp):
   ALGOVAULT_ENABLED=true

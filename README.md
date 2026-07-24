@@ -63,7 +63,7 @@
 
 **База знаний скальпинга** (`scripts/knowledge/scalping-kb.json`): Боровков (микроструктура/дисциплина), CScalp (стакан/стены), Ширяев (Pivot Points), Young/Benner (ожидание сетапа) + Murphy/Solabuto. Правила применяются в `analyzeScalpStrategy`.
 
-**Finam Trade API** (`FINAM_*`): котировки и счета МосБиржи / NASDAQ через `api.finam.ru`. Символы `TICKER@MIC` (SBER@MISX, AAPL@XNGS, USD000UTSTOM@MISX). Счета: `791750REXQ4` — длинные/свинг, `791750RM43P` — дневной тариф/intraday. Скальп по fee gate запрещён на акциях/металлах/FX-споте — только свинг/long на REXQ4. Ордера не выставляются (dry-run). Команда: `node trading-brain.js finam`.
+**Finam Trade API** (`FINAM_*`): котировки и счета МосБиржи / NASDAQ через `api.finam.ru`. Символы `TICKER@MIC` (SBER@MISX, AAPL@XNGS, USD000UTSTOM@MISX). Счета: `791750REXQ4` — длинные/свинг, `791750RM43P` — дневной тариф/intraday. Скальп по fee gate запрещён на акциях/металлах/FX-споте — только свинг/long на REXQ4. Живые заявки: `FINAM_TRADING_ENABLED=true` (лимитки, лимит позиции, min confidence). Команды: `node trading-brain.js finam`, `node trading-brain.js stats`.
 
 **Fee gate** (`scripts/knowledge/fee-policy.json`): короткие сделки (scalp) только по `BTC/ETH/SOL`. Металлы, нефть, акции, forex-прокси — **только длинный/свинг** горизонт: комиссия на круг съедает микро-прибыль.
 
@@ -81,6 +81,8 @@ Paper-trading включается настройками `PAPER_*`. Это ви
 
 **Quality feedback** (`QUALITY_FEEDBACK_*`) автоматически повышает/понижает порог confidence для символов с плохим/хорошим hit-rate на 15m.
 
+**Бэктест** (`npm run brain:backtest`): прогон правил по истории свечей Bybit (без DeepSeek/Cursor) и/или переигровка `decisions.jsonl`. Результат пишется в `data/backtest-latest.json` и показывается во вкладке **Бэктест** WP-панели. Пример: `node scripts/trading-brain.js backtest --mode both --symbols BTCUSDT,ETHUSDT --limit 500`.
+
 Новостной слой читает RSS (`BRAIN_NEWS_SOURCES`) и HTML-источники (`BRAIN_HTML_NEWS_SOURCES`). Сейчас подключены Cointelegraph, CoinDesk, Google News, ForkLog и публичная Telegram-лента ForkLog. Также используется Crypto Fear & Greed Index (`FEAR_GREED_ENABLED`, API alternative.me, без ключа). X, Feedly, CryptoPanic и приватные Telegram-каналы стоит подключать отдельными API-токенами, чтобы не зависеть от нестабильного scraping.
 
 Команды:
@@ -88,6 +90,7 @@ Paper-trading включается настройками `PAPER_*`. Это ви
 ```bash
 npm run brain:once
 npm run brain:status
+npm run brain:backtest
 ```
 
 На VPS рекомендуемая папка: `/opt/trading-brain`. Журнал решений: `/opt/trading-brain/data/decisions.jsonl`.

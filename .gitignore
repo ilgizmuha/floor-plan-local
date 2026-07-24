@@ -7,3 +7,6 @@ config.php
 config.local.php
 *.log
 .DS_Store
+data/*.json
+data/*.jsonl
+!data/knowledge/
