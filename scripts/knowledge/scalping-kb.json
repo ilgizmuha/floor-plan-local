@@ -16,7 +16,8 @@
         "консервативный R:R и money management"
       ],
       "system": {
-        "workingTimeframe": "10m",
+        "workingTimeframe": "5m",
+        "workingTimeframeNote": "Book uses 10m; Bybit klines have no 10m — adapted to 5m",
         "higherTimeframe": "4h",
         "sessionGmt": { "startHour": 6, "endHour": 20 },
         "maxTradesPerDay": 3,

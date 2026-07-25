@@ -85,8 +85,8 @@ const config = {
   },
   scalp: {
     enabled: env('SCALP_ENABLED', 'true') === 'true',
-    // Shiryaev: working TF 10m (less noise than 5m, more precise than 15m)
-    interval: env('SCALP_INTERVAL', '10'),
+    // Shiryaev book uses 10m; Bybit has no 10m kline — use 5m with same rule-set.
+    interval: env('SCALP_INTERVAL', '5'),
     klineLimit: numberEnv('SCALP_KLINE_LIMIT', 200),
     higherTfInterval: env('SCALP_HIGHER_TF_INTERVAL', '240'),
     higherTfLimit: numberEnv('SCALP_HIGHER_TF_LIMIT', 120),
@@ -504,7 +504,7 @@ async function collectMarkets() {
     const category = marketCategory(symbol);
     const assetClass = marketAssetClass(symbol);
     const scalpEnabledForSymbol = config.scalp.enabled && config.scalp.symbols.includes(symbol);
-    const scalpQuery = scalpEnabledForSymbol ? bybitPublic('/v5/market/kline', {
+    const scalpQuery = scalpEnabledForSymbol ? bybitPublicOrNull('/v5/market/kline', {
       category,
       symbol,
       interval: config.scalp.interval,
@@ -1096,17 +1096,17 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     appliedRules.push('higher_tf_trend');
   } else {
     score += 2;
-    reasons.push('Shiryaev #1: higher-TF flat/mixed — work only current M10 setup');
+    reasons.push(`Shiryaev #1: higher-TF flat/mixed — work only current ${config.scalp.interval}m setup`);
     appliedRules.push('higher_tf_trend');
   }
 
   // Local M10 structure
   if (scalp.ema34 > scalp.ema72) {
     score += 6;
-    reasons.push('M10 EMA34 > EMA72');
+    reasons.push(`${config.scalp.interval}m EMA34 > EMA72`);
   } else {
     score -= 6;
-    reasons.push('M10 EMA34 < EMA72');
+    reasons.push(`${config.scalp.interval}m EMA34 < EMA72`);
   }
 
   // Rule №2: bounce-only (no breakout chase)
