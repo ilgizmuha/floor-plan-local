@@ -31,8 +31,8 @@ const config = {
   symbols: splitList(env('BRAIN_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,LINKUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT,USDTEUR,BTCEUR,ETHEUR')),
   linearSymbols: new Set(splitList(env('BRAIN_LINEAR_SYMBOLS', 'XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT'))),
   interval: env('BRAIN_INTERVAL', '15'),
-  klineLimit: numberEnv('BRAIN_KLINE_LIMIT', 96),
-  minConfidence: numberEnv('BRAIN_MIN_CONFIDENCE', 65),
+  klineLimit: numberEnv('BRAIN_KLINE_LIMIT', 400),
+  minConfidence: numberEnv('BRAIN_MIN_CONFIDENCE', 70),
   maxRiskScore: numberEnv('BRAIN_MAX_RISK_SCORE', 55),
   maxPositionUsd: numberEnv('BRAIN_MAX_POSITION_USD', 20),
   maxDailyLossUsd: numberEnv('BRAIN_MAX_DAILY_LOSS_USD', 5),
@@ -77,7 +77,7 @@ const config = {
     enabled: env('PAPER_TRADING_ENABLED', 'true') === 'true',
     startBalanceUsd: numberEnv('PAPER_START_BALANCE_USD', 1000),
     maxPositionUsd: numberEnv('PAPER_MAX_POSITION_USD', 20),
-    minConfidence: numberEnv('PAPER_MIN_CONFIDENCE', 70),
+    minConfidence: numberEnv('PAPER_MIN_CONFIDENCE', 75),
     feeRate: numberEnv('PAPER_FEE_RATE', 0.001),
     symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT,USDTEUR,BTCEUR,ETHEUR')),
     requireDeepSeekOk: env('PAPER_REQUIRE_DEEPSEEK_OK', 'true') === 'true',
@@ -127,6 +127,20 @@ const config = {
     adxTrendMin: numberEnv('REGIME_ADX_TREND_MIN', 22),
     volatilityHighPct: numberEnv('REGIME_VOLATILITY_HIGH_PCT', 3.2),
     rangeTrendMaxPct: numberEnv('REGIME_RANGE_TREND_MAX_PCT', 0.35)
+  },
+  // Anti-overtrading + bear-market guards for swing/long/day (not Shiryaev scalp SL/TP path).
+  swingGuard: {
+    enabled: env('SWING_GUARD_ENABLED', 'true') === 'true',
+    requireHigherTfNotBearish: env('SWING_GUARD_REQUIRE_HTF_NOT_BEARISH', 'true') === 'true',
+    minConfidence: numberEnv('SWING_GUARD_MIN_CONFIDENCE', 75),
+    cooldownMinutes: numberEnv('SWING_GUARD_COOLDOWN_MINUTES', 360),
+    maxOpensPerWeek: numberEnv('SWING_GUARD_MAX_OPENS_PER_WEEK', 3),
+    reentryMinMovePct: numberEnv('SWING_GUARD_REENTRY_MIN_MOVE_PCT', 0.8),
+    exitMinConfidence: numberEnv('SWING_GUARD_EXIT_MIN_CONFIDENCE', 42),
+    exitConfirmBars: numberEnv('SWING_GUARD_EXIT_CONFIRM_BARS', 3),
+    stopLossPct: numberEnv('SWING_GUARD_STOP_LOSS_PCT', 2.8),
+    stopLossPctForex: numberEnv('SWING_GUARD_STOP_LOSS_PCT_FOREX', 6),
+    higherTfMinutes: numberEnv('SWING_GUARD_HIGHER_TF_MINUTES', 240)
   },
   ensemble: {
     enabled: env('ENSEMBLE_SCORING_ENABLED', 'true') === 'true',
@@ -245,10 +259,10 @@ const config = {
     interval: env('BACKTEST_INTERVAL', env('BRAIN_INTERVAL', '15')),
     candleLimit: numberEnv('BACKTEST_CANDLE_LIMIT', 500),
     warmupBars: numberEnv('BACKTEST_WARMUP_BARS', 60),
-    windowBars: numberEnv('BACKTEST_WINDOW_BARS', numberEnv('BRAIN_KLINE_LIMIT', 96)),
+    windowBars: numberEnv('BACKTEST_WINDOW_BARS', 120),
     startBalanceUsd: numberEnv('BACKTEST_START_BALANCE_USD', numberEnv('PAPER_START_BALANCE_USD', 1000)),
     maxPositionUsd: numberEnv('BACKTEST_MAX_POSITION_USD', numberEnv('PAPER_MAX_POSITION_USD', 20)),
-    minConfidence: numberEnv('BACKTEST_MIN_CONFIDENCE', numberEnv('PAPER_MIN_CONFIDENCE', 70)),
+    minConfidence: numberEnv('BACKTEST_MIN_CONFIDENCE', numberEnv('PAPER_MIN_CONFIDENCE', 75)),
     feeRate: numberEnv('BACKTEST_FEE_RATE', numberEnv('PAPER_FEE_RATE', 0.001)),
     mode: env('BACKTEST_MODE', 'rules'), // rules | ai | both | all
     walkForwardFolds: numberEnv('BACKTEST_WALK_FORWARD_FOLDS', 5)
@@ -1527,7 +1541,16 @@ function detectMarketRegime(market) {
   const volatility = indicators.volatilityPct || 0;
   const trendMagnitude = Math.abs(indicators.trendPct || 0);
   const bullish = indicators.sma20 > indicators.sma50;
+  const higherTfBias = indicators.higherTfBias || 'neutral';
+  const higherTfBullish = higherTfBias === 'bullish';
+  const higherTfBearish = higherTfBias === 'bearish';
   const reasons = [];
+
+  if (higherTfBearish) {
+    reasons.push('higher TF bias bearish');
+  } else if (higherTfBullish) {
+    reasons.push('higher TF bias bullish');
+  }
 
   if (volatility >= config.regime.volatilityHighPct) {
     reasons.push(`volatility ${volatility}% above ${config.regime.volatilityHighPct}%`);
@@ -1535,7 +1558,23 @@ function detectMarketRegime(market) {
       regime: 'volatile',
       strength: round(volatility, 2),
       adx: adxValue,
+      higherTfBias,
       preferredStrategy: 'wait',
+      allowSwingBuy: false,
+      allowSwingSell: true,
+      allowScalp: false,
+      reasons
+    };
+  }
+
+  if (higherTfBearish && !bullish) {
+    reasons.push('HTF+LTF aligned downtrend — defensive');
+    return {
+      regime: 'trend_down',
+      strength: round(Math.max(adxValue, trendMagnitude * 10), 2),
+      adx: adxValue,
+      higherTfBias,
+      preferredStrategy: 'defensive',
       allowSwingBuy: false,
       allowSwingSell: true,
       allowScalp: false,
@@ -1550,10 +1589,12 @@ function detectMarketRegime(market) {
       regime,
       strength: round(adxValue, 2),
       adx: adxValue,
+      higherTfBias,
       preferredStrategy: bullish ? 'trend_follow' : 'defensive',
-      allowSwingBuy: bullish,
-      allowSwingSell: !bullish,
-      allowScalp: bullish,
+      // Counter-trend 15m bounce against HTF bear is blocked.
+      allowSwingBuy: bullish && !higherTfBearish,
+      allowSwingSell: !bullish || higherTfBearish,
+      allowScalp: bullish && !higherTfBearish,
       reasons
     };
   }
@@ -1564,10 +1605,13 @@ function detectMarketRegime(market) {
       regime: 'range',
       strength: round(adxValue, 2),
       adx: adxValue,
+      higherTfBias,
       preferredStrategy: 'mean_reversion',
-      allowSwingBuy: indicators.bollingerPosition <= 0.45 && indicators.rsi14 < 55,
+      allowSwingBuy: !higherTfBearish
+        && indicators.bollingerPosition <= 0.45
+        && indicators.rsi14 < 55,
       allowSwingSell: indicators.bollingerPosition >= 0.55 && indicators.rsi14 > 45,
-      allowScalp: true,
+      allowScalp: !higherTfBearish,
       reasons
     };
   }
@@ -1577,10 +1621,11 @@ function detectMarketRegime(market) {
     regime: 'transition',
     strength: round(adxValue, 2),
     adx: adxValue,
+    higherTfBias,
     preferredStrategy: 'cautious',
-    allowSwingBuy: bullish && indicators.rsi14 < 68,
+    allowSwingBuy: bullish && !higherTfBearish && indicators.rsi14 < 65,
     allowSwingSell: !bullish && indicators.rsi14 > 32,
-    allowScalp: bullish,
+    allowScalp: bullish && !higherTfBearish,
     reasons
   };
 }
@@ -1597,6 +1642,19 @@ function applyRegimeToSignal(signal, regime, market) {
     next.confidence = Math.min(signal.confidence, 45);
     next.reasons = [...(signal.reasons || []), `Regime gate (${regime.regime}): swing BUY blocked`];
     next.regimeBlock = 'swing_buy';
+    return next;
+  }
+
+  if (
+    config.swingGuard.enabled
+    && config.swingGuard.requireHigherTfNotBearish
+    && signal.action === 'BUY'
+    && indicators.higherTfBias === 'bearish'
+  ) {
+    next.action = 'WAIT';
+    next.confidence = Math.min(signal.confidence, 42);
+    next.reasons = [...(signal.reasons || []), 'Swing guard: higher TF bearish — BUY blocked'];
+    next.regimeBlock = 'higher_tf_bearish';
     return next;
   }
 
@@ -1619,7 +1677,7 @@ function applyRegimeToSignal(signal, regime, market) {
     next.reasons = [...(signal.reasons || []), 'Regime gate (range): mean-reversion support boost'];
   }
 
-  if (regime.regime === 'trend_up' && signal.action === 'BUY') {
+  if (regime.regime === 'trend_up' && signal.action === 'BUY' && indicators.higherTfBias !== 'bearish') {
     next.confidence = clamp(next.confidence + 3, 0, 100);
     next.reasons = [...(signal.reasons || []), 'Regime gate (trend_up): trend-follow boost'];
   }
@@ -3251,6 +3309,11 @@ function assembleMarketFromCandles({
   const volatilityPct = averageTrueRangePercent(candles.slice(-14));
   const adx14 = adx(candles, 14);
   const volumeRatio = safeDivide(average(volumes.slice(-5)), average(volumes.slice(-30)));
+  const higherTf = summarizeHigherTfBias({
+    candles,
+    higherTfCandles,
+    assetClass
+  });
 
   return {
     symbol,
@@ -3284,7 +3347,10 @@ function assembleMarketFromCandles({
       trendPct: round(trendPct, 3),
       volatilityPct: round(volatilityPct, 3),
       adx14: round(adx14, 2),
-      volumeRatio: round(volumeRatio, 3)
+      volumeRatio: round(volumeRatio, 3),
+      higherTfBias: higherTf.bias,
+      higherTfAvailable: higherTf.available,
+      higherTfTrendPct: higherTf.trendPct
     },
     orderBook: orderBook || { available: false },
     derivatives: derivatives || { available: false },
@@ -3301,6 +3367,175 @@ function assembleMarketFromCandles({
       volume: candle.volume
     }))
   };
+}
+
+function aggregateCandlesToHigherTf(candles, factor) {
+  if (!Array.isArray(candles) || candles.length < factor || factor <= 1) {
+    return [];
+  }
+  const out = [];
+  const startIndex = candles.length % factor;
+  for (let index = startIndex; index + factor <= candles.length; index += factor) {
+    const slice = candles.slice(index, index + factor);
+    out.push({
+      start: slice[0].start,
+      open: slice[0].open,
+      high: Math.max(...slice.map((candle) => candle.high)),
+      low: Math.min(...slice.map((candle) => candle.low)),
+      close: slice[slice.length - 1].close,
+      volume: slice.reduce((sum, candle) => sum + (candle.volume || 0), 0)
+    });
+  }
+  return out;
+}
+
+function summarizeHigherTfBias({ candles = [], higherTfCandles = [], baseIntervalMinutes = 15 } = {}) {
+  const targetMinutes = Number(config.swingGuard.higherTfMinutes) || 240;
+  const factor = Math.max(1, Math.round(targetMinutes / Math.max(1, baseIntervalMinutes)));
+  let series = Array.isArray(higherTfCandles) && higherTfCandles.length >= 20
+    ? higherTfCandles
+    : aggregateCandlesToHigherTf(candles, factor);
+
+  // Fallback: medium-horizon bias on working TF when HT history is thin.
+  if (!series || series.length < 12) {
+    const closes = (candles || []).map((candle) => candle.close);
+    if (closes.length < 80) {
+      return { available: false, bias: 'neutral', trendPct: 0 };
+    }
+    const slow = average(closes.slice(-80, -40));
+    const fast = average(closes.slice(-40));
+    const trendPct = percentChange(slow, fast);
+    return {
+      available: true,
+      bias: fast >= slow ? 'bullish' : 'bearish',
+      trendPct: round(trendPct, 3),
+      bars: closes.length,
+      soft: true
+    };
+  }
+
+  const closes = series.map((candle) => candle.close);
+  const slowN = Math.min(50, Math.max(10, Math.floor(closes.length * 0.6)));
+  const fastN = Math.min(20, Math.max(5, Math.floor(slowN / 2)));
+  const smaFast = average(closes.slice(-fastN));
+  const smaSlow = average(closes.slice(-slowN));
+  const emaFastLen = Math.min(12, fastN);
+  const emaSlowLen = Math.min(26, slowN);
+  const emaFastValues = emaSeries(closes, emaFastLen);
+  const emaSlowValues = emaSeries(closes, emaSlowLen);
+  const emaFast = emaFastValues[emaFastValues.length - 1];
+  const emaSlow = emaSlowValues[emaSlowValues.length - 1];
+  const trendPct = percentChange(smaSlow, smaFast);
+  let bias = 'neutral';
+  if (smaFast > smaSlow && emaFast > emaSlow) {
+    bias = 'bullish';
+  } else if (smaFast < smaSlow && emaFast < emaSlow) {
+    bias = 'bearish';
+  } else if (smaFast < smaSlow || emaFast < emaSlow) {
+    bias = 'bearish';
+  } else if (smaFast > smaSlow || emaFast > emaSlow) {
+    bias = 'bullish';
+  }
+  return {
+    available: true,
+    bias,
+    trendPct: round(trendPct, 3),
+    bars: series.length
+  };
+}
+
+function isoWeekKey(timestamp) {
+  const date = new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) {
+    return 'unknown';
+  }
+  const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const dayNum = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(utc.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
+  return `${utc.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
+function swingGuardStopLossPct(assetClass) {
+  if (assetClass === 'forex') {
+    return Number(config.swingGuard.stopLossPctForex) || 6;
+  }
+  return Number(config.swingGuard.stopLossPct) || 2.8;
+}
+
+function evaluateSwingExit({ action, confidence, pnlPct, exitStreak, assetClass, higherTfBias }) {
+  if (!config.swingGuard.enabled) {
+    return { shouldExit: action === 'SELL' || action === 'EXIT', reason: 'legacy_signal_exit' };
+  }
+  const stopPct = swingGuardStopLossPct(assetClass);
+  if (pnlPct <= -stopPct) {
+    return { shouldExit: true, reason: `swing stop-loss ${stopPct}%` };
+  }
+  if (higherTfBias === 'bearish' && pnlPct <= 0) {
+    return { shouldExit: true, reason: 'higher TF flipped bearish while flat/red' };
+  }
+  const isExitAction = action === 'SELL' || action === 'EXIT';
+  if (!isExitAction) {
+    return { shouldExit: false, reason: null, exitStreak: 0 };
+  }
+  const nextStreak = (Number(exitStreak) || 0) + 1;
+  if (confidence >= config.swingGuard.exitMinConfidence) {
+    return { shouldExit: true, reason: `exit conf ${confidence}>=${config.swingGuard.exitMinConfidence}`, exitStreak: nextStreak };
+  }
+  if (nextStreak >= config.swingGuard.exitConfirmBars) {
+    return {
+      shouldExit: true,
+      reason: `exit confirmed ${nextStreak}/${config.swingGuard.exitConfirmBars} bars`,
+      exitStreak: nextStreak
+    };
+  }
+  return { shouldExit: false, reason: null, exitStreak: nextStreak };
+}
+
+function evaluateSwingEntryBlocks({
+  confidence,
+  minConfidence,
+  timestamp,
+  price,
+  assetClass,
+  higherTfBias,
+  meta = {},
+  weeklyOpens = 0
+}) {
+  const blocks = [];
+  if (!config.swingGuard.enabled) {
+    return blocks;
+  }
+  const effectiveMin = Math.max(Number(minConfidence) || 0, config.swingGuard.minConfidence || 0);
+  if (confidence < effectiveMin) {
+    blocks.push(`swing guard min confidence (${effectiveMin})`);
+  }
+  if (config.swingGuard.requireHigherTfNotBearish && higherTfBias === 'bearish') {
+    blocks.push('swing guard: higher TF bearish');
+  }
+  if (weeklyOpens >= config.swingGuard.maxOpensPerWeek) {
+    blocks.push(`swing guard: weekly open cap ${config.swingGuard.maxOpensPerWeek}`);
+  }
+  if (meta.cooldownUntil) {
+    const untilMs = Date.parse(meta.cooldownUntil);
+    const nowMs = Date.parse(timestamp) || Date.now();
+    if (Number.isFinite(untilMs) && untilMs > nowMs) {
+      blocks.push(`swing guard cooldown until ${meta.cooldownUntil}`);
+    }
+  }
+  if (meta.lastExitPrice != null && Number.isFinite(Number(meta.lastExitPrice))) {
+    const movePct = Math.abs(percentChange(Number(meta.lastExitPrice), price));
+    const sameHtRegime = meta.lastExitHigherTfBias && meta.lastExitHigherTfBias === higherTfBias;
+    if (movePct < config.swingGuard.reentryMinMovePct && sameHtRegime) {
+      blocks.push(`swing guard reentry move ${round(movePct, 3)}%<${config.swingGuard.reentryMinMovePct}%`);
+    }
+  }
+  // Keep unused param referenced for future asset-class nuances.
+  if (assetClass === 'crypto' && higherTfBias === 'neutral' && confidence < effectiveMin + 3) {
+    blocks.push('swing guard: crypto needs clearer HTF or higher confidence');
+  }
+  return blocks;
 }
 
 function intervalToTimeframe(interval) {
@@ -3510,10 +3745,14 @@ function normalizeAction(action) {
 }
 
 function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fearGreed = {}, ruleSignal = {}, regime = {}) {
-  const i = market.indicators;
+  const i = market.indicators || {};
   let riskScore = 0;
   const blocks = [];
-  const minConfidence = Number(ruleSignal.effectiveMinConfidence) || config.minConfidence;
+  const minConfidence = Math.max(
+    Number(ruleSignal.effectiveMinConfidence) || 0,
+    config.minConfidence,
+    config.swingGuard.enabled ? config.swingGuard.minConfidence : 0
+  );
 
   if (!config.dryRun) {
     blocks.push('live mode disabled for this brain stage');
@@ -3531,6 +3770,16 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
   if (config.regime.enabled && regime.regime === 'trend_down' && signal.action === 'BUY') {
     riskScore += 15;
     blocks.push('downtrend regime blocks swing BUY');
+  }
+
+  if (
+    config.swingGuard.enabled
+    && config.swingGuard.requireHigherTfNotBearish
+    && signal.action === 'BUY'
+    && i.higherTfBias === 'bearish'
+  ) {
+    riskScore += 20;
+    blocks.push('higher TF bearish blocks swing BUY');
   }
 
   if (aiAnalyst.enabled && aiAnalyst.status !== 'disabled') {
@@ -3955,17 +4204,33 @@ function applyPaperDecision(state, decision) {
   const risk = decision.risk || {};
   const positions = state.positions || {};
   state.positions = positions;
+  state.swingMeta = state.swingMeta || {};
+  state.swingWeekly = state.swingWeekly || {};
 
   if (!config.paper.enabled || !price || !config.paper.symbols.includes(symbol)) {
+    return null;
+  }
+
+  // Scalp positions are managed by the dedicated scalp paper path.
+  if (positions[symbol] && positions[symbol].strategy === 'scalp') {
     return null;
   }
 
   const position = positions[symbol];
   const paperMinConfidence = Math.max(
     config.paper.minConfidence,
-    Number(decision.signal && decision.signal.effectiveMinConfidence) || 0
+    Number(decision.signal && decision.signal.effectiveMinConfidence) || 0,
+    config.swingGuard.enabled ? config.swingGuard.minConfidence : 0
   );
+  const assetClass = (decision.market && decision.market.assetClass) || marketAssetClass(symbol);
+  const higherTfBias = decision.market && decision.market.indicators
+    ? decision.market.indicators.higherTfBias
+    : ((decision.regime && decision.regime.higherTfBias) || 'neutral');
+
   if (!position && action === 'BUY') {
+    const weekKey = isoWeekKey(decision.timestamp || new Date().toISOString());
+    state.swingWeekly[symbol] = state.swingWeekly[symbol] || {};
+    const weeklyOpens = Number(state.swingWeekly[symbol][weekKey] || 0);
     const blocks = [];
     if ((consensus.confidence || 0) < paperMinConfidence) {
       blocks.push(`paper confidence below minimum (${paperMinConfidence})`);
@@ -3985,6 +4250,16 @@ function applyPaperDecision(state, decision) {
     if (config.paper.requireCursorOk && cursor.action !== 'BUY') {
       blocks.push('Cursor does not confirm BUY');
     }
+    blocks.push(...evaluateSwingEntryBlocks({
+      confidence: consensus.confidence || 0,
+      minConfidence: paperMinConfidence,
+      timestamp: decision.timestamp || new Date().toISOString(),
+      price,
+      assetClass,
+      higherTfBias,
+      meta: state.swingMeta[symbol] || {},
+      weeklyOpens
+    }));
     if (blocks.length) {
       return paperEvent('SKIP_BUY', decision, price, { blocks });
     }
@@ -4003,16 +4278,38 @@ function applyPaperDecision(state, decision) {
       entryTime: decision.timestamp,
       costUsd: positionUsd,
       openFeeUsd: feeUsd,
-      confidence: consensus.confidence || 0
+      confidence: consensus.confidence || 0,
+      strategy: 'swing',
+      assetClass,
+      exitStreak: 0
     };
+    state.swingWeekly[symbol][weekKey] = weeklyOpens + 1;
     state.cashUsd = round((state.cashUsd || 0) - positionUsd - feeUsd, 4);
     state.stats.opened += 1;
     return paperEvent('OPEN', decision, price, { qty, positionUsd, feeUsd });
   }
 
-  if (position && (action === 'SELL' || action === 'EXIT')) {
+  if (position && (action === 'SELL' || action === 'EXIT' || config.swingGuard.enabled)) {
     const grossUsd = position.qty * price;
     const closeFeeUsd = grossUsd * config.paper.feeRate;
+    const pnlPct = percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd);
+    const exitEval = evaluateSwingExit({
+      action,
+      confidence: consensus.confidence || 0,
+      pnlPct,
+      exitStreak: position.exitStreak || 0,
+      assetClass: position.assetClass || assetClass,
+      higherTfBias
+    });
+    if (action === 'SELL' || action === 'EXIT') {
+      position.exitStreak = exitEval.exitStreak || 0;
+    } else if (!exitEval.shouldExit) {
+      position.exitStreak = 0;
+      return null;
+    }
+    if (!exitEval.shouldExit) {
+      return null;
+    }
     const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
     state.cashUsd = round((state.cashUsd || 0) + grossUsd - closeFeeUsd, 4);
     state.realizedPnlUsd = round((state.realizedPnlUsd || 0) + pnlUsd, 4);
@@ -4022,13 +4319,21 @@ function applyPaperDecision(state, decision) {
     } else {
       state.stats.losses += 1;
     }
+    const closedAt = decision.timestamp || new Date().toISOString();
+    state.swingMeta[symbol] = {
+      cooldownUntil: new Date((Date.parse(closedAt) || Date.now()) + config.swingGuard.cooldownMinutes * 60 * 1000).toISOString(),
+      lastExitPrice: price,
+      lastExitHigherTfBias: higherTfBias || null,
+      lastCloseReason: exitEval.reason
+    };
     delete positions[symbol];
     return paperEvent('CLOSE', decision, price, {
       qty: position.qty,
       grossUsd,
       closeFeeUsd,
       pnlUsd,
-      pnlPct: percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd)
+      pnlPct,
+      reason: exitEval.reason
     });
   }
 
@@ -5339,6 +5644,10 @@ function backtestSymbolOnCandles(symbol, candles, options) {
     }
     const lookback24h = Math.min(window.length, barsForApproxDay(options.interval));
     const price24hAgo = window[window.length - lookback24h].close;
+    const intervalMinutes = Number(options.interval) || 15;
+    const htFactor = Math.max(1, Math.round((config.swingGuard.higherTfMinutes || 240) / intervalMinutes));
+    const htLookback = Math.min(candles.length, Math.max(windowBars * 4, htFactor * 80));
+    const htSource = candles.slice(Math.max(0, end - htLookback), end);
     const market = assembleMarketFromCandles({
       symbol,
       provider,
@@ -5349,6 +5658,7 @@ function backtestSymbolOnCandles(symbol, candles, options) {
       turnover24h: 0,
       volume24h: average(window.slice(-lookback24h).map((c) => c.volume)),
       candles: window,
+      higherTfCandles: aggregateCandlesToHigherTf(htSource, htFactor),
       orderBook: { available: false },
       derivatives: { available: false },
       scalpCandles: []
@@ -5376,12 +5686,19 @@ function backtestSymbolOnCandles(symbol, candles, options) {
     };
     const riskOpts = {
       ...options,
-      minConfidence: calibrationEntry.minConfidence || signal.effectiveMinConfidence || options.minConfidence
+      minConfidence: Math.max(
+        calibrationEntry.minConfidence || 0,
+        signal.effectiveMinConfidence || 0,
+        options.minConfidence || 0,
+        config.swingGuard.enabled ? config.swingGuard.minConfidence : 0
+      ),
+      assetClass
     };
     const risk = applyBacktestRisk(consensus, market, signal, regime, riskOpts);
     decisions.push({
       timestamp: new Date(last.start).toISOString(),
       symbol,
+      assetClass,
       finalAction: risk.allowed ? consensus.action : (consensus.action === 'BUY' ? 'WAIT' : consensus.action),
       consensus: {
         action: consensus.action,
@@ -5406,11 +5723,14 @@ function backtestSymbolOnCandles(symbol, candles, options) {
       market: {
         lastPrice: market.lastPrice,
         change24hPct: market.change24hPct,
+        assetClass,
         indicators: {
           rsi14: market.indicators.rsi14,
           trendPct: market.indicators.trendPct,
           volatilityPct: market.indicators.volatilityPct,
-          adx14: market.indicators.adx14
+          adx14: market.indicators.adx14,
+          higherTfBias: market.indicators.higherTfBias,
+          higherTfTrendPct: market.indicators.higherTfTrendPct
         }
       }
     });
@@ -5418,7 +5738,12 @@ function backtestSymbolOnCandles(symbol, candles, options) {
 
   const paper = simulateBacktestPaper(decisions, {
     ...options,
-    minConfidence: calibrationEntry.minConfidence || options.minConfidence
+    assetClass,
+    minConfidence: Math.max(
+      calibrationEntry.minConfidence || 0,
+      options.minConfidence || 0,
+      config.swingGuard.enabled ? config.swingGuard.minConfidence : 0
+    )
   });
   return {
     symbol,
@@ -5594,7 +5919,12 @@ function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options
   const indicators = market.indicators || {};
   let riskScore = 0;
   const blocks = [];
-  const minConfidence = Number(options.minConfidence) || Number(ruleSignal.effectiveMinConfidence) || config.minConfidence;
+  const minConfidence = Math.max(
+    Number(options.minConfidence) || 0,
+    Number(ruleSignal.effectiveMinConfidence) || 0,
+    config.swingGuard.enabled ? config.swingGuard.minConfidence : 0,
+    config.minConfidence
+  );
 
   if (signal.action === 'BUY' && (signal.confidence || 0) < minConfidence) {
     blocks.push(`confidence below backtest minimum (${minConfidence})`);
@@ -5608,6 +5938,16 @@ function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options
   if (config.regime.enabled && regime.regime === 'trend_down' && signal.action === 'BUY') {
     riskScore += 15;
     blocks.push('downtrend regime blocks swing BUY');
+  }
+
+  if (
+    config.swingGuard.enabled
+    && config.swingGuard.requireHigherTfNotBearish
+    && signal.action === 'BUY'
+    && indicators.higherTfBias === 'bearish'
+  ) {
+    riskScore += 20;
+    blocks.push('higher TF bearish blocks swing BUY');
   }
 
   if (indicators.volatilityPct > 3.5) {
@@ -5643,7 +5983,12 @@ function simulateBacktestPaper(decisions, options = {}) {
   const startBalanceUsd = Number(options.startBalanceUsd) || config.backtest.startBalanceUsd;
   const maxPositionUsd = Number(options.maxPositionUsd) || config.backtest.maxPositionUsd;
   const feeRate = Number(options.feeRate) || config.backtest.feeRate;
-  const minConfidence = Number(options.minConfidence) || config.backtest.minConfidence;
+  const minConfidence = Math.max(
+    Number(options.minConfidence) || 0,
+    config.backtest.minConfidence,
+    config.swingGuard.enabled ? config.swingGuard.minConfidence : 0
+  );
+  const defaultAssetClass = options.assetClass || null;
   let cashUsd = startBalanceUsd;
   let realizedPnlUsd = 0;
   let position = null;
@@ -5651,55 +5996,114 @@ function simulateBacktestPaper(decisions, options = {}) {
   const equityCurve = [];
   let peakEquity = startBalanceUsd;
   let maxDrawdownPct = 0;
+  const meta = {
+    cooldownUntil: null,
+    lastExitPrice: null,
+    lastExitHigherTfBias: null
+  };
+  const opensByWeek = {};
+  let exitStreak = 0;
+  let skippedEntries = 0;
 
   for (const decision of decisions) {
     const price = Number(decision.market && decision.market.lastPrice);
     const confidence = Number(decision.consensus && decision.consensus.confidence) || 0;
+    const assetClass = decision.assetClass
+      || (decision.market && decision.market.assetClass)
+      || defaultAssetClass
+      || marketAssetClass(decision.symbol);
+    const higherTfBias = decision.market && decision.market.indicators
+      ? decision.market.indicators.higherTfBias
+      : 'neutral';
     if (!price) {
       continue;
     }
 
-    if (!position && decision.finalAction === 'BUY' && confidence >= minConfidence) {
-      const positionUsd = Math.min(maxPositionUsd, cashUsd);
-      if (positionUsd > 0) {
-        const feeUsd = positionUsd * feeRate;
-        const qty = positionUsd / price;
-        position = {
-          entryPrice: price,
-          entryTime: decision.timestamp,
-          qty,
-          costUsd: positionUsd,
-          openFeeUsd: feeUsd,
-          confidence
-        };
-        cashUsd = round(cashUsd - positionUsd - feeUsd, 4);
-        trades.push({
-          type: 'OPEN',
-          timestamp: decision.timestamp,
-          price,
-          qty,
-          positionUsd,
-          feeUsd,
-          confidence
-        });
-      }
-    } else if (position && (decision.finalAction === 'SELL' || decision.finalAction === 'EXIT')) {
-      const grossUsd = position.qty * price;
-      const closeFeeUsd = grossUsd * feeRate;
-      const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
-      cashUsd = round(cashUsd + grossUsd - closeFeeUsd, 4);
-      realizedPnlUsd = round(realizedPnlUsd + pnlUsd, 4);
-      trades.push({
-        type: 'CLOSE',
+    if (!position && decision.finalAction === 'BUY') {
+      const weekKey = isoWeekKey(decision.timestamp);
+      const weeklyOpens = opensByWeek[weekKey] || 0;
+      const entryBlocks = evaluateSwingEntryBlocks({
+        confidence,
+        minConfidence,
         timestamp: decision.timestamp,
         price,
-        qty: position.qty,
-        pnlUsd: round(pnlUsd, 4),
-        pnlPct: round(percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd), 4),
-        holdBars: null,
-        confidence
+        assetClass,
+        higherTfBias,
+        meta,
+        weeklyOpens
       });
-      position = null;
+      if (entryBlocks.length) {
+        skippedEntries += 1;
+      } else {
+        const positionUsd = Math.min(maxPositionUsd, cashUsd);
+        if (positionUsd > 0) {
+          const feeUsd = positionUsd * feeRate;
+          const qty = positionUsd / price;
+          position = {
+            entryPrice: price,
+            entryTime: decision.timestamp,
+            qty,
+            costUsd: positionUsd,
+            openFeeUsd: feeUsd,
+            confidence,
+            assetClass,
+            exitStreak: 0
+          };
+          cashUsd = round(cashUsd - positionUsd - feeUsd, 4);
+          opensByWeek[weekKey] = weeklyOpens + 1;
+          exitStreak = 0;
+          trades.push({
+            type: 'OPEN',
+            timestamp: decision.timestamp,
+            price,
+            qty,
+            positionUsd,
+            feeUsd,
+            confidence
+          });
+        }
+      }
+    } else if (position) {
+      const grossUsd = position.qty * price;
+      const closeFeeUsd = grossUsd * feeRate;
+      const pnlPct = percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd);
+      const exitEval = evaluateSwingExit({
+        action: decision.finalAction,
+        confidence,
+        pnlPct,
+        exitStreak: position.exitStreak || exitStreak,
+        assetClass: position.assetClass || assetClass,
+        higherTfBias
+      });
+      if (decision.finalAction === 'SELL' || decision.finalAction === 'EXIT') {
+        position.exitStreak = exitEval.exitStreak || 0;
+        exitStreak = position.exitStreak;
+      } else {
+        position.exitStreak = 0;
+        exitStreak = 0;
+      }
+      if (exitEval.shouldExit) {
+        const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
+        cashUsd = round(cashUsd + grossUsd - closeFeeUsd, 4);
+        realizedPnlUsd = round(realizedPnlUsd + pnlUsd, 4);
+        trades.push({
+          type: 'CLOSE',
+          timestamp: decision.timestamp,
+          price,
+          qty: position.qty,
+          pnlUsd: round(pnlUsd, 4),
+          pnlPct: round(pnlPct, 4),
+          holdBars: null,
+          confidence,
+          reason: exitEval.reason
+        });
+        const closedMs = Date.parse(decision.timestamp) || Date.now();
+        meta.cooldownUntil = new Date(closedMs + config.swingGuard.cooldownMinutes * 60 * 1000).toISOString();
+        meta.lastExitPrice = price;
+        meta.lastExitHigherTfBias = higherTfBias || null;
+        position = null;
+        exitStreak = 0;
+      }
     }
 
     const openValue = position ? position.qty * price : 0;
@@ -5747,6 +6151,13 @@ function simulateBacktestPaper(decisions, options = {}) {
     totalPnlPct: round(percentChange(startBalanceUsd, cashUsd), 4),
     realizedPnlUsd,
     maxDrawdownPct: round(maxDrawdownPct, 4),
+    skippedEntries,
+    swingGuard: {
+      enabled: config.swingGuard.enabled,
+      cooldownMinutes: config.swingGuard.cooldownMinutes,
+      maxOpensPerWeek: config.swingGuard.maxOpensPerWeek,
+      exitConfirmBars: config.swingGuard.exitConfirmBars
+    },
     trades: closed.length,
     opens: trades.filter((trade) => trade.type === 'OPEN').length,
     wins,

@@ -27,8 +27,8 @@
       "timeframe": "15m",
       "providers": ["bybit"],
       "assetClasses": ["crypto"],
-      "minConfidence": 70,
-      "sellThreshold": 32,
+      "minConfidence": 75,
+      "sellThreshold": 38,
       "ensembleWeights": {
         "technical": 0.45,
         "microstructure": 0.18,
@@ -46,8 +46,8 @@
       "timeframe": "15m",
       "providers": ["bybit"],
       "assetClasses": ["metal", "commodity", "stock", "forex"],
-      "minConfidence": 72,
-      "sellThreshold": 30,
+      "minConfidence": 75,
+      "sellThreshold": 36,
       "ensembleWeights": {
         "technical": 0.52,
         "microstructure": 0.13,
@@ -66,8 +66,8 @@
       "providers": ["finam"],
       "accountRole": "long",
       "assetClasses": ["stock", "metal", "other"],
-      "minConfidence": 70,
-      "sellThreshold": 28,
+      "minConfidence": 75,
+      "sellThreshold": 36,
       "ensembleWeights": {
         "technical": 0.60,
         "microstructure": 0.08,
@@ -79,8 +79,8 @@
       "regimeProfile": "long",
       "aiMode": "confirm_only",
       "trading": {
-        "minConfidence": 70,
-        "minSellConfidence": 50,
+        "minConfidence": 75,
+        "minSellConfidence": 55,
         "maxPositionRub": 500,
         "maxOpenPositions": 3,
         "orderType": "LIMIT",
