@@ -3181,7 +3181,8 @@ async function collectFinamMarkets() {
         orderBook,
         derivatives: { available: false },
         scalpCandles,
-        higherTfCandles
+        higherTfCandles,
+        scalpMinBars: 50
       });
       market.finam = {
         bid: finamNum(quote.bid),
@@ -3216,7 +3217,8 @@ function assembleMarketFromCandles({
   orderBook,
   derivatives,
   scalpCandles,
-  higherTfCandles
+  higherTfCandles,
+  scalpMinBars
 }) {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
@@ -3286,7 +3288,8 @@ function assembleMarketFromCandles({
     orderBook: orderBook || { available: false },
     derivatives: derivatives || { available: false },
     scalpIndicators: buildScalpIndicators(scalpCandles || [], {
-      higherTfCandles: higherTfCandles || []
+      higherTfCandles: higherTfCandles || [],
+      minBars: scalpMinBars
     }),
     recentCandles: candles.slice(-24).map((candle) => ({
       start: candle.start,
