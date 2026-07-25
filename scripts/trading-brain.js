@@ -54,7 +54,10 @@ const config = {
     apiKey: env('AI_ANALYST_API_KEY', ''),
     model: env('AI_ANALYST_MODEL', 'gpt-4o-mini'),
     timeoutMs: numberEnv('AI_ANALYST_TIMEOUT_MS', 20000),
-    minConfidence: numberEnv('AI_ANALYST_MIN_CONFIDENCE', 60)
+    minConfidence: numberEnv('AI_ANALYST_MIN_CONFIDENCE', 60),
+    // confirm = validate rules setup; brain = AI is primary decision maker
+    role: env('AI_ANALYST_ROLE', 'confirm'),
+    knowledgePath: env('AI_KNOWLEDGE_PATH', path.join(__dirname, 'knowledge', 'ai-trading-kb.json'))
   },
   cursor: {
     enabled: env('CURSOR_ANALYST_ENABLED', 'false') === 'true',
@@ -409,7 +412,8 @@ async function runBrainCycle() {
           profileId,
           regime,
           qualityFeedback: getSymbolQualityFeedback(qualityFeedback, market.symbol),
-          calibration: calibrationEntry
+          calibration: calibrationEntry,
+          aiRole: config.ai.role
         }),
       runAlgoVaultAnalyst(market)
     ]);
@@ -433,19 +437,36 @@ async function runBrainCycle() {
         qualityFeedback: getSymbolQualityFeedback(qualityFeedback, market.symbol),
         calibration: calibrationEntry
       });
-    const combineFn = config.strategy.aiConfirmOnly ? strategyEngine.combineConfirmOnly : combineSignals;
-    const combineOpts = {
-      blockWhenAiUnavailable: config.strategy.blockWhenAiUnavailable,
-      cursorRequired: config.strategy.cursorRequired
-    };
-    const consensus = applyRegimeToConsensus(
-      applyAlgoVaultConsensus(
-        combineFn(signal, aiAnalyst, cursorAnalyst, combineOpts),
-        algoVaultAnalyst
-      ),
-      regime,
-      signal
-    );
+    let consensus;
+    if (config.ai.role === 'brain' && aiAnalyst.status === 'ok' && aiAnalyst.action) {
+      consensus = applyRegimeToConsensus({
+        action: aiAnalyst.veto ? 'WAIT' : aiAnalyst.action,
+        confidence: aiAnalyst.confidence,
+        score: signal.score,
+        source: `ai_brain_${config.ai.provider || 'mistral'}`,
+        aiAgreement: 'brain_primary',
+        cursorAgreement: cursorAnalyst.status === 'ok' ? 'advisory' : cursorAnalyst.status,
+        reasons: [
+          ...(signal.reasons || []).slice(0, 2),
+          `AI brain: ${aiAnalyst.reasoning || aiAnalyst.action}`,
+          aiAnalyst.indicatorSummary || null
+        ].filter(Boolean)
+      }, regime, signal);
+    } else {
+      const combineFn = config.strategy.aiConfirmOnly ? strategyEngine.combineConfirmOnly : combineSignals;
+      const combineOpts = {
+        blockWhenAiUnavailable: config.strategy.blockWhenAiUnavailable,
+        cursorRequired: config.strategy.cursorRequired
+      };
+      consensus = applyRegimeToConsensus(
+        applyAlgoVaultConsensus(
+          combineFn(signal, aiAnalyst, cursorAnalyst, combineOpts),
+          algoVaultAnalyst
+        ),
+        regime,
+        signal
+      );
+    }
     const risk = applyRiskManager(consensus, market, aiAnalyst, cursorAnalyst, fearGreed, signal, regime);
     const scalpSignal = market.provider === 'finam'
       ? applyRegimeToScalp(
@@ -2053,7 +2074,19 @@ async function runAiAnalyst(market, news, signal, fearGreed = {}, strategyContex
   }
 }
 
+function loadAiTradingKnowledge() {
+  const filePath = config.ai.knowledgePath;
+  const doc = readJsonFile(filePath);
+  if (!doc) {
+    return { version: 0, hardRules: [], objectives: [] };
+  }
+  return doc;
+}
+
 function buildAiMessages(market, news, signal, fearGreed = {}, strategyContext = {}) {
+  const role = String(strategyContext.aiRole || config.ai.role || 'confirm').toLowerCase();
+  const knowledge = loadAiTradingKnowledge();
+  const scalpKb = loadScalpingKnowledge();
   const payload = strategyEngine.buildRichAiPayload(market, news, fearGreed, signal, {
     profile: strategyContext.profile || {},
     profileId: strategyContext.profileId,
@@ -2061,19 +2094,57 @@ function buildAiMessages(market, news, signal, fearGreed = {}, strategyContext =
     qualityFeedback: strategyContext.qualityFeedback || signal.qualityFeedback || {},
     calibration: strategyContext.calibration || {}
   });
+  payload.aiRole = role;
+  payload.knowledgeBase = {
+    version: knowledge.version,
+    objectives: knowledge.objectives || [],
+    hardRules: knowledge.hardRules || [],
+    entryPlaybook: knowledge.entryPlaybook || {},
+    exitPlaybook: knowledge.exitPlaybook || {},
+    venueBias: knowledge.venueBias || {},
+    profiles: knowledge.profiles || {},
+    books: (knowledge.books || []).map((book) => ({
+      id: book.id,
+      title: book.title,
+      useFor: book.useFor,
+      rules: (book.rules || []).slice(0, 8)
+    })),
+    scalpPrimaryMethod: scalpKb.primaryMethod || null,
+    swingGuard: {
+      requireHigherTfNotBearish: config.swingGuard.requireHigherTfNotBearish,
+      minConfidence: config.swingGuard.minConfidence,
+      maxOpensPerWeek: config.swingGuard.maxOpensPerWeek,
+      cooldownMinutes: config.swingGuard.cooldownMinutes
+    }
+  };
+
+  const systemBrain = [
+    'You are the PRIMARY trading brain for this symbol (temporary Mistral analyst slot).',
+    'Use knowledgeBase hardRules/entryPlaybook/exitPlaybook as mandatory policy.',
+    'Rule setup in payload is advisory context only — YOU decide action.',
+    'Analyze indicatorAnalysis, higherTfBias, recentCandles, regime, order book and derivatives first.',
+    'Prefer capital protection and fewer high-quality trades (win-rate mindset >= 55%).',
+    'If HTF is bearish or regime is trend_down/volatile, do not BUY.',
+    'Cite concrete metric values and which KB rule applied.',
+    'Return only valid JSON.',
+    'JSON schema: {"verdict":"decide|confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short metric analysis","reasoning":"short reason","factors":["RSI ...","KB ..."]}.'
+  ].join(' ');
+
+  const systemConfirm = [
+    'You are an indicator analyst and conservative confirm-only trading judge.',
+    'Use knowledgeBase hardRules as veto/confirm policy.',
+    'First analyze indicatorAnalysis, recentCandles, order book and derivatives in the payload.',
+    'Then confirm, veto, or downgrade the provided rule setup — do NOT invent new setups.',
+    'Cite concrete metric values in indicatorSummary, reasoning and factors.',
+    'If metrics contradict the setup or break KB hardRules, veto or WAIT. Prefer capital protection.',
+    'Return only valid JSON.',
+    'JSON schema: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short metric analysis","reasoning":"short reason","factors":["RSI ...","MACD ..."]}.'
+  ].join(' ');
 
   return [
     {
       role: 'system',
-      content: [
-        'You are an indicator analyst and conservative confirm-only trading judge.',
-        'First analyze indicatorAnalysis, recentCandles, order book and derivatives in the payload.',
-        'Then confirm, veto, or downgrade the provided rule setup — do NOT invent new setups.',
-        'Cite concrete metric values in indicatorSummary, reasoning and factors (e.g. RSI 72, ADX 18, MACD hist -0.4, book imbalance).',
-        'If metrics contradict the setup, veto or downgrade. Prefer capital protection.',
-        'Return only valid JSON.',
-        'JSON schema: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short metric analysis","reasoning":"short reason","factors":["RSI ...","MACD ..."]}.'
-      ].join(' ')
+      content: role === 'brain' ? systemBrain : systemConfirm
     },
     {
       role: 'user',
@@ -2085,6 +2156,15 @@ function buildAiMessages(market, news, signal, fearGreed = {}, strategyContext =
 async function aiRequest(messages) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.ai.timeoutMs);
+  const body = {
+    model: config.ai.model,
+    messages,
+    temperature: 0.1
+  };
+  // OpenAI-compatible JSON mode (DeepSeek/Mistral generally support this).
+  if (config.ai.provider !== 'plain') {
+    body.response_format = { type: 'json_object' };
+  }
   try {
     const response = await fetch(`${config.ai.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -2093,22 +2173,21 @@ async function aiRequest(messages) {
         'Authorization': `Bearer ${config.ai.apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        model: config.ai.model,
-        messages,
-        temperature: 0.1,
-        response_format: { type: 'json_object' }
-      })
+      body: JSON.stringify(body)
     });
     const text = await response.text();
     const data = parseJson(text);
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      const detail = data && (data.message || data.error?.message || data.error);
+      throw new Error(detail ? `HTTP ${response.status}: ${detail}` : `HTTP ${response.status}`);
     }
-    const content = data && data.choices && data.choices[0] && data.choices[0].message
+    let content = data && data.choices && data.choices[0] && data.choices[0].message
       ? data.choices[0].message.content
       : '';
-    const parsed = parseJson(content);
+    if (Array.isArray(content)) {
+      content = content.map((part) => part.text || part.content || '').join('');
+    }
+    const parsed = parseJson(content) || extractJsonObject(content);
     if (!parsed) {
       throw new Error('AI response was not valid JSON');
     }
@@ -2118,9 +2197,19 @@ async function aiRequest(messages) {
   }
 }
 
+function extractJsonObject(text) {
+  const raw = String(text || '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    return null;
+  }
+  return parseJson(raw.slice(start, end + 1));
+}
+
 function normalizeAiVerdict(raw) {
   const action = normalizeAction(raw.action);
-  const verdict = ['confirm', 'veto', 'downgrade'].includes(String(raw.verdict || '').toLowerCase())
+  const verdict = ['confirm', 'veto', 'downgrade', 'decide'].includes(String(raw.verdict || '').toLowerCase())
     ? String(raw.verdict).toLowerCase()
     : null;
   const confidence = clamp(Math.round(Number(raw.confidence) || 0), 0, 100);
@@ -5187,6 +5276,10 @@ async function runBacktestReport(cliArgs = {}) {
     runs: {}
   };
 
+  options.aiEvery = numberArg(cliArgs.aiEvery, numberEnv('BACKTEST_AI_EVERY', 12));
+  options.aiRole = String(cliArgs.aiRole || config.ai.role || 'confirm').toLowerCase();
+  options.aiMinConfidence = numberArg(cliArgs.aiMinConfidence, config.ai.minConfidence);
+
   if (mode === 'rules' || mode === 'both' || mode === 'all') {
     const fixturePath = cliArgs.fixture ? path.resolve(String(cliArgs.fixture)) : null;
     report.runs.rules = await backtestRulesMode(symbols, options, fixturePath);
@@ -5194,8 +5287,12 @@ async function runBacktestReport(cliArgs = {}) {
   if (mode === 'decisions' || mode === 'ai' || mode === 'both' || mode === 'all') {
     report.runs.ai = backtestAiDecisionsMode(symbols, options);
   }
+  if (mode === 'ai-brain' || mode === 'aibrain' || mode === 'brain') {
+    report.note = 'AI-brain historical replay: Mistral/DeepSeek decides actions on sampled bars. No live orders.';
+    report.runs.aiBrain = await backtestAiBrainMode(symbols, options);
+  }
   if (!Object.keys(report.runs).length) {
-    throw new Error(`Unknown backtest mode: ${mode}. Use rules, ai/decisions, both, or all.`);
+    throw new Error('Unknown backtest mode. Use rules, ai/decisions, ai-brain, both, or all.');
   }
 
   if (cliArgs.walkForward && report.runs.rules) {
@@ -5212,10 +5309,269 @@ function modeNote(mode) {
   if (mode === 'ai' || mode === 'decisions') {
     return 'Replay of logged decisions.jsonl with DeepSeek/Cursor/rules breakdown. No new AI API calls. No live orders.';
   }
+  if (mode === 'ai-brain' || mode === 'aibrain' || mode === 'brain') {
+    return 'AI-brain historical replay: live LLM calls on sampled bars decide actions. No live orders.';
+  }
   if (mode === 'both' || mode === 'all') {
     return 'Rules kline replay + AI decisions.jsonl replay. No live orders.';
   }
   return 'Rules-only historical kline replay. AI analysts are skipped. No live orders.';
+}
+
+async function backtestAiBrainMode(symbols, options, fixturePath = null) {
+  if (!config.ai.enabled || !config.ai.apiKey) {
+    throw new Error('AI brain backtest requires AI_ANALYST_ENABLED=true and AI_ANALYST_API_KEY');
+  }
+  const aiEvery = Math.max(1, Number(options.aiEvery) || 12);
+  const aiRole = String(options.aiRole || 'brain').toLowerCase();
+  const aiMinConfidence = Number(options.aiMinConfidence) || config.ai.minConfidence;
+  const bySymbol = {};
+  const errors = {};
+  const fixture = fixturePath ? readJsonFile(fixturePath) : null;
+
+  for (const symbol of symbols) {
+    try {
+      let candles;
+      if (fixture && Array.isArray(fixture[symbol])) {
+        candles = fixture[symbol];
+      } else {
+        candles = await fetchBacktestCandles(symbol, options.interval, options.candleLimit, options);
+      }
+      bySymbol[symbol] = await backtestSymbolWithAiBrain(symbol, candles, {
+        ...options,
+        aiEvery,
+        aiRole,
+        aiMinConfidence
+      });
+    } catch (error) {
+      errors[symbol] = error.message;
+      console.error(new Date().toISOString(), `AI-brain backtest ${symbol}:`, error.message);
+    }
+  }
+
+  const bybitSymbols = Object.fromEntries(
+    Object.entries(bySymbol).filter(([, item]) => item.provider !== 'finam')
+  );
+  const finamSymbols = Object.fromEntries(
+    Object.entries(bySymbol).filter(([, item]) => item.provider === 'finam')
+  );
+  return {
+    kind: 'ai_brain',
+    provider: config.ai.provider,
+    model: config.ai.model,
+    aiRole,
+    aiEvery,
+    symbols: bySymbol,
+    errors,
+    portfolio: aggregateBacktestPortfolio(bySymbol, options.startBalanceUsd),
+    portfolioByVenue: {
+      bybit: aggregateBacktestPortfolio(bybitSymbols, options.startBalanceUsd),
+      finam: aggregateBacktestPortfolio(finamSymbols, options.startBalanceUsd)
+    }
+  };
+}
+
+async function backtestSymbolWithAiBrain(symbol, candles, options) {
+  const requestedWarmup = Math.max(40, Number(options.warmupBars) || 60);
+  const warmup = Math.min(requestedWarmup, Math.max(30, candles.length - 25));
+  const windowBars = Math.min(Math.max(warmup, Number(options.windowBars) || 120), candles.length);
+  const aiEvery = Math.max(1, Number(options.aiEvery) || 12);
+  const aiRole = String(options.aiRole || 'brain').toLowerCase();
+  const aiMinConfidence = Number(options.aiMinConfidence) || config.ai.minConfidence;
+  const provider = isFinamSymbol(symbol) ? 'finam' : 'bybit';
+  const category = provider === 'finam' ? 'finam' : marketCategory(symbol);
+  const assetClass = marketAssetClass(symbol);
+  const profilesDoc = strategyEngine.loadProfiles();
+  const calibrationDoc = strategyEngine.loadCalibration();
+  const bundle = strategyEngine.resolveProfilesForMarket({ symbol, provider, assetClass }, profilesDoc);
+  const profile = bundle.primary;
+  const profileId = bundle.primaryId;
+  const calibrationEntry = strategyEngine.getCalibratedThresholds(symbol, profileId, calibrationDoc);
+  const rangeStartMs = Number.isFinite(options.rangeStartMs) ? options.rangeStartMs : null;
+  const rangeEndMs = Number.isFinite(options.rangeEndMs) ? options.rangeEndMs : null;
+  const decisions = [];
+  let sampled = 0;
+  let aiOk = 0;
+  let aiErrors = 0;
+  let lastAi = null;
+  let barCounter = 0;
+
+  for (let index = warmup; index < candles.length; index += 1) {
+    const end = index + 1;
+    const start = Math.max(0, end - windowBars);
+    const window = candles.slice(start, end);
+    const last = window[window.length - 1];
+    if (rangeStartMs != null && last.start < rangeStartMs) {
+      continue;
+    }
+    if (rangeEndMs != null && last.start > rangeEndMs) {
+      break;
+    }
+
+    const lookback24h = Math.min(window.length, barsForApproxDay(options.interval));
+    const price24hAgo = window[window.length - lookback24h].close;
+    const intervalMinutes = Number(options.interval) || 15;
+    const htFactor = Math.max(1, Math.round((config.swingGuard.higherTfMinutes || 240) / intervalMinutes));
+    const htLookback = Math.min(candles.length, Math.max(windowBars * 4, htFactor * 80));
+    const htSource = candles.slice(Math.max(0, end - htLookback), end);
+    const market = assembleMarketFromCandles({
+      symbol,
+      provider,
+      category,
+      assetClass,
+      lastPrice: last.close,
+      change24hPct: percentChange(price24hAgo, last.close),
+      turnover24h: 0,
+      volume24h: average(window.slice(-lookback24h).map((c) => c.volume)),
+      candles: window,
+      higherTfCandles: aggregateCandlesToHigherTf(htSource, htFactor),
+      orderBook: { available: false },
+      derivatives: { available: false },
+      scalpCandles: []
+    });
+    const regime = detectMarketRegime(market);
+    let signal = analyzeMarketWithProfile(
+      market,
+      emptyBacktestNews(),
+      emptyBacktestFearGreed(),
+      { symbols: {} },
+      profile,
+      profileId,
+      calibrationEntry
+    );
+    signal = applyRegimeToSignal(signal, regime, market);
+    signal.regime = regime;
+
+    const shouldSample = (barCounter % aiEvery === 0) || !lastAi;
+    barCounter += 1;
+    let aiAnalyst = lastAi;
+    if (shouldSample) {
+      sampled += 1;
+      process.stdout.write(`AI-brain ${symbol} sample#${sampled} ${new Date(last.start).toISOString()}\n`);
+      aiAnalyst = await runAiAnalyst(market, emptyBacktestNews(), signal, emptyBacktestFearGreed(), {
+        profile,
+        profileId,
+        regime,
+        calibration: calibrationEntry,
+        aiRole
+      });
+      if (aiAnalyst.status === 'ok') {
+        aiOk += 1;
+        lastAi = aiAnalyst;
+      } else {
+        aiErrors += 1;
+        lastAi = aiAnalyst;
+      }
+    }
+
+    let action = 'WAIT';
+    let confidence = 0;
+    let source = 'ai_brain_unavailable';
+    if (aiAnalyst && aiAnalyst.status === 'ok' && aiAnalyst.action) {
+      action = aiAnalyst.veto && aiAnalyst.action === 'BUY' ? 'WAIT' : aiAnalyst.action;
+      confidence = Number(aiAnalyst.confidence) || 0;
+      source = `ai_brain_${config.ai.provider}`;
+      if (confidence < aiMinConfidence && action === 'BUY') {
+        action = 'WAIT';
+        source = 'ai_brain_low_confidence';
+      }
+    } else if (lastAi && lastAi.status === 'ok' && lastAi.action) {
+      // Between samples keep prior non-entry stance; do not spam BUY without a fresh AI bar.
+      action = ['SELL', 'EXIT', 'HOLD', 'WAIT'].includes(lastAi.action) ? lastAi.action : 'HOLD';
+      confidence = Number(lastAi.confidence) || 0;
+      source = 'ai_brain_holdover';
+    }
+
+    // Keep hard safety gates even in brain mode.
+    if (action === 'BUY' && market.indicators.higherTfBias === 'bearish') {
+      action = 'WAIT';
+      source = 'ai_brain_htf_block';
+    }
+    if (action === 'BUY' && regime.regime === 'trend_down') {
+      action = 'WAIT';
+      source = 'ai_brain_regime_block';
+    }
+
+    decisions.push({
+      timestamp: new Date(last.start).toISOString(),
+      symbol,
+      assetClass,
+      finalAction: action,
+      consensus: {
+        action,
+        confidence,
+        source,
+        score: signal.score,
+        strategyProfile: profileId
+      },
+      signal: {
+        action: signal.action,
+        confidence: signal.confidence,
+        strategyType: signal.strategyType,
+        reasons: (signal.reasons || []).slice(0, 3)
+      },
+      ai: aiAnalyst ? {
+        status: aiAnalyst.status,
+        action: aiAnalyst.action,
+        confidence: aiAnalyst.confidence,
+        verdict: aiAnalyst.verdict,
+        reasoning: aiAnalyst.reasoning,
+        sampled: shouldSample
+      } : null,
+      regime,
+      market: {
+        lastPrice: market.lastPrice,
+        change24hPct: market.change24hPct,
+        assetClass,
+        indicators: {
+          rsi14: market.indicators.rsi14,
+          trendPct: market.indicators.trendPct,
+          volatilityPct: market.indicators.volatilityPct,
+          adx14: market.indicators.adx14,
+          higherTfBias: market.indicators.higherTfBias
+        }
+      }
+    });
+  }
+
+  const paper = simulateBacktestPaper(decisions, {
+    ...options,
+    assetClass,
+    minConfidence: Math.max(aiMinConfidence, config.swingGuard.enabled ? config.swingGuard.minConfidence : 0)
+  });
+
+  return {
+    symbol,
+    provider,
+    source: 'ai_brain_llm',
+    aiProvider: config.ai.provider,
+    aiModel: config.ai.model,
+    aiRole,
+    aiEvery,
+    aiSamples: sampled,
+    aiOk,
+    aiErrors,
+    strategyProfile: profileId,
+    bars: candles.length,
+    evaluatedBars: decisions.length,
+    from: decisions[0] ? decisions[0].timestamp : null,
+    to: decisions.length ? decisions[decisions.length - 1].timestamp : null,
+    actionCounts: countActions(decisions),
+    signalQuality: evaluateBacktestSignalQuality(decisions),
+    paper,
+    sampleDecisions: decisions
+      .filter((d) => d.ai && d.ai.sampled && ['BUY', 'SELL', 'EXIT'].includes(d.finalAction))
+      .slice(-10)
+      .map((d) => ({
+        timestamp: d.timestamp,
+        finalAction: d.finalAction,
+        confidence: d.consensus.confidence,
+        rulesAction: d.signal.action,
+        aiAction: d.ai.action,
+        reasoning: d.ai.reasoning,
+        price: d.market.lastPrice
+      }))
+  };
 }
 
 async function backtestRulesMode(symbols, options, fixturePath = null) {

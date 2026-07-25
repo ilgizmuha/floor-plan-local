@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "title": "AI trading knowledge base",
+  "role": "Primary decision support for Mistral/DeepSeek analyst",
+  "objectives": [
+    "Prefer capital protection over trade frequency",
+    "Target high-quality setups with expected win-rate mindset >= 55%",
+    "Do not overtrade chop; skip weak edges"
+  ],
+  "hardRules": [
+    "No BUY when higher TF bias is bearish",
+    "No BUY in trend_down or volatile regime",
+    "No immediate re-entry after EXIT without structure change",
+    "Long-only profiles must never open shorts",
+    "Crypto scalp is fee-sensitive — prefer swing/day holds unless scalp setup is A+",
+    "If indicators contradict the setup, veto or WAIT"
+  ],
+  "entryPlaybook": {
+    "preferred": "HTF bullish + LTF pullback + momentum turn (RSI recover / MACD improve / bounce from EMA or BB lower)",
+    "avoid": [
+      "Buying mid-rally into resistance with RSI > 70",
+      "Catching falling knives in HTF downtrend",
+      "Range chop with ADX < 18 and no clear level reaction",
+      "Metals/crypto when HTF mixed and quality feedback is poor"
+    ]
+  },
+  "exitPlaybook": {
+    "prefer": [
+      "HTF structure break / bias flip bearish",
+      "Stop-loss hit",
+      "Take-profit / measured move completed",
+      "Multiple confirming weak bars, not one noisy SELL"
+    ],
+    "avoid": [
+      "Exiting a green HTF-aligned long on a single weak 15m SELL"
+    ]
+  },
+  "venueBias": {
+    "bybit_crypto": "Trade only clear trend_up pullbacks; skip most range/transition",
+    "bybit_metals": "Strict filter; often skip unless HTF and volume agree",
+    "finam_equities": "Swing/long — hold trend legs, avoid countertrend longs",
+    "finam_fx": "Day/swing hold can work; fewer trades, let winners run"
+  },
+  "books": [
+    {
+      "id": "shiryaev",
+      "title": "Консервативный скальпинг intraday",
+      "useFor": "scalp/FX/futures bounce setups",
+      "rules": [
+        "Session 06-20 GMT for FX/futures",
+        "Bounce only from EMA34/72/144 or envelope ±0.21%",
+        "Stoch(13,5,3) + MACD(21,34,5) confirmation",
+        "HTF filter required",
+        "TP/SL with R:R >= 1.5"
+      ]
+    },
+    {
+      "id": "borovkov",
+      "title": "Скальпинг: искусство микроскопической прибыли",
+      "useFor": "microstructure caution",
+      "rules": [
+        "Commission can erase scalp edge",
+        "Avoid forced trades",
+        "Liquidity and spread matter"
+      ]
+    }
+  ],
+  "profiles": {
+    "swing_crypto": { "minConfidence": 75, "style": "swing", "longBias": true },
+    "swing_tradfi": { "minConfidence": 75, "style": "swing", "longOnly": true },
+    "long_finam": { "minConfidence": 75, "style": "position/swing", "longOnly": true },
+    "day_finam": { "minConfidence": 65, "style": "intraday/day hold" },
+    "scalp_finam": { "minConfidence": 75, "style": "shiryaev conservative scalp" }
+  },
+  "outputContract": {
+    "confirmMode": "confirm|veto|downgrade the rule setup; do not invent unrelated setups",
+    "brainMode": "YOU are the primary decision maker; rule setup is advisory context only",
+    "json": {
+      "verdict": "confirm|veto|downgrade|decide",
+      "action": "BUY|SELL|HOLD|WAIT|EXIT",
+      "confidence": "0-100",
+      "riskLevel": "low|medium|high",
+      "veto": "boolean",
+      "indicatorSummary": "cite concrete metrics",
+      "reasoning": "short reason tied to KB rules",
+      "factors": ["metric ...", "kb rule ..."]
+    }
+  }
+}
