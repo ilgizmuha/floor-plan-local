@@ -97,7 +97,8 @@ const config = {
     paperEnabled: env('SCALP_PAPER_ENABLED', 'true') === 'true',
     maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 12),
     maxOpenPositions: numberEnv('SCALP_MAX_OPEN_POSITIONS', 1),
-    maxDailyOpens: numberEnv('SCALP_MAX_DAILY_OPENS', 3),
+    // 0 = unlimited number of scalp trades per day (still gated by setup/SL/TP/cooldown)
+    maxDailyOpens: numberEnv('SCALP_MAX_DAILY_OPENS', 0),
     cooldownMinutes: numberEnv('SCALP_COOLDOWN_MINUTES', 45),
     lossCooldownMinutes: numberEnv('SCALP_LOSS_COOLDOWN_MINUTES', 90),
     maxConsecutiveLosses: numberEnv('SCALP_MAX_CONSECUTIVE_LOSSES', 2),
@@ -3002,7 +3003,7 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
           scalpBlocks.push(cooldownBlock);
         }
         const daily = ensureScalpDailyState(state);
-        if (daily.opens >= config.scalp.maxDailyOpens) {
+        if (config.scalp.maxDailyOpens > 0 && daily.opens >= config.scalp.maxDailyOpens) {
           scalpBlocks.push(`daily scalp cap ${config.scalp.maxDailyOpens}`);
         }
         if (orderBook.available && activePolicy.maxSpreadPct && orderBook.spreadPct > activePolicy.maxSpreadPct) {
@@ -4183,7 +4184,7 @@ function applyScalpPaperDecision(state, decision) {
   }
 
   const daily = ensureScalpDailyState(state);
-  if (daily.opens >= config.scalp.maxDailyOpens) {
+  if (config.scalp.maxDailyOpens > 0 && daily.opens >= config.scalp.maxDailyOpens) {
     blocks.push(`daily scalp cap reached (${config.scalp.maxDailyOpens})`);
   }
 

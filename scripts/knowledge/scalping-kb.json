@@ -20,7 +20,7 @@
         "workingTimeframeNote": "Book uses 10m; Bybit klines have no 10m — adapted to 5m",
         "higherTimeframe": "4h",
         "sessionGmt": { "startHour": 6, "endHour": 20 },
-        "maxTradesPerDay": 3,
+        "maxTradesPerDay": 0,
         "indicators": {
           "ema": [34, 72, 144],
           "envelopePct": 0.21,
@@ -73,7 +73,7 @@
         },
         {
           "id": "daily_trade_cap",
-          "summary": "Не более 1–3 полных скальп-сделок в день на инструмент/портфель",
+          "summary": "Лимит числа скальп-сделок в день опционален (SCALP_MAX_DAILY_OPENS=0 = без лимита по количеству)",
           "code": "daily_trade_cap"
         },
         {
