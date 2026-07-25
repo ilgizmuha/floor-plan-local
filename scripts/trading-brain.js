@@ -108,6 +108,8 @@ const config = {
     minRewardRisk: numberEnv('SCALP_MIN_REWARD_RISK', 1.5),
     sessionGmtStartHour: numberEnv('SCALP_SESSION_GMT_START', 6),
     sessionGmtEndHour: numberEnv('SCALP_SESSION_GMT_END', 20),
+    // Shiryaev session is for FX/futures; crypto (Bybit) is 24/7 unless listed here.
+    sessionAssetClasses: splitList(env('SCALP_SESSION_ASSET_CLASSES', 'forex,futures')),
     forceFlatAtSessionEnd: env('SCALP_FORCE_FLAT_SESSION_END', 'true') === 'true',
     requireAiOk: env('SCALP_REQUIRE_AI_OK', 'true') === 'true',
     requireCursorOk: env('SCALP_REQUIRE_CURSOR_OK', 'true') === 'true',
@@ -184,6 +186,10 @@ const config = {
     scalpSymbols: splitList(env('FINAM_SCALP_SYMBOLS', 'USD000UTSTOM@MISX,CNYRUB_TOM@MISX')),
     timeframe: env('FINAM_TIMEFRAME', 'TIME_FRAME_M15'),
     dayTimeframe: env('FINAM_DAY_TIMEFRAME', 'TIME_FRAME_M5'),
+    scalpTimeframe: env('FINAM_SCALP_TIMEFRAME', 'TIME_FRAME_M5'),
+    scalpHigherTf: env('FINAM_SCALP_HIGHER_TF', 'TIME_FRAME_H4'),
+    scalpBarLookbackHours: numberEnv('FINAM_SCALP_BAR_LOOKBACK_HOURS', 72),
+    scalpHigherTfLookbackHours: numberEnv('FINAM_SCALP_HIGHER_TF_LOOKBACK_HOURS', 480),
     barLookbackHours: numberEnv('FINAM_BAR_LOOKBACK_HOURS', 48),
     timeoutMs: numberEnv('FINAM_TIMEOUT_MS', 20000),
     aiEnabled: env('FINAM_AI_ENABLED', 'false') === 'true',
@@ -939,11 +945,36 @@ function buildHigherTfTrend(candles) {
   };
 }
 
-function isScalpSessionOpen(date = new Date()) {
+function scalpSessionApplies(market = {}) {
+  const classes = config.scalp.sessionAssetClasses || [];
+  if (!classes.length) {
+    return true;
+  }
+  const assetClass = market.assetClass || marketAssetClass(market.symbol) || finamAssetClass(market.symbol);
+  return classes.includes(assetClass);
+}
+
+function isScalpSessionOpen(date = new Date(), market = null) {
+  if (market && !scalpSessionApplies(market)) {
+    return true;
+  }
   const hour = date.getUTCHours() + date.getUTCMinutes() / 60;
   const start = config.scalp.sessionGmtStartHour;
   const end = config.scalp.sessionGmtEndHour;
   return hour >= start && hour < end;
+}
+
+function getUtcDayKey(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function ensureScalpDailyState(state) {
+  const dayKey = getUtcDayKey();
+  state.scalpDaily = state.scalpDaily || { date: null, opens: 0 };
+  if (state.scalpDaily.date !== dayKey) {
+    state.scalpDaily = { date: dayKey, opens: 0 };
+  }
+  return state.scalpDaily;
 }
 
 function loadScalpingKnowledge() {
@@ -1028,7 +1059,8 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
   const bookSources = (knowledge.books || []).map((book) => `${book.author} — ${book.title}`);
   const scalp = market.scalpIndicators || {};
   const pivots = scalp.pivots || {};
-  const sessionOpen = isScalpSessionOpen();
+  const sessionOpen = isScalpSessionOpen(new Date(), market);
+  const sessionRequired = scalpSessionApplies(market);
   if (!scalp.available) {
     return {
       enabled: true,
@@ -1039,6 +1071,7 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
       feeGate,
       trend15m,
       sessionOpen,
+      sessionRequired,
       knowledgeBooks: bookSources,
       reasons: [`Not enough ${config.scalp.interval}m data for Shiryaev scalp (need ~150 bars)`]
     };
@@ -1053,8 +1086,8 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
   const higherTf = scalp.higherTf || {};
   const higherTrend = higherTf.available ? higherTf.trend : (trend15m === 'up' ? 'up' : 'down');
 
-  // Rule: session 06–20 GMT
-  if (!sessionOpen) {
+  // Rule: session 06–20 GMT (FX/futures only by default)
+  if (sessionRequired && !sessionOpen) {
     reasons.push(`Shiryaev: outside session ${config.scalp.sessionGmtStartHour}:00–${config.scalp.sessionGmtEndHour}:00 GMT`);
     appliedRules.push('session_window');
     return {
@@ -1068,6 +1101,7 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
       higherTfTrend: higherTrend,
       segment: scalp.segment,
       sessionOpen,
+      sessionRequired,
       setupReady: false,
       pivots,
       bounce,
@@ -1083,7 +1117,9 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
       reasons
     };
   }
-  appliedRules.push('session_window');
+  if (sessionRequired) {
+    appliedRules.push('session_window');
+  }
 
   // Rule №1: higher-TF trend (H4 Ichimoku-style)
   if (higherTrend === 'up') {
@@ -1245,6 +1281,7 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     higherTf,
     segment: scalp.segment,
     sessionOpen,
+    sessionRequired,
     setupReady,
     bounce,
     stochastics: stoch,
@@ -2560,19 +2597,28 @@ function analyzeFinamScalpStrategy(market, fearGreed = {}, regime = {}, profile 
   }
 
   const trading = { ...config.finam.strategies.scalp, ...(profile.trading || {}) };
-  // Reuse Shiryaev scalp engine when M10 indicators are available
+  // Reuse Shiryaev scalp engine when M5 indicators are available
   if (market.scalpIndicators && market.scalpIndicators.available) {
     const base = analyzeScalpStrategy(market, fearGreed, regime);
-    const minConfidence = trading.minConfidence || base.confidence || 75;
+    const minConfidence = trading.minConfidence || config.finam.strategies.scalp.minConfidence || 75;
+    let action = base.action;
+    let confidence = base.confidence;
+    // Finam scalp uses its own minConfidence gate
+    if (action === 'BUY' && confidence < minConfidence) {
+      action = 'WAIT';
+      base.reasons = [...(base.reasons || []), `Finam scalp conf ${confidence} < ${minConfidence}`];
+    }
     return {
       ...base,
       strategy: 'scalp_finam_shiryaev',
       accountRole: 'day',
+      action,
+      confidence,
       minConfidence,
       takeProfitPct: trading.takeProfitPct || base.takeProfitPct,
       stopLossPct: trading.stopLossPct || base.stopLossPct,
       maxSpreadPct: trading.maxSpreadPct || config.scalp.maxSpreadPct,
-      reasons: [...(base.reasons || []), 'Finam day account scalp via Shiryaev rules']
+      reasons: [...(base.reasons || []), 'Finam RM43P scalp via Shiryaev rules']
     };
   }
 
@@ -2587,7 +2633,7 @@ function analyzeFinamScalpStrategy(market, fearGreed = {}, regime = {}, profile 
     stopLossPct: trading.stopLossPct,
     maxSpreadPct: trading.maxSpreadPct,
     minConfidence: trading.minConfidence || 75,
-    reasons: ['Finam scalp waiting for Shiryaev M10 indicators']
+    reasons: ['Finam scalp waiting for Shiryaev M5 indicators']
   };
 }
 
@@ -2716,8 +2762,12 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
   const state = readJsonFile(statePath) || {
     startedAt: new Date().toISOString(),
     orders: [],
-    stats: { submitted: 0, bought: 0, sold: 0, skipped: 0, errors: 0 }
+    stats: { submitted: 0, bought: 0, sold: 0, skipped: 0, errors: 0 },
+    scalpMeta: {},
+    scalpDaily: { date: null, opens: 0 }
   };
+  state.scalpMeta = state.scalpMeta || {};
+  ensureScalpDailyState(state);
 
   const accountsById = {};
   for (const accountId of config.finam.accountIds) {
@@ -2741,26 +2791,51 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
     let tradeSource = (decision.consensus && decision.consensus.source) || 'final';
     let activePolicy = { ...policy };
     const scalp = decision.scalpSignal || {};
-    if (
-      policy.strategyType === 'day'
+    const scalpMinConf = scalp.minConfidence || config.finam.strategies.scalp.minConfidence || 75;
+    const canPromoteScalpBuy = policy.strategyType === 'day'
       && config.finam.strategies.scalp.enabled
       && scalp.enabled
       && scalp.horizon === 'scalp'
       && scalp.action === 'BUY'
-      && (scalp.confidence || 0) >= (scalp.minConfidence || policy.minConfidence)
+      && scalp.setupReady
+      && (scalp.bounce && scalp.bounce.long)
+      && (scalp.confidence || 0) >= scalpMinConf
       && decision.finalAction !== 'SELL'
-      && decision.finalAction !== 'EXIT'
-    ) {
+      && decision.finalAction !== 'EXIT';
+    if (canPromoteScalpBuy) {
       tradeAction = 'BUY';
       tradeConfidence = scalp.confidence;
-      tradeSource = 'scalp_finam';
+      tradeSource = 'scalp_finam_shiryaev';
       activePolicy = resolveFinamTradingPolicy({
         ...decision,
         strategy: {
           ...(decision.strategy || {}),
           type: 'scalp',
           accountRole: 'day',
-          trading: (decision.strategy && decision.strategy.trading) || {}
+          trading: {
+            ...(config.finam.strategies.scalp || {}),
+            ...((decision.strategy && decision.strategy.trading) || {})
+          }
+        }
+      });
+    } else if (
+      policy.strategyType === 'day'
+      && config.finam.strategies.scalp.enabled
+      && scalp.enabled
+      && scalp.horizon === 'scalp'
+      && scalp.action === 'SELL'
+      && (scalp.confidence || 0) <= (scalp.minConfidence || 40)
+    ) {
+      tradeAction = 'SELL';
+      tradeConfidence = scalp.confidence;
+      tradeSource = 'scalp_finam_shiryaev_exit';
+      activePolicy = resolveFinamTradingPolicy({
+        ...decision,
+        strategy: {
+          ...(decision.strategy || {}),
+          type: 'scalp',
+          accountRole: 'day',
+          trading: config.finam.strategies.scalp
         }
       });
     }
@@ -2894,16 +2969,38 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
       }
 
       const orderBook = decision.market.orderBook || {};
-      if (activePolicy.strategyType === 'scalp' && orderBook.available && activePolicy.maxSpreadPct
-        && orderBook.spreadPct > activePolicy.maxSpreadPct) {
-        const event = {
-          ...eventBase,
-          type: 'SKIP',
-          reason: `scalp spread ${orderBook.spreadPct}% > ${activePolicy.maxSpreadPct}%`
-        };
-        result.events.push(event);
-        state.stats.skipped += 1;
-        continue;
+      if (activePolicy.strategyType === 'scalp') {
+        const scalpBlocks = [];
+        if (!isScalpSessionOpen(new Date(), decision.market)) {
+          scalpBlocks.push(`outside session ${config.scalp.sessionGmtStartHour}:00–${config.scalp.sessionGmtEndHour}:00 GMT`);
+        }
+        if (!scalp.setupReady) {
+          scalpBlocks.push('Shiryaev setup not ready');
+        }
+        if (!(scalp.bounce && scalp.bounce.long)) {
+          scalpBlocks.push('no bounce signal');
+        }
+        const cooldownBlock = getScalpCooldownBlock(state, symbol);
+        if (cooldownBlock) {
+          scalpBlocks.push(cooldownBlock);
+        }
+        const daily = ensureScalpDailyState(state);
+        if (daily.opens >= config.scalp.maxDailyOpens) {
+          scalpBlocks.push(`daily scalp cap ${config.scalp.maxDailyOpens}`);
+        }
+        if (orderBook.available && activePolicy.maxSpreadPct && orderBook.spreadPct > activePolicy.maxSpreadPct) {
+          scalpBlocks.push(`spread ${orderBook.spreadPct}% > ${activePolicy.maxSpreadPct}%`);
+        }
+        if (scalpBlocks.length) {
+          const event = {
+            ...eventBase,
+            type: 'SKIP',
+            reason: `scalp limits: ${scalpBlocks.join('; ')}`
+          };
+          result.events.push(event);
+          state.stats.skipped += 1;
+          continue;
+        }
       }
 
       let lotSize = 1;
@@ -2959,6 +3056,9 @@ async function executeFinamTrading(decisions, finamAccountsSnapshot = {}) {
         state.stats.bought += 1;
         result.byStrategy[activePolicy.strategyType] = (result.byStrategy[activePolicy.strategyType] || 0) + 1;
         state.orders = [event, ...(state.orders || [])].slice(0, 50);
+        if (activePolicy.strategyType === 'scalp') {
+          ensureScalpDailyState(state).opens += 1;
+        }
       } catch (error) {
         const event = { ...eventBase, type: 'ERROR', reason: error.message, details: error.details || null };
         result.events.push(event);
@@ -3006,23 +3106,44 @@ async function collectFinamMarkets() {
   for (const symbol of symbols) {
     try {
       const accountRoute = resolveFinamAccountForSymbol(symbol);
+      const wantsScalp = config.finam.strategies.scalp.enabled
+        && (config.finam.scalpSymbols.includes(symbol) || accountRoute.strategyHint === 'scalp');
       const timeframe = accountRoute.horizon === 'intraday'
         ? (config.finam.dayTimeframe || config.finam.timeframe)
         : config.finam.timeframe;
-      const [quotePayload, barsPayload, orderBookPayload] = await Promise.all([
+      const scalpTf = config.finam.scalpTimeframe || 'TIME_FRAME_M5';
+      const scalpStart = new Date(end.getTime() - (config.finam.scalpBarLookbackHours || 72) * 3600 * 1000).toISOString();
+      const higherStart = new Date(end.getTime() - (config.finam.scalpHigherTfLookbackHours || 480) * 3600 * 1000).toISOString();
+
+      const [quotePayload, barsPayload, orderBookPayload, scalpBarsPayload, higherBarsPayload] = await Promise.all([
         client.lastQuote(symbol),
         client.bars(symbol, {
           timeframe,
           startTime,
           endTime
         }),
-        client.orderBook(symbol).catch(() => null)
+        client.orderBook(symbol).catch(() => null),
+        wantsScalp
+          ? client.bars(symbol, { timeframe: scalpTf, startTime: scalpStart, endTime }).catch(() => null)
+          : Promise.resolve(null),
+        wantsScalp
+          ? client.bars(symbol, {
+            timeframe: config.finam.scalpHigherTf || 'TIME_FRAME_H4',
+            startTime: higherStart,
+            endTime
+          }).catch(() => null)
+          : Promise.resolve(null)
       ]);
       const candles = barsToCandles(barsPayload);
       if (candles.length < 30) {
         console.error(new Date().toISOString(), `Finam ${symbol}: not enough bars (${candles.length})`);
         continue;
       }
+      let scalpCandles = wantsScalp ? barsToCandles(scalpBarsPayload) : [];
+      if (wantsScalp && scalpCandles.length < 150 && timeframe === scalpTf) {
+        scalpCandles = candles;
+      }
+      const higherTfCandles = wantsScalp ? barsToCandles(higherBarsPayload) : [];
       const quote = quotePayload.quote || quotePayload;
       const lastPrice = finamNum(quote.last) || candles[candles.length - 1].close;
       const firstClose = candles[Math.max(0, candles.length - 96)].close;
@@ -3042,14 +3163,18 @@ async function collectFinamMarkets() {
         candles,
         orderBook,
         derivatives: { available: false },
-        scalpCandles: null
+        scalpCandles,
+        higherTfCandles
       });
       market.finam = {
         bid: finamNum(quote.bid),
         ask: finamNum(quote.ask),
         quoteTimestamp: quote.timestamp || null,
         account: accountRoute,
-        timeframe
+        timeframe,
+        scalpTimeframe: wantsScalp ? scalpTf : null,
+        scalpBars: scalpCandles.length,
+        higherTfBars: higherTfCandles.length
       };
       market.preferredAccount = accountRoute;
       market.strategyHint = accountRoute.strategyHint;
@@ -3073,7 +3198,8 @@ function assembleMarketFromCandles({
   candles,
   orderBook,
   derivatives,
-  scalpCandles
+  scalpCandles,
+  higherTfCandles
 }) {
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
@@ -3142,7 +3268,9 @@ function assembleMarketFromCandles({
     },
     orderBook: orderBook || { available: false },
     derivatives: derivatives || { available: false },
-    scalpIndicators: buildScalpIndicators(scalpCandles || []),
+    scalpIndicators: buildScalpIndicators(scalpCandles || [], {
+      higherTfCandles: higherTfCandles || []
+    }),
     recentCandles: candles.slice(-24).map((candle) => ({
       start: candle.start,
       open: candle.open,
@@ -3915,7 +4043,11 @@ function applyScalpPaperExits(state, decisions) {
       exitReason = `scalp take-profit ${config.scalp.takeProfitPct}%`;
     } else if (pnlPct <= -config.scalp.stopLossPct) {
       exitReason = `scalp stop-loss ${config.scalp.stopLossPct}%`;
-    } else if (config.scalp.forceFlatAtSessionEnd && !isScalpSessionOpen()) {
+    } else if (
+      config.scalp.forceFlatAtSessionEnd
+      && scalpSessionApplies(decision.market || { symbol })
+      && !isScalpSessionOpen(new Date(), decision.market || { symbol })
+    ) {
       exitReason = `shiryaev session end ${config.scalp.sessionGmtEndHour}:00 GMT flat`;
     } else if (scalp.action === 'SELL') {
       exitReason = 'scalp signal exit';
@@ -4017,7 +4149,7 @@ function applyScalpPaperDecision(state, decision) {
   }
 
   const blocks = [];
-  if (!isScalpSessionOpen()) {
+  if (!isScalpSessionOpen(new Date(), decision.market)) {
     blocks.push(`outside Shiryaev session ${config.scalp.sessionGmtStartHour}:00–${config.scalp.sessionGmtEndHour}:00 GMT`);
   }
   if (scalp.higherTfTrend === 'down') {
@@ -4030,12 +4162,8 @@ function applyScalpPaperDecision(state, decision) {
     blocks.push('no bounce signal');
   }
 
-  const dayKey = new Date().toISOString().slice(0, 10);
-  state.scalpDaily = state.scalpDaily || { date: null, opens: 0 };
-  if (state.scalpDaily.date !== dayKey) {
-    state.scalpDaily = { date: dayKey, opens: 0 };
-  }
-  if (state.scalpDaily.opens >= config.scalp.maxDailyOpens) {
+  const daily = ensureScalpDailyState(state);
+  if (daily.opens >= config.scalp.maxDailyOpens) {
     blocks.push(`daily scalp cap reached (${config.scalp.maxDailyOpens})`);
   }
 
@@ -4117,7 +4245,7 @@ function applyScalpPaperDecision(state, decision) {
   };
   state.cashUsd = round((state.cashUsd || 0) - positionUsd - feeUsd, 4);
   state.stats.opened += 1;
-  state.scalpDaily.opens += 1;
+  ensureScalpDailyState(state).opens += 1;
   return paperEvent('SCALP_OPEN', decision, price, {
     qty,
     positionUsd,
