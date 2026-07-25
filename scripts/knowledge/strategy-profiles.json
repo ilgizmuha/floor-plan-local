@@ -2,9 +2,9 @@
   "version": 2,
   "profiles": {
     "scalp": {
-      "label": "Scalp 5m Bybit",
+      "label": "Shiryaev conservative scalp 10m",
       "strategyType": "scalp",
-      "timeframe": "5m",
+      "timeframe": "10m",
       "providers": ["bybit"],
       "assetClasses": ["crypto"],
       "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],

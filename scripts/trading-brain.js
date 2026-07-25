@@ -85,8 +85,11 @@ const config = {
   },
   scalp: {
     enabled: env('SCALP_ENABLED', 'true') === 'true',
-    interval: env('SCALP_INTERVAL', '5'),
-    klineLimit: numberEnv('SCALP_KLINE_LIMIT', 120),
+    // Shiryaev: working TF 10m (less noise than 5m, more precise than 15m)
+    interval: env('SCALP_INTERVAL', '10'),
+    klineLimit: numberEnv('SCALP_KLINE_LIMIT', 200),
+    higherTfInterval: env('SCALP_HIGHER_TF_INTERVAL', '240'),
+    higherTfLimit: numberEnv('SCALP_HIGHER_TF_LIMIT', 120),
     minConfidence: numberEnv('SCALP_MIN_CONFIDENCE', 74),
     takeProfitPct: numberEnv('SCALP_TAKE_PROFIT_PCT', 0.45),
     stopLossPct: numberEnv('SCALP_STOP_LOSS_PCT', 0.28),
@@ -94,11 +97,18 @@ const config = {
     paperEnabled: env('SCALP_PAPER_ENABLED', 'true') === 'true',
     maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 12),
     maxOpenPositions: numberEnv('SCALP_MAX_OPEN_POSITIONS', 1),
+    maxDailyOpens: numberEnv('SCALP_MAX_DAILY_OPENS', 3),
     cooldownMinutes: numberEnv('SCALP_COOLDOWN_MINUTES', 45),
     lossCooldownMinutes: numberEnv('SCALP_LOSS_COOLDOWN_MINUTES', 90),
     maxConsecutiveLosses: numberEnv('SCALP_MAX_CONSECUTIVE_LOSSES', 2),
     consecutiveLossCooldownMinutes: numberEnv('SCALP_CONSECUTIVE_LOSS_COOLDOWN_MINUTES', 180),
-    minVolumeRatio: numberEnv('SCALP_MIN_VOLUME_RATIO', 1.15),
+    minVolumeRatio: numberEnv('SCALP_MIN_VOLUME_RATIO', 1.05),
+    envelopePct: numberEnv('SCALP_ENVELOPE_PCT', 0.21),
+    bounceTolPct: numberEnv('SCALP_BOUNCE_TOL_PCT', 0.12),
+    minRewardRisk: numberEnv('SCALP_MIN_REWARD_RISK', 1.5),
+    sessionGmtStartHour: numberEnv('SCALP_SESSION_GMT_START', 6),
+    sessionGmtEndHour: numberEnv('SCALP_SESSION_GMT_END', 20),
+    forceFlatAtSessionEnd: env('SCALP_FORCE_FLAT_SESSION_END', 'true') === 'true',
     requireAiOk: env('SCALP_REQUIRE_AI_OK', 'true') === 'true',
     requireCursorOk: env('SCALP_REQUIRE_CURSOR_OK', 'true') === 'true',
     blockOnAiVeto: env('SCALP_BLOCK_ON_AI_VETO', 'true') === 'true',
@@ -493,14 +503,21 @@ async function collectMarkets() {
   for (const symbol of config.symbols) {
     const category = marketCategory(symbol);
     const assetClass = marketAssetClass(symbol);
-    const scalpQuery = config.scalp.enabled ? bybitPublic('/v5/market/kline', {
+    const scalpEnabledForSymbol = config.scalp.enabled && config.scalp.symbols.includes(symbol);
+    const scalpQuery = scalpEnabledForSymbol ? bybitPublic('/v5/market/kline', {
       category,
       symbol,
       interval: config.scalp.interval,
       limit: String(config.scalp.klineLimit)
     }) : Promise.resolve(null);
+    const higherTfQuery = scalpEnabledForSymbol ? bybitPublicOrNull('/v5/market/kline', {
+      category,
+      symbol,
+      interval: config.scalp.higherTfInterval,
+      limit: String(config.scalp.higherTfLimit)
+    }) : Promise.resolve(null);
 
-    const [tickerData, klineData, scalpKlineData, orderBookData, derivativesTickerData, openInterestData] = await Promise.all([
+    const [tickerData, klineData, scalpKlineData, higherTfKlineData, orderBookData, derivativesTickerData, openInterestData] = await Promise.all([
       bybitPublic('/v5/market/tickers', { category, symbol }),
       bybitPublic('/v5/market/kline', {
         category,
@@ -509,6 +526,7 @@ async function collectMarkets() {
         limit: String(config.klineLimit)
       }),
       scalpQuery,
+      higherTfQuery,
       bybitPublicOrNull('/v5/market/orderbook', { category, symbol, limit: '50' }),
       bybitPublicOrNull('/v5/market/tickers', { category: 'linear', symbol }),
       bybitPublicOrNull('/v5/market/open-interest', { category: 'linear', symbol, intervalTime: '5min', limit: '2' })
@@ -567,7 +585,9 @@ async function collectMarkets() {
     const volumeRatio = safeDivide(average(volumes.slice(-5)), average(volumes.slice(-30)));
     const orderBook = summarizeOrderBook(orderBookData);
     const derivatives = summarizeDerivatives(derivativesTickerData, openInterestData);
-    const scalpIndicators = buildScalpIndicators(parseKlineRows(scalpKlineData));
+    const scalpIndicators = buildScalpIndicators(parseKlineRows(scalpKlineData), {
+      higherTfCandles: parseKlineRows(higherTfKlineData)
+    });
 
     results.push({
       symbol,
@@ -632,18 +652,34 @@ function parseKlineRows(klineData) {
     .sort((a, b) => a.start - b.start);
 }
 
-function buildScalpIndicators(candles) {
-  if (!candles || candles.length < 30) {
+function buildScalpIndicators(candles, options = {}) {
+  // Shiryaev needs EMA144 — require enough bars
+  if (!candles || candles.length < 150) {
     return { available: false };
   }
 
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
+  const lastCandle = candles[candles.length - 1];
+  const prevCandle = candles[candles.length - 2];
   const last = closes[closes.length - 1];
+  const envelopePct = config.scalp.envelopePct;
+  const bounceTol = config.scalp.bounceTolPct;
+
   const ema9Values = emaSeries(closes, 9);
   const ema21Values = emaSeries(closes, 21);
+  const ema34Values = emaSeries(closes, 34);
+  const ema72Values = emaSeries(closes, 72);
+  const ema144Values = emaSeries(closes, 144);
   const ema9 = ema9Values[ema9Values.length - 1];
   const ema21 = ema21Values[ema21Values.length - 1];
+  const ema34 = ema34Values[ema34Values.length - 1];
+  const ema72 = ema72Values[ema72Values.length - 1];
+  const ema144 = ema144Values[ema144Values.length - 1];
+  const prevEma34 = ema34Values[ema34Values.length - 2];
+  const envelopeUpper = ema34 * (1 + envelopePct / 100);
+  const envelopeLower = ema34 * (1 - envelopePct / 100);
+
   const sma50 = average(closes.slice(-50));
   const priorWindow = candles.slice(-21, -1);
   const support = Math.min(...priorWindow.map((candle) => candle.low));
@@ -653,6 +689,70 @@ function buildScalpIndicators(candles) {
   const impulseDown = last3.length === 3 && last3[2] < last3[1] && last3[1] < last3[0];
   const volumeRatio = safeDivide(average(volumes.slice(-3)), average(volumes.slice(-20)));
   const distanceToEma21Pct = percentChange(ema21, last);
+  const distanceToEma34Pct = percentChange(ema34, last);
+
+  const stoch = stochasticSlow(candles, 13, 5, 3);
+  const macdFast = emaSeries(closes, 21);
+  const macdSlow = emaSeries(closes, 34);
+  const macdLineSeries = macdFast.map((value, index) => value - macdSlow[index]);
+  const macdSignalSeries = emaSeries(macdLineSeries, 5);
+  const macdLine = macdLineSeries[macdLineSeries.length - 1];
+  const macdSignal = macdSignalSeries[macdSignalSeries.length - 1];
+  const macdHist = macdLine - macdSignal;
+  const prevMacdHist = macdLineSeries[macdLineSeries.length - 2] - macdSignalSeries[macdSignalSeries.length - 2];
+  const macdBullCross = macdLineSeries[macdLineSeries.length - 2] <= macdSignalSeries[macdSignalSeries.length - 2]
+    && macdLine > macdSignal;
+  const macdBearCross = macdLineSeries[macdLineSeries.length - 2] >= macdSignalSeries[macdSignalSeries.length - 2]
+    && macdLine < macdSignal;
+
+  const emaSlope34 = percentChange(prevEma34, ema34);
+  const emaSpreadPct = Math.abs(percentChange(ema144, ema34));
+  let segment = 'mixed';
+  if (Math.abs(emaSlope34) < 0.03 && emaSpreadPct < 0.35) {
+    segment = 'flat';
+  } else if ((ema34 > ema72 && ema72 > ema144 && emaSlope34 > 0) || (ema34 < ema72 && ema72 < ema144 && emaSlope34 < 0)) {
+    segment = 'trend';
+  }
+
+  const nearEma = (level) => Math.abs(percentChange(level, lastCandle.low)) <= bounceTol
+    || Math.abs(percentChange(level, last)) <= bounceTol
+    || (lastCandle.low <= level && lastCandle.close >= level);
+  const bounceFromEma34 = nearEma(ema34) && lastCandle.close > lastCandle.open;
+  const bounceFromEma72 = nearEma(ema72) && lastCandle.close > lastCandle.open;
+  const bounceFromEma144 = nearEma(ema144) && lastCandle.close > lastCandle.open;
+  const bounceFromLowerEnvelope = lastCandle.low <= envelopeLower * (1 + bounceTol / 100)
+    && lastCandle.close > envelopeLower
+    && lastCandle.close >= prevCandle.close;
+  const bounceFromUpperEnvelope = lastCandle.high >= envelopeUpper * (1 - bounceTol / 100)
+    && lastCandle.close < envelopeUpper
+    && lastCandle.close <= prevCandle.close;
+
+  let bounceLong = false;
+  let bounceShort = false;
+  let bounceType = null;
+  if (segment === 'trend') {
+    bounceLong = bounceFromEma34 || bounceFromEma72 || bounceFromEma144;
+    bounceShort = false;
+    bounceType = bounceLong ? 'ema_bounce' : null;
+  } else if (segment === 'flat') {
+    bounceLong = bounceFromLowerEnvelope;
+    bounceShort = bounceFromUpperEnvelope;
+    bounceType = bounceLong || bounceShort ? 'envelope_bounce' : null;
+  } else {
+    bounceLong = (bounceFromEma34 || bounceFromEma72 || bounceFromEma144) && bounceFromLowerEnvelope;
+    bounceShort = bounceFromUpperEnvelope && (nearEma(ema34) || nearEma(ema72));
+    bounceType = bounceLong || bounceShort ? 'combined_bounce' : null;
+  }
+
+  const stochBuy = Boolean(
+    stoch.crossUp
+    && (stoch.inOversoldZone || stoch.k <= 40 || stoch.prevK <= 25)
+  );
+  const stochSell = Boolean(
+    stoch.crossDown
+    && (stoch.inOverboughtZone || stoch.k >= 60 || stoch.prevK >= 75)
+  );
+
   const pivotWindow = candles.slice(-13, -1);
   const pivotHigh = Math.max(...pivotWindow.map((candle) => candle.high));
   const pivotLow = Math.min(...pivotWindow.map((candle) => candle.low));
@@ -668,11 +768,23 @@ function buildScalpIndicators(candles) {
   const midPivotRange = last > pivotS1 && last < pivotR1
     && !nearPivotS1 && !nearPivot && !nearPivotR1;
 
+  const higherTf = buildHigherTfTrend(options.higherTfCandles || []);
+
   return {
     available: true,
+    method: 'shiryaev_conservative',
     timeframe: `${config.scalp.interval}m`,
     ema9: round(ema9, 4),
     ema21: round(ema21, 4),
+    ema34: round(ema34, 4),
+    ema72: round(ema72, 4),
+    ema144: round(ema144, 4),
+    envelope: {
+      mid: round(ema34, 4),
+      upper: round(envelopeUpper, 4),
+      lower: round(envelopeLower, 4),
+      pct: envelopePct
+    },
     sma50: round(sma50, 4),
     rsi7: round(rsi(closes, 7), 2),
     volumeRatio: round(volumeRatio, 3),
@@ -680,11 +792,34 @@ function buildScalpIndicators(candles) {
     impulseDown,
     priceAboveEma21: last > ema21,
     distanceToEma21Pct: round(distanceToEma21Pct, 3),
+    distanceToEma34Pct: round(distanceToEma34Pct, 3),
     support: round(support, 4),
     resistance: round(resistance, 4),
     distanceToSupportPct: round(percentChange(support, last), 3),
     distanceToResistancePct: round(percentChange(last, resistance), 3),
     momentumPct: round(percentChange(closes[closes.length - 2], last), 3),
+    segment,
+    bounce: {
+      long: bounceLong,
+      short: bounceShort,
+      type: bounceType,
+      fromEma34: bounceFromEma34,
+      fromEma72: bounceFromEma72,
+      fromEma144: bounceFromEma144,
+      fromLowerEnvelope: bounceFromLowerEnvelope,
+      fromUpperEnvelope: bounceFromUpperEnvelope
+    },
+    stochastics: stoch,
+    macd: {
+      line: round(macdLine, 6),
+      signal: round(macdSignal, 6),
+      hist: round(macdHist, 6),
+      histDelta: round(macdHist - prevMacdHist, 6),
+      bullCross: macdBullCross,
+      bearCross: macdBearCross,
+      improving: macdHist > prevMacdHist
+    },
+    higherTf,
     pivots: {
       pp: round(pivot, 4),
       r1: round(pivotR1, 4),
@@ -700,6 +835,115 @@ function buildScalpIndicators(candles) {
       distanceToR1Pct: round(percentChange(last, pivotR1), 3)
     }
   };
+}
+
+function stochasticSlow(candles, kPeriod = 13, kSmooth = 5, dPeriod = 3) {
+  if (!candles || candles.length < kPeriod + kSmooth + dPeriod) {
+    return {
+      available: false,
+      k: null,
+      d: null,
+      prevK: null,
+      prevD: null,
+      crossUp: false,
+      crossDown: false,
+      inOversoldZone: false,
+      inOverboughtZone: false
+    };
+  }
+
+  const rawK = [];
+  for (let index = kPeriod - 1; index < candles.length; index += 1) {
+    const window = candles.slice(index - kPeriod + 1, index + 1);
+    const highest = Math.max(...window.map((candle) => candle.high));
+    const lowest = Math.min(...window.map((candle) => candle.low));
+    const close = candles[index].close;
+    const denom = highest - lowest;
+    rawK.push(denom > 0 ? ((close - lowest) / denom) * 100 : 50);
+  }
+
+  const slowK = [];
+  for (let index = kSmooth - 1; index < rawK.length; index += 1) {
+    slowK.push(average(rawK.slice(index - kSmooth + 1, index + 1)));
+  }
+  const slowD = [];
+  for (let index = dPeriod - 1; index < slowK.length; index += 1) {
+    slowD.push(average(slowK.slice(index - dPeriod + 1, index + 1)));
+  }
+
+  const k = slowK[slowK.length - 1];
+  const d = slowD[slowD.length - 1];
+  const prevK = slowK[slowK.length - 2];
+  const prevD = slowD[slowD.length - 2];
+  return {
+    available: true,
+    k: round(k, 2),
+    d: round(d, 2),
+    prevK: round(prevK, 2),
+    prevD: round(prevD, 2),
+    crossUp: prevK <= prevD && k > d,
+    crossDown: prevK >= prevD && k < d,
+    inOversoldZone: k <= 20 || d <= 20,
+    inOverboughtZone: k >= 80 || d >= 80
+  };
+}
+
+function buildHigherTfTrend(candles) {
+  if (!candles || candles.length < 60) {
+    return { available: false, trend: 'unknown', tenkan: null, kijun: null, cloud: null };
+  }
+
+  const last = candles[candles.length - 1];
+  const tenkanWindow = candles.slice(-9);
+  const kijunWindow = candles.slice(-26);
+  const senkouBWindow = candles.slice(-52);
+  const tenkan = (Math.max(...tenkanWindow.map((c) => c.high)) + Math.min(...tenkanWindow.map((c) => c.low))) / 2;
+  const kijun = (Math.max(...kijunWindow.map((c) => c.high)) + Math.min(...kijunWindow.map((c) => c.low))) / 2;
+  const senkouA = (tenkan + kijun) / 2;
+  const senkouB = (Math.max(...senkouBWindow.map((c) => c.high)) + Math.min(...senkouBWindow.map((c) => c.low))) / 2;
+  const cloudTop = Math.max(senkouA, senkouB);
+  const cloudBottom = Math.min(senkouA, senkouB);
+  const prev = candles[candles.length - 10] || candles[0];
+  const prevTenkanWindow = candles.slice(-18, -9);
+  const prevTenkan = prevTenkanWindow.length
+    ? (Math.max(...prevTenkanWindow.map((c) => c.high)) + Math.min(...prevTenkanWindow.map((c) => c.low))) / 2
+    : tenkan;
+  const tenkanRising = tenkan > prevTenkan;
+  const tenkanFalling = tenkan < prevTenkan;
+  let trend = 'flat';
+  if (last.close > cloudTop && tenkan > kijun && tenkanRising) {
+    trend = 'up';
+  } else if (last.close < cloudBottom && tenkan < kijun && tenkanFalling) {
+    trend = 'down';
+  } else if (tenkan > kijun && last.close >= cloudBottom) {
+    trend = 'up';
+  } else if (tenkan < kijun && last.close <= cloudTop) {
+    trend = 'down';
+  }
+
+  return {
+    available: true,
+    timeframe: `${config.scalp.higherTfInterval}m`,
+    trend,
+    tenkan: round(tenkan, 4),
+    kijun: round(kijun, 4),
+    cloud: {
+      top: round(cloudTop, 4),
+      bottom: round(cloudBottom, 4),
+      senkouA: round(senkouA, 4),
+      senkouB: round(senkouB, 4)
+    },
+    goldenCross: tenkan > kijun,
+    deadCross: tenkan < kijun,
+    price: last.close
+  };
+}
+
+function isScalpSessionOpen(date = new Date()) {
+  const hour = date.getUTCHours() + date.getUTCMinutes() / 60;
+  const start = config.scalp.sessionGmtStartHour;
+  const end = config.scalp.sessionGmtEndHour;
+  return hour >= start && hour < end;
 }
 
 function loadScalpingKnowledge() {
@@ -758,7 +1002,7 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
   if (!config.scalp.enabled) {
     return {
       enabled: false,
-      strategy: 'scalping_kb_v1',
+      strategy: 'shiryaev_conservative_v1',
       action: null,
       confidence: 0,
       reasons: ['Scalp strategy disabled']
@@ -766,15 +1010,16 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
   }
 
   const feeGate = isScalpFeeEligible(market);
+  const trend15m = market.indicators && market.indicators.sma20 > market.indicators.sma50 ? 'up' : 'down';
   if (!feeGate.eligible) {
     return {
       enabled: true,
-      strategy: 'scalping_kb_v1',
+      strategy: 'shiryaev_conservative_v1',
       action: 'WAIT',
       confidence: 0,
       horizon: 'long_only',
       feeGate,
-      trend15m: market.indicators && market.indicators.sma20 > market.indicators.sma50 ? 'up' : 'down',
+      trend15m,
       reasons: [feeGate.reason, 'Short trades disabled for this instrument']
     };
   }
@@ -783,185 +1028,206 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
   const bookSources = (knowledge.books || []).map((book) => `${book.author} — ${book.title}`);
   const scalp = market.scalpIndicators || {};
   const pivots = scalp.pivots || {};
-  const trend15m = market.indicators.sma20 > market.indicators.sma50 ? 'up' : 'down';
+  const sessionOpen = isScalpSessionOpen();
   if (!scalp.available) {
     return {
       enabled: true,
-      strategy: 'scalping_kb_v1',
+      strategy: 'shiryaev_conservative_v1',
       action: 'WAIT',
       confidence: 0,
       horizon: 'scalp',
       feeGate,
       trend15m,
+      sessionOpen,
       knowledgeBooks: bookSources,
-      reasons: ['Not enough 5m data for scalp']
+      reasons: [`Not enough ${config.scalp.interval}m data for Shiryaev scalp (need ~150 bars)`]
     };
   }
 
   let score = 0;
   const reasons = [];
   const appliedRules = [];
+  const bounce = scalp.bounce || {};
+  const stoch = scalp.stochastics || {};
+  const macd = scalp.macd || {};
+  const higherTf = scalp.higherTf || {};
+  const higherTrend = higherTf.available ? higherTf.trend : (trend15m === 'up' ? 'up' : 'down');
 
-  // Murphy / Young: higher-TF trend filter + wait for setup
-  if (trend15m === 'up') {
-    score += 12;
-    reasons.push('Murphy/Young: trade with 15m uptrend');
-    appliedRules.push('wait_setup');
+  // Rule: session 06–20 GMT
+  if (!sessionOpen) {
+    reasons.push(`Shiryaev: outside session ${config.scalp.sessionGmtStartHour}:00–${config.scalp.sessionGmtEndHour}:00 GMT`);
+    appliedRules.push('session_window');
+    return {
+      enabled: true,
+      strategy: 'shiryaev_conservative_v1',
+      sources: bookSources,
+      knowledgeVersion: knowledge.version || 2,
+      appliedRules,
+      timeframe: scalp.timeframe,
+      trend15m,
+      higherTfTrend: higherTrend,
+      segment: scalp.segment,
+      sessionOpen,
+      setupReady: false,
+      pivots,
+      bounce,
+      stochastics: stoch,
+      macd,
+      horizon: 'scalp',
+      feeGate,
+      action: 'WAIT',
+      confidence: 0,
+      score: 0,
+      takeProfitPct: config.scalp.takeProfitPct,
+      stopLossPct: config.scalp.stopLossPct,
+      reasons
+    };
+  }
+  appliedRules.push('session_window');
+
+  // Rule №1: higher-TF trend (H4 Ichimoku-style)
+  if (higherTrend === 'up') {
+    score += 14;
+    reasons.push('Shiryaev #1: higher-TF trend UP (Ichimoku/H4)');
+    appliedRules.push('higher_tf_trend');
+  } else if (higherTrend === 'down') {
+    score -= 16;
+    reasons.push('Shiryaev #1: higher-TF trend DOWN — long blocked');
+    appliedRules.push('higher_tf_trend');
   } else {
-    score -= 14;
-    reasons.push('Murphy/Young: 15m downtrend, long scalp filtered');
-    appliedRules.push('wait_setup');
+    score += 2;
+    reasons.push('Shiryaev #1: higher-TF flat/mixed — work only current M10 setup');
+    appliedRules.push('higher_tf_trend');
   }
 
-  // Murphy / Borovkov: volume confirms move; cut noise when volume dead
-  if (scalp.volumeRatio > 1.12) {
-    score += 8;
-    reasons.push('Murphy: volume confirms short-term move');
-  } else if (scalp.volumeRatio < 0.85) {
+  // Local M10 structure
+  if (scalp.ema34 > scalp.ema72) {
+    score += 6;
+    reasons.push('M10 EMA34 > EMA72');
+  } else {
     score -= 6;
-    reasons.push('Borovkov/Young: weak volume — cut noise, skip scalp');
-    appliedRules.push('cut_noise');
+    reasons.push('M10 EMA34 < EMA72');
   }
 
-  // Solabuto: impulse
-  if (scalp.impulseUp) {
-    score += 10;
-    reasons.push('Solabuto: bullish 5m impulse');
-  } else if (scalp.impulseDown) {
-    score -= 10;
-    reasons.push('Solabuto: bearish 5m impulse');
-  }
-
-  // Borovkov: no chase — only pullback to EMA21
-  if (trend15m === 'up' && scalp.priceAboveEma21 && scalp.distanceToEma21Pct >= 0 && scalp.distanceToEma21Pct <= 0.35) {
-    score += 8;
-    reasons.push('Borovkov: pullback to fair price (EMA21), no chase');
-    appliedRules.push('no_chase');
-  } else if (trend15m === 'up' && scalp.distanceToEma21Pct > 0.55) {
-    score -= 8;
-    reasons.push('Borovkov: stretched from EMA21 — do not chase');
-    appliedRules.push('no_chase');
-  }
-
-  if (scalp.ema9 > scalp.ema21) {
-    score += 5;
+  // Rule №2: bounce-only (no breakout chase)
+  if (bounce.long) {
+    score += 16;
+    reasons.push(`Shiryaev #2: bounce signal (${bounce.type || 'ema/envelope'}) on ${scalp.segment} segment`);
+    appliedRules.push('bounce_only', 'segment_priority');
   } else {
-    score -= 5;
+    score -= 12;
+    reasons.push('Shiryaev #2: no bounce signal — breakouts not traded');
+    appliedRules.push('bounce_only');
   }
 
-  // Shiryaev: Pivot Points S/R
-  if (pivots.nearS1 && trend15m === 'up' && scalp.rsi7 >= 34) {
-    score += 9;
-    reasons.push('Shiryaev: Pivot S1 bounce zone (conservative long)');
-    appliedRules.push('pivot_sr');
-  } else if (pivots.nearPp && trend15m === 'up' && scalp.impulseUp) {
+  // Rule №3: Stochastics entry after bounce
+  if (stoch.available && stoch.crossUp && bounce.long) {
+    score += 14;
+    reasons.push(`Shiryaev #3: Stoch crossUp K=${stoch.k} D=${stoch.d}`);
+    appliedRules.push('stoch_entry');
+  } else if (stoch.available && stoch.inOversoldZone && bounce.long) {
+    score += 8;
+    reasons.push(`Shiryaev #3: Stoch in oversold zone K=${stoch.k}`);
+    appliedRules.push('stoch_entry');
+  } else if (stoch.available && stoch.crossDown) {
+    score -= 8;
+    reasons.push('Shiryaev #3: Stoch crossDown — no long');
+    appliedRules.push('stoch_entry');
+  } else {
+    score -= 6;
+    reasons.push('Shiryaev #3: Stoch entry not confirmed');
+    appliedRules.push('stoch_entry');
+  }
+
+  // MACD confirm
+  if (macd.bullCross || (macd.improving && macd.hist > 0)) {
+    score += 8;
+    reasons.push('Shiryaev: MACD confirms (cross/improving+)');
+    appliedRules.push('macd_confirm');
+  } else if (macd.bearCross || (macd.hist < 0 && !macd.improving)) {
+    score -= 6;
+    reasons.push('Shiryaev: MACD weak/bearish');
+    appliedRules.push('macd_confirm');
+  }
+
+  // Pivot as context / targets only
+  if (pivots.nearS1 && bounce.long) {
     score += 5;
-    reasons.push('Shiryaev: Pivot PP with impulse');
+    reasons.push('Shiryaev: Pivot S1 context supports long');
     appliedRules.push('pivot_sr');
   } else if (pivots.nearR1) {
-    score -= 8;
-    reasons.push('Shiryaev: near Pivot R1 — avoid new long');
+    score -= 7;
+    reasons.push('Shiryaev: near Pivot R1 — poor long location');
     appliedRules.push('pivot_sr');
-  } else if (pivots.midRange && !scalp.impulseUp) {
-    score -= 5;
-    reasons.push('Shiryaev: mid Pivot range without impulse — wait');
-    appliedRules.push('avoid_mid_range');
+  } else if (pivots.midRange && !bounce.long) {
+    score -= 4;
+    reasons.push('Shiryaev: mid Pivot range without bounce');
+    appliedRules.push('pivot_sr');
   }
 
-  if (scalp.distanceToResistancePct >= 0 && scalp.distanceToResistancePct < 0.25) {
-    score -= 9;
-    reasons.push('Solabuto/Shiryaev: too close to resistance');
-  }
-
-  if (scalp.distanceToSupportPct >= 0 && scalp.distanceToSupportPct < 0.35 && scalp.rsi7 >= 34) {
-    score += 5;
-    reasons.push('Murphy: support bounce zone');
-  }
-
-  if (scalp.rsi7 >= 42 && scalp.rsi7 <= 58) {
-    score += 6;
-    reasons.push('RSI7 in scalp entry zone');
-  } else if (scalp.rsi7 > 68) {
+  if (scalp.distanceToResistancePct >= 0 && scalp.distanceToResistancePct < 0.2) {
     score -= 8;
-    reasons.push('RSI7 overheated for scalp long');
+    reasons.push('Too close to local resistance');
   }
 
-  // CScalp: order book / walls / imbalance
+  // Microstructure helpers (crypto)
   const orderBook = market.orderBook || {};
   if (orderBook.available) {
-    if (orderBook.pressure === 'buy') {
-      score += 5;
-      reasons.push('CScalp: order book buy pressure');
-      appliedRules.push('orderbook_confirm');
-    } else if (orderBook.pressure === 'sell') {
-      score -= 6;
-      reasons.push('CScalp: order book sell pressure — no long');
-      appliedRules.push('orderbook_confirm');
-    }
-
-    if (orderBook.imbalance > 0.3) {
-      score += 4;
-      reasons.push('CScalp: bid depth imbalance supports long');
-      appliedRules.push('depth_imbalance');
-    } else if (orderBook.imbalance < -0.3) {
-      score -= 4;
-      reasons.push('CScalp: ask depth imbalance blocks long');
-      appliedRules.push('depth_imbalance');
-    }
-
-    const askWall = orderBook.askWall || {};
-    const bidWall = orderBook.bidWall || {};
-    const lastPrice = market.lastPrice;
-    if (askWall.price && lastPrice && percentChange(lastPrice, askWall.price) < 0.2 && askWall.usd > (orderBook.askDepthUsd || 0) * 0.25) {
-      score -= 7;
-      reasons.push('CScalp: nearby ask wall blocks long');
-      appliedRules.push('wall_filter');
-    }
-    if (bidWall.price && lastPrice && percentChange(bidWall.price, lastPrice) < 0.2 && bidWall.usd > (orderBook.bidDepthUsd || 0) * 0.25) {
-      score += 4;
-      reasons.push('CScalp: nearby bid wall supports long');
-      appliedRules.push('wall_filter');
-    }
-
-    // Borovkov: microstructure — max spread
     if (orderBook.spreadPct > config.scalp.maxSpreadPct) {
-      score -= 12;
-      reasons.push('Borovkov: spread too wide for microscopic profit');
+      score -= 14;
+      reasons.push('Borovkov: spread too wide');
       appliedRules.push('max_spread');
     }
+    if (orderBook.pressure === 'sell' || Number(orderBook.imbalance) < -0.15) {
+      score -= 6;
+      reasons.push('CScalp: book sell pressure');
+      appliedRules.push('orderbook_confirm');
+    } else if (orderBook.pressure === 'buy' || Number(orderBook.imbalance) > 0.15) {
+      score += 4;
+      reasons.push('CScalp: book buy pressure');
+      appliedRules.push('orderbook_confirm');
+    }
   }
 
-  if (fearGreed.available && fearGreed.value >= 78) {
-    score -= 6;
-    reasons.push('Macro greed filter: avoid aggressive scalp long');
+  if (fearGreed.available && fearGreed.value >= 80) {
+    score -= 5;
+    reasons.push('Extreme greed — reduce aggressive scalp long');
   }
 
-  // Young: incomplete setup → force WAIT bias (tightened volume/EMA filters)
-  const setupReady = trend15m === 'up'
-    && scalp.impulseUp
-    && scalp.volumeRatio >= config.scalp.minVolumeRatio
-    && scalp.rsi7 >= 40
-    && scalp.rsi7 <= 62
-    && (scalp.distanceToEma21Pct <= 0.3 || pivots.nearS1 || pivots.nearPp);
+  if (regime.regime === 'volatile') {
+    score -= 10;
+    reasons.push('Regime volatile — scalp blocked');
+  }
+
+  const rewardRisk = config.scalp.stopLossPct > 0
+    ? config.scalp.takeProfitPct / config.scalp.stopLossPct
+    : 0;
+  if (rewardRisk + 1e-9 < config.scalp.minRewardRisk) {
+    score -= 20;
+    reasons.push(`Shiryaev: R:R ${round(rewardRisk, 2)} < min ${config.scalp.minRewardRisk}`);
+    appliedRules.push('conservative_rr');
+  } else {
+    appliedRules.push('conservative_rr');
+  }
+
+  // Stoch confirm: crossUp, or oversold zone with MACD improving/cross
+  const stochOk = Boolean(stoch.crossUp || (stoch.inOversoldZone && (macd.improving || macd.bullCross)));
+  const setupReady = sessionOpen
+    && higherTrend !== 'down'
+    && Boolean(bounce.long)
+    && stochOk
+    && rewardRisk + 1e-9 >= config.scalp.minRewardRisk;
+
   if (!setupReady && score > 0) {
-    score -= 8;
-    reasons.push('Young: incomplete short-term setup — reduce conviction');
-    appliedRules.push('wait_setup');
-  }
-  if (scalp.volumeRatio < config.scalp.minVolumeRatio) {
-    score -= 6;
-    reasons.push(`Volume ratio ${scalp.volumeRatio} below scalp min ${config.scalp.minVolumeRatio}`);
-    appliedRules.push('min_volume');
+    score -= 10;
+    reasons.push('Shiryaev: setup incomplete — WAIT');
   }
 
   const confidence = clamp(Math.round(50 + score), 0, 100);
   let action = 'WAIT';
-  if (trend15m === 'up' && confidence >= config.scalp.minConfidence && setupReady) {
+  if (setupReady && confidence >= config.scalp.minConfidence) {
     action = 'BUY';
-  } else if (trend15m === 'up' && confidence >= config.scalp.minConfidence && !setupReady) {
-    action = 'WAIT';
-    reasons.push('Young/Borovkov: confidence ok but setup incomplete — WAIT');
-  } else if (trend15m === 'down' && confidence <= 38) {
+  } else if (bounce.short && stoch.crossDown && higherTrend === 'down' && confidence <= 40) {
     action = 'SELL';
   } else if (confidence >= 58) {
     action = 'HOLD';
@@ -969,17 +1235,20 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
 
   return {
     enabled: true,
-    strategy: 'scalping_kb_v1',
-    sources: [
-      ...bookSources,
-      'Murphy — Technical Analysis of the Futures Markets (trend, volume, S/R)',
-      'Solabuto — impulse, sizing, quick exits'
-    ],
-    knowledgeVersion: knowledge.version || 1,
+    strategy: 'shiryaev_conservative_v1',
+    sources: bookSources,
+    knowledgeVersion: knowledge.version || 2,
     appliedRules: [...new Set(appliedRules)],
     timeframe: scalp.timeframe,
     trend15m,
+    higherTfTrend: higherTrend,
+    higherTf,
+    segment: scalp.segment,
+    sessionOpen,
     setupReady,
+    bounce,
+    stochastics: stoch,
+    macd,
     pivots,
     horizon: 'scalp',
     feeGate,
@@ -988,6 +1257,8 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     score: round(score, 2),
     takeProfitPct: config.scalp.takeProfitPct,
     stopLossPct: config.scalp.stopLossPct,
+    minRewardRisk: config.scalp.minRewardRisk,
+    rewardRisk: round(rewardRisk, 3),
     reasons
   };
 }
@@ -2288,88 +2559,35 @@ function analyzeFinamScalpStrategy(market, fearGreed = {}, regime = {}, profile 
     };
   }
 
-  const indicators = market.indicators || {};
-  const orderBook = market.orderBook || {};
   const trading = { ...config.finam.strategies.scalp, ...(profile.trading || {}) };
-  let score = 0;
-  const reasons = [];
-
-  if (indicators.sma20 > indicators.sma50) {
-    score += 10;
-    reasons.push('15m uptrend');
-  } else {
-    score -= 12;
-    reasons.push('15m downtrend');
-  }
-
-  if (indicators.rsi14 < 35) {
-    score += 8;
-    reasons.push('RSI oversold bounce candidate');
-  } else if (indicators.rsi14 > 70) {
-    score -= 8;
-    reasons.push('RSI overbought');
-  }
-
-  if (indicators.momentumPct > 0.05) {
-    score += 6;
-    reasons.push('positive momentum');
-  } else if (indicators.momentumPct < -0.05) {
-    score -= 6;
-    reasons.push('negative momentum');
-  }
-
-  if (orderBook.available) {
-    if (orderBook.pressure === 'buy') {
-      score += 8;
-      reasons.push('order book buy pressure');
-    } else if (orderBook.pressure === 'sell') {
-      score -= 8;
-      reasons.push('order book sell pressure');
-    }
-    if (orderBook.spreadPct != null && orderBook.spreadPct > trading.maxSpreadPct) {
-      score -= 15;
-      reasons.push(`spread ${orderBook.spreadPct}% > ${trading.maxSpreadPct}%`);
-    }
-  } else {
-    score -= 4;
-    reasons.push('order book unavailable');
-  }
-
-  if (regime.regime === 'volatile') {
-    score -= 12;
-    reasons.push('volatile regime');
-  } else if (regime.regime === 'trend_up') {
-    score += 6;
-  } else if (regime.regime === 'trend_down') {
-    score -= 8;
-  }
-
-  if (fearGreed.available && fearGreed.value >= 80) {
-    score -= 6;
-    reasons.push('extreme greed veto');
-  }
-
-  const confidence = clamp(Math.round(50 + score), 0, 100);
-  const minConfidence = trading.minConfidence || 68;
-  let action = 'HOLD';
-  if (confidence >= minConfidence && indicators.sma20 > indicators.sma50) {
-    action = 'BUY';
-  } else if (confidence <= (profile.sellThreshold || 40)) {
-    action = 'SELL';
+  // Reuse Shiryaev scalp engine when M10 indicators are available
+  if (market.scalpIndicators && market.scalpIndicators.available) {
+    const base = analyzeScalpStrategy(market, fearGreed, regime);
+    const minConfidence = trading.minConfidence || base.confidence || 75;
+    return {
+      ...base,
+      strategy: 'scalp_finam_shiryaev',
+      accountRole: 'day',
+      minConfidence,
+      takeProfitPct: trading.takeProfitPct || base.takeProfitPct,
+      stopLossPct: trading.stopLossPct || base.stopLossPct,
+      maxSpreadPct: trading.maxSpreadPct || config.scalp.maxSpreadPct,
+      reasons: [...(base.reasons || []), 'Finam day account scalp via Shiryaev rules']
+    };
   }
 
   return {
     enabled: true,
-    strategy: 'scalp_finam',
-    action,
-    confidence,
+    strategy: 'scalp_finam_shiryaev',
+    action: 'WAIT',
+    confidence: 0,
     horizon: 'scalp',
     accountRole: 'day',
     takeProfitPct: trading.takeProfitPct,
     stopLossPct: trading.stopLossPct,
     maxSpreadPct: trading.maxSpreadPct,
-    minConfidence,
-    reasons
+    minConfidence: trading.minConfidence || 75,
+    reasons: ['Finam scalp waiting for Shiryaev M10 indicators']
   };
 }
 
@@ -3523,12 +3741,17 @@ function updatePaperState(decisions) {
     requireCursorOk: config.paper.requireCursorOk,
     scalp: {
       enabled: config.scalp.paperEnabled,
+      method: 'shiryaev_conservative',
+      interval: config.scalp.interval,
       symbols: config.scalp.symbols,
       minConfidence: config.scalp.minConfidence,
       maxPositionUsd: config.scalp.maxPositionUsd,
       maxOpenPositions: config.scalp.maxOpenPositions,
+      maxDailyOpens: config.scalp.maxDailyOpens,
       takeProfitPct: config.scalp.takeProfitPct,
       stopLossPct: config.scalp.stopLossPct,
+      minRewardRisk: config.scalp.minRewardRisk,
+      sessionGmt: [config.scalp.sessionGmtStartHour, config.scalp.sessionGmtEndHour],
       cooldownMinutes: config.scalp.cooldownMinutes,
       lossCooldownMinutes: config.scalp.lossCooldownMinutes,
       maxConsecutiveLosses: config.scalp.maxConsecutiveLosses,
@@ -3540,6 +3763,7 @@ function updatePaperState(decisions) {
     }
   };
   state.scalpMeta = state.scalpMeta || {};
+  state.scalpDaily = state.scalpDaily || { date: null, opens: 0 };
 
   const events = [];
   applyScalpPaperExits(state, decisions).forEach((event) => events.push(event));
@@ -3691,6 +3915,8 @@ function applyScalpPaperExits(state, decisions) {
       exitReason = `scalp take-profit ${config.scalp.takeProfitPct}%`;
     } else if (pnlPct <= -config.scalp.stopLossPct) {
       exitReason = `scalp stop-loss ${config.scalp.stopLossPct}%`;
+    } else if (config.scalp.forceFlatAtSessionEnd && !isScalpSessionOpen()) {
+      exitReason = `shiryaev session end ${config.scalp.sessionGmtEndHour}:00 GMT flat`;
     } else if (scalp.action === 'SELL') {
       exitReason = 'scalp signal exit';
     }
@@ -3791,11 +4017,26 @@ function applyScalpPaperDecision(state, decision) {
   }
 
   const blocks = [];
-  if (scalp.trend15m !== 'up') {
-    blocks.push('15m trend not up');
+  if (!isScalpSessionOpen()) {
+    blocks.push(`outside Shiryaev session ${config.scalp.sessionGmtStartHour}:00–${config.scalp.sessionGmtEndHour}:00 GMT`);
+  }
+  if (scalp.higherTfTrend === 'down') {
+    blocks.push('higher-TF trend down');
   }
   if (!scalp.setupReady) {
-    blocks.push('scalp setup not ready');
+    blocks.push('Shiryaev scalp setup not ready');
+  }
+  if (!(scalp.bounce && scalp.bounce.long)) {
+    blocks.push('no bounce signal');
+  }
+
+  const dayKey = new Date().toISOString().slice(0, 10);
+  state.scalpDaily = state.scalpDaily || { date: null, opens: 0 };
+  if (state.scalpDaily.date !== dayKey) {
+    state.scalpDaily = { date: dayKey, opens: 0 };
+  }
+  if (state.scalpDaily.opens >= config.scalp.maxDailyOpens) {
+    blocks.push(`daily scalp cap reached (${config.scalp.maxDailyOpens})`);
   }
 
   const openScalps = Object.values(positions).filter((position) => position.strategy === 'scalp').length;
@@ -3876,7 +4117,15 @@ function applyScalpPaperDecision(state, decision) {
   };
   state.cashUsd = round((state.cashUsd || 0) - positionUsd - feeUsd, 4);
   state.stats.opened += 1;
-  return paperEvent('SCALP_OPEN', decision, price, { qty, positionUsd, feeUsd, scalp });
+  state.scalpDaily.opens += 1;
+  return paperEvent('SCALP_OPEN', decision, price, {
+    qty,
+    positionUsd,
+    feeUsd,
+    scalp,
+    method: 'shiryaev_conservative',
+    dailyOpens: state.scalpDaily.opens
+  });
 }
 
 function paperEvent(type, decision, price, extra = {}) {
