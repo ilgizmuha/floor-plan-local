@@ -4794,15 +4794,24 @@ async function runBacktestReport(cliArgs = {}) {
   const mode = String(cliArgs.mode || config.backtest.mode || 'rules').toLowerCase();
   const symbols = splitList(cliArgs.symbols || config.backtest.symbols.join(','));
   const interval = String(cliArgs.interval || config.backtest.interval);
-  const candleLimit = numberArg(cliArgs.limit || cliArgs.candles, config.backtest.candleLimit);
+  const days = numberArg(cliArgs.days, 0);
   const warmupBars = numberArg(cliArgs.warmup, config.backtest.warmupBars);
   const windowBars = numberArg(cliArgs.window, config.backtest.windowBars);
   const startBalanceUsd = numberArg(cliArgs.startBalance, config.backtest.startBalanceUsd);
   const maxPositionUsd = numberArg(cliArgs.maxPosition, config.backtest.maxPositionUsd);
   const minConfidence = numberArg(cliArgs.minConfidence, config.backtest.minConfidence);
   const feeRate = numberArg(cliArgs.fee, config.backtest.feeRate);
+  const intervalMinutes = Number(interval) || 15;
+  const daysCandleLimit = days > 0
+    ? Math.ceil((days * 24 * 60) / intervalMinutes) + Math.max(warmupBars, 60) + 20
+    : 0;
+  const candleLimit = numberArg(
+    cliArgs.limit || cliArgs.candles,
+    daysCandleLimit || config.backtest.candleLimit
+  );
   const options = {
     interval,
+    days: days || null,
     candleLimit,
     warmupBars,
     windowBars,
@@ -4816,6 +4825,10 @@ async function runBacktestReport(cliArgs = {}) {
     updatedAt: new Date().toISOString(),
     mode,
     options,
+    venues: {
+      bybit: symbols.filter((symbol) => !isFinamSymbol(symbol)),
+      finam: symbols.filter((symbol) => isFinamSymbol(symbol))
+    },
     note: modeNote(mode),
     runs: {}
   };
@@ -4853,22 +4866,39 @@ function modeNote(mode) {
 
 async function backtestRulesMode(symbols, options, fixturePath = null) {
   const bySymbol = {};
+  const errors = {};
   const fixture = fixturePath ? readJsonFile(fixturePath) : null;
   for (const symbol of symbols) {
-    let candles;
-    if (fixture && Array.isArray(fixture[symbol])) {
-      candles = fixture[symbol];
-    } else if (fixture && Array.isArray(fixture.candles) && symbols.length === 1) {
-      candles = fixture.candles;
-    } else {
-      candles = await fetchBacktestCandles(symbol, options.interval, options.candleLimit);
+    try {
+      let candles;
+      if (fixture && Array.isArray(fixture[symbol])) {
+        candles = fixture[symbol];
+      } else if (fixture && Array.isArray(fixture.candles) && symbols.length === 1) {
+        candles = fixture.candles;
+      } else {
+        candles = await fetchBacktestCandles(symbol, options.interval, options.candleLimit, options);
+      }
+      bySymbol[symbol] = backtestSymbolOnCandles(symbol, candles, options);
+    } catch (error) {
+      errors[symbol] = error.message;
+      console.error(new Date().toISOString(), `Backtest ${symbol}:`, error.message);
     }
-    bySymbol[symbol] = backtestSymbolOnCandles(symbol, candles, options);
   }
+  const bybitSymbols = Object.fromEntries(
+    Object.entries(bySymbol).filter(([, item]) => item.provider !== 'finam')
+  );
+  const finamSymbols = Object.fromEntries(
+    Object.entries(bySymbol).filter(([, item]) => item.provider === 'finam')
+  );
   return {
     kind: 'rules',
     symbols: bySymbol,
+    errors,
     portfolio: aggregateBacktestPortfolio(bySymbol, options.startBalanceUsd),
+    portfolioByVenue: {
+      bybit: aggregateBacktestPortfolio(bybitSymbols, options.startBalanceUsd),
+      finam: aggregateBacktestPortfolio(finamSymbols, options.startBalanceUsd)
+    },
     fixture: fixturePath || null
   };
 }
@@ -5100,31 +5130,120 @@ function summarizeAiCoverage(enriched) {
   };
 }
 
-async function fetchBacktestCandles(symbol, interval, limit) {
+function isFinamSymbol(symbol) {
+  return String(symbol || '').includes('@');
+}
+
+function intervalToFinamTimeframe(interval) {
+  const raw = String(interval || '15').toUpperCase();
+  if (raw.startsWith('TIME_FRAME_')) {
+    return raw;
+  }
+  const map = {
+    1: 'TIME_FRAME_M1',
+    5: 'TIME_FRAME_M5',
+    15: 'TIME_FRAME_M15',
+    30: 'TIME_FRAME_M30',
+    60: 'TIME_FRAME_H1',
+    240: 'TIME_FRAME_H4',
+    D: 'TIME_FRAME_D',
+    '1D': 'TIME_FRAME_D'
+  };
+  return map[raw] || map[Number(raw)] || 'TIME_FRAME_M15';
+}
+
+async function fetchBacktestCandles(symbol, interval, limit, options = {}) {
+  if (isFinamSymbol(symbol)) {
+    return fetchFinamBacktestCandles(symbol, interval, limit, options);
+  }
+  return fetchBybitBacktestCandles(symbol, interval, limit);
+}
+
+async function fetchBybitBacktestCandles(symbol, interval, limit) {
   const category = marketCategory(symbol);
-  const capped = Math.min(Math.max(Number(limit) || 100, 50), 1000);
-  const data = await bybitPublic('/v5/market/kline', {
-    category,
-    symbol,
-    interval: String(interval),
-    limit: String(capped)
-  });
-  const candles = parseKlineRows(data);
+  const needed = Math.min(Math.max(Number(limit) || 100, 50), 5000);
+  const byStart = new Map();
+  let endMs = null;
+
+  while (byStart.size < needed) {
+    const batchLimit = Math.min(1000, needed - byStart.size);
+    const query = {
+      category,
+      symbol,
+      interval: String(interval),
+      limit: String(batchLimit)
+    };
+    if (endMs != null) {
+      query.end = String(endMs);
+    }
+    const data = await bybitPublic('/v5/market/kline', query);
+    const batch = parseKlineRows(data);
+    if (!batch.length) {
+      break;
+    }
+    for (const candle of batch) {
+      byStart.set(candle.start, candle);
+    }
+    const oldest = batch[0].start;
+    const nextEnd = oldest - 1;
+    if (endMs != null && nextEnd >= endMs) {
+      break;
+    }
+    endMs = nextEnd;
+    if (batch.length < batchLimit) {
+      break;
+    }
+  }
+
+  const candles = [...byStart.values()].sort((a, b) => a.start - b.start);
   if (candles.length < 80) {
     throw new Error(`Not enough klines for backtest ${symbol}: got ${candles.length}`);
   }
-  return candles;
+  return candles.slice(-needed);
+}
+
+async function fetchFinamBacktestCandles(symbol, interval, limit, options = {}) {
+  if (!config.finam.enabled) {
+    throw new Error(`Finam disabled; cannot backtest ${symbol}`);
+  }
+  if (!config.finam.secret) {
+    throw new Error('FINAM_SECRET_TOKEN is missing for Finam backtest');
+  }
+  const client = getFinamClient();
+  const timeframe = intervalToFinamTimeframe(interval);
+  const intervalMinutes = Number(interval) || 15;
+  const days = Number(options.days) > 0
+    ? Number(options.days)
+    : Math.max(7, Math.ceil(((Number(limit) || 500) * intervalMinutes) / (24 * 60)));
+  // Extra calendar days help MOEX/FX session gaps and warmup bars.
+  const lookbackDays = Math.max(days + 3, 10);
+  const end = new Date();
+  const start = new Date(end.getTime() - lookbackDays * 24 * 3600 * 1000);
+  const payload = await client.bars(symbol, {
+    timeframe,
+    startTime: start.toISOString(),
+    endTime: end.toISOString()
+  });
+  const candles = barsToCandles(payload);
+  const minBars = isFinamSymbol(symbol) ? 50 : 80;
+  if (candles.length < minBars) {
+    throw new Error(`Not enough Finam bars for backtest ${symbol}: got ${candles.length}`);
+  }
+  const needed = Math.min(Math.max(Number(limit) || candles.length, 50), candles.length);
+  return candles.slice(-needed);
 }
 
 function backtestSymbolOnCandles(symbol, candles, options) {
-  const warmup = Math.max(55, Number(options.warmupBars) || 60);
-  const windowBars = Math.max(warmup, Number(options.windowBars) || 96);
+  const requestedWarmup = Math.max(40, Number(options.warmupBars) || 60);
+  const warmup = Math.min(requestedWarmup, Math.max(30, candles.length - 25));
+  const windowBars = Math.min(Math.max(warmup, Number(options.windowBars) || 96), candles.length);
   const decisions = [];
-  const category = marketCategory(symbol);
+  const provider = isFinamSymbol(symbol) ? 'finam' : 'bybit';
+  const category = provider === 'finam' ? 'finam' : marketCategory(symbol);
   const assetClass = marketAssetClass(symbol);
   const profilesDoc = strategyEngine.loadProfiles();
   const calibrationDoc = strategyEngine.loadCalibration();
-  const bundle = strategyEngine.resolveProfilesForMarket({ symbol, provider: 'bybit', assetClass }, profilesDoc);
+  const bundle = strategyEngine.resolveProfilesForMarket({ symbol, provider, assetClass }, profilesDoc);
   const profile = bundle.primary;
   const profileId = bundle.primaryId;
   const calibrationEntry = strategyEngine.getCalibratedThresholds(symbol, profileId, calibrationDoc);
@@ -5138,7 +5257,7 @@ function backtestSymbolOnCandles(symbol, candles, options) {
     const price24hAgo = window[window.length - lookback24h].close;
     const market = assembleMarketFromCandles({
       symbol,
-      provider: 'bybit',
+      provider,
       category,
       assetClass,
       lastPrice: last.close,
@@ -5219,7 +5338,8 @@ function backtestSymbolOnCandles(symbol, candles, options) {
   });
   return {
     symbol,
-    source: 'bybit_klines',
+    provider,
+    source: provider === 'finam' ? 'finam_bars' : 'bybit_klines',
     interval: String(options.interval),
     strategyProfile: profileId,
     calibration: calibrationEntry,
@@ -5238,10 +5358,11 @@ function buildHistoricalSignalRows(symbol, candles, startIndex, endIndex, option
   const warmup = Math.max(55, Number(options.warmupBars) || 60);
   const windowBars = Math.max(warmup, Number(options.windowBars) || 96);
   const rows = [];
-  const category = marketCategory(symbol);
+  const provider = isFinamSymbol(symbol) ? 'finam' : 'bybit';
+  const category = provider === 'finam' ? 'finam' : marketCategory(symbol);
   const assetClass = marketAssetClass(symbol);
   const profilesDoc = strategyEngine.loadProfiles();
-  const bundle = strategyEngine.resolveProfilesForMarket({ symbol, provider: 'bybit', assetClass }, profilesDoc);
+  const bundle = strategyEngine.resolveProfilesForMarket({ symbol, provider, assetClass }, profilesDoc);
   const profile = bundle.primary;
   const profileId = bundle.primaryId;
   const from = Math.max(startIndex, warmup);
@@ -5256,7 +5377,7 @@ function buildHistoricalSignalRows(symbol, candles, startIndex, endIndex, option
     const price24hAgo = window[window.length - lookback24h].close;
     const market = assembleMarketFromCandles({
       symbol,
-      provider: 'bybit',
+      provider,
       category,
       assetClass,
       lastPrice: last.close,
@@ -5291,7 +5412,7 @@ async function backtestWalkForwardMode(symbols, options, fixturePath = null) {
     if (fixture && Array.isArray(fixture[symbol])) {
       candles = fixture[symbol];
     } else {
-      candles = await fetchBacktestCandles(symbol, options.interval, options.candleLimit);
+      candles = await fetchBacktestCandles(symbol, options.interval, options.candleLimit, options);
     }
     const segments = strategyEngine.splitWalkForwardIndices(candles.length, folds, options.warmupBars);
     const foldReports = [];
@@ -5630,11 +5751,30 @@ function aggregateBacktestPortfolio(bySymbol, startBalanceUsd) {
 }
 
 function summarizeBacktestReport(report) {
-  const summary = { modes: Object.keys(report.runs || {}) };
+  const summary = {
+    modes: Object.keys(report.runs || {}),
+    days: report.options && report.options.days,
+    venues: report.venues || null
+  };
   for (const [name, run] of Object.entries(report.runs || {})) {
     summary[name] = {
       symbols: Object.keys(run.symbols || {}),
-      portfolio: run.portfolio
+      errors: run.errors || {},
+      portfolio: run.portfolio,
+      portfolioByVenue: run.portfolioByVenue || null,
+      bySymbol: Object.fromEntries(
+        Object.entries(run.symbols || {}).map(([symbol, item]) => [symbol, {
+          provider: item.provider || (isFinamSymbol(symbol) ? 'finam' : 'bybit'),
+          from: item.from,
+          to: item.to,
+          bars: item.bars,
+          trades: item.paper && item.paper.trades,
+          winRatePct: item.paper && item.paper.winRatePct,
+          totalPnlPct: item.paper && item.paper.totalPnlPct,
+          maxDrawdownPct: item.paper && item.paper.maxDrawdownPct,
+          strategyProfile: item.strategyProfile
+        }])
+      )
     };
   }
   return summary;
@@ -5679,6 +5819,7 @@ function printHelp() {
   npm run brain:status
   npm run brain:backtest
   node scripts/trading-brain.js backtest --mode rules --symbols BTCUSDT,ETHUSDT --limit 500
+  node scripts/trading-brain.js backtest --mode rules --days 7 --interval 15 --symbols BTCUSDT,ETHUSDT,SBER@MISX,ROSN@MISX
   node scripts/trading-brain.js backtest --mode ai --symbols BTCUSDT,ETHUSDT,SOLUSDT
   node scripts/trading-brain.js backtest --mode all
   node scripts/trading-brain.js loop
