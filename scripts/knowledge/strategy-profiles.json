@@ -126,7 +126,7 @@
       "providers": ["finam"],
       "accountRole": "day",
       "assetClasses": ["futures", "forex"],
-      "minConfidence": 68,
+      "minConfidence": 75,
       "sellThreshold": 40,
       "ensembleWeights": {
         "technical": 0.25,
@@ -139,16 +139,16 @@
       "regimeProfile": "scalp",
       "aiMode": "confirm_only",
       "trading": {
-        "minConfidence": 68,
-        "minSellConfidence": 45,
-        "maxPositionRub": 300,
-        "maxOpenPositions": 2,
+        "minConfidence": 75,
+        "minSellConfidence": 55,
+        "maxPositionRub": 250,
+        "maxOpenPositions": 1,
         "orderType": "LIMIT",
         "timeInForce": "TIME_IN_FORCE_DAY",
         "allowSellToClose": true,
         "allowOpenShort": false,
-        "takeProfitPct": 0.25,
-        "stopLossPct": 0.15
+        "takeProfitPct": 0.35,
+        "stopLossPct": 0.22
       }
     }
   },

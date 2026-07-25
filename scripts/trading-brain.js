@@ -208,17 +208,17 @@ const config = {
       },
       scalp: {
         enabled: env('FINAM_SCALP_ENABLED', 'true') === 'true',
-        minConfidence: numberEnv('FINAM_SCALP_MIN_CONFIDENCE', 68),
-        minSellConfidence: numberEnv('FINAM_SCALP_MIN_SELL_CONFIDENCE', 45),
-        maxPositionRub: numberEnv('FINAM_SCALP_MAX_POSITION_RUB', 300),
-        maxOpenPositions: numberEnv('FINAM_SCALP_MAX_OPEN_POSITIONS', 2),
+        minConfidence: numberEnv('FINAM_SCALP_MIN_CONFIDENCE', 75),
+        minSellConfidence: numberEnv('FINAM_SCALP_MIN_SELL_CONFIDENCE', 55),
+        maxPositionRub: numberEnv('FINAM_SCALP_MAX_POSITION_RUB', 250),
+        maxOpenPositions: numberEnv('FINAM_SCALP_MAX_OPEN_POSITIONS', 1),
         orderType: env('FINAM_SCALP_ORDER_TYPE', 'LIMIT'),
         timeInForce: env('FINAM_SCALP_TIME_IN_FORCE', 'TIME_IN_FORCE_DAY'),
         allowSellToClose: true,
         allowOpenShort: false,
-        takeProfitPct: numberEnv('FINAM_SCALP_TAKE_PROFIT_PCT', 0.25),
-        stopLossPct: numberEnv('FINAM_SCALP_STOP_LOSS_PCT', 0.15),
-        maxSpreadPct: numberEnv('FINAM_SCALP_MAX_SPREAD_PCT', 0.06)
+        takeProfitPct: numberEnv('FINAM_SCALP_TAKE_PROFIT_PCT', 0.35),
+        stopLossPct: numberEnv('FINAM_SCALP_STOP_LOSS_PCT', 0.22),
+        maxSpreadPct: numberEnv('FINAM_SCALP_MAX_SPREAD_PCT', 0.05)
       }
     }
   },
