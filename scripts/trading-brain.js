@@ -5285,19 +5285,25 @@ async function fetchFinamBacktestCandles(symbol, interval, limit, options = {}) 
   const client = getFinamClient();
   const timeframe = intervalToFinamTimeframe(interval);
   const { startMs, endMs } = resolveBacktestFetchWindow(interval, limit, options);
-  // Extra calendar buffer helps MOEX/FX session gaps.
-  const start = new Date(startMs - 3 * 24 * 3600 * 1000);
-  const end = new Date(endMs);
-  const payload = await client.bars(symbol, {
-    timeframe,
-    startTime: start.toISOString(),
-    endTime: end.toISOString()
-  });
-  const candles = barsToCandles(payload).filter((candle) => (
-    candle.start >= startMs - 3 * 24 * 3600 * 1000 && candle.start <= endMs
-  ));
-  const minBars = 50;
-  if (candles.length < minBars) {
+  // Finam rejects M15 ranges much longer than ~30d — fetch in chunks.
+  const chunkMs = 25 * 24 * 3600 * 1000;
+  const fetchStartMs = startMs - (2 * 24 * 3600 * 1000);
+  const byStart = new Map();
+  for (let cursor = fetchStartMs; cursor <= endMs; cursor += chunkMs) {
+    const chunkEnd = Math.min(cursor + chunkMs - 1, endMs);
+    const payload = await client.bars(symbol, {
+      timeframe,
+      startTime: new Date(cursor).toISOString(),
+      endTime: new Date(chunkEnd).toISOString()
+    });
+    for (const candle of barsToCandles(payload)) {
+      if (candle.start >= fetchStartMs && candle.start <= endMs) {
+        byStart.set(candle.start, candle);
+      }
+    }
+  }
+  const candles = [...byStart.values()].sort((a, b) => a.start - b.start);
+  if (candles.length < 50) {
     throw new Error(`Not enough Finam bars for backtest ${symbol}: got ${candles.length}`);
   }
   return candles;
