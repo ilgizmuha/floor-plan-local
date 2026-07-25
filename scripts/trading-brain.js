@@ -87,12 +87,22 @@ const config = {
     enabled: env('SCALP_ENABLED', 'true') === 'true',
     interval: env('SCALP_INTERVAL', '5'),
     klineLimit: numberEnv('SCALP_KLINE_LIMIT', 120),
-    minConfidence: numberEnv('SCALP_MIN_CONFIDENCE', 62),
-    takeProfitPct: numberEnv('SCALP_TAKE_PROFIT_PCT', 0.35),
-    stopLossPct: numberEnv('SCALP_STOP_LOSS_PCT', 0.18),
-    maxSpreadPct: numberEnv('SCALP_MAX_SPREAD_PCT', 0.08),
+    minConfidence: numberEnv('SCALP_MIN_CONFIDENCE', 74),
+    takeProfitPct: numberEnv('SCALP_TAKE_PROFIT_PCT', 0.45),
+    stopLossPct: numberEnv('SCALP_STOP_LOSS_PCT', 0.28),
+    maxSpreadPct: numberEnv('SCALP_MAX_SPREAD_PCT', 0.05),
     paperEnabled: env('SCALP_PAPER_ENABLED', 'true') === 'true',
-    maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 15),
+    maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 12),
+    maxOpenPositions: numberEnv('SCALP_MAX_OPEN_POSITIONS', 1),
+    cooldownMinutes: numberEnv('SCALP_COOLDOWN_MINUTES', 45),
+    lossCooldownMinutes: numberEnv('SCALP_LOSS_COOLDOWN_MINUTES', 90),
+    maxConsecutiveLosses: numberEnv('SCALP_MAX_CONSECUTIVE_LOSSES', 2),
+    consecutiveLossCooldownMinutes: numberEnv('SCALP_CONSECUTIVE_LOSS_COOLDOWN_MINUTES', 180),
+    minVolumeRatio: numberEnv('SCALP_MIN_VOLUME_RATIO', 1.15),
+    requireAiOk: env('SCALP_REQUIRE_AI_OK', 'true') === 'true',
+    requireCursorOk: env('SCALP_REQUIRE_CURSOR_OK', 'true') === 'true',
+    blockOnAiVeto: env('SCALP_BLOCK_ON_AI_VETO', 'true') === 'true',
+    requireSwingNotBearish: env('SCALP_REQUIRE_SWING_NOT_BEARISH', 'true') === 'true',
     symbols: splitList(env('SCALP_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT')),
     knowledgePath: env('SCALP_KNOWLEDGE_PATH', path.join(__dirname, 'knowledge', 'scalping-kb.json')),
     feePolicyPath: env('FEE_POLICY_PATH', path.join(__dirname, 'knowledge', 'fee-policy.json')),
@@ -926,15 +936,22 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     reasons.push('Macro greed filter: avoid aggressive scalp long');
   }
 
-  // Young: incomplete setup → force WAIT bias
+  // Young: incomplete setup → force WAIT bias (tightened volume/EMA filters)
   const setupReady = trend15m === 'up'
     && scalp.impulseUp
-    && scalp.volumeRatio >= 0.95
-    && (scalp.distanceToEma21Pct <= 0.4 || pivots.nearS1 || pivots.nearPp);
+    && scalp.volumeRatio >= config.scalp.minVolumeRatio
+    && scalp.rsi7 >= 40
+    && scalp.rsi7 <= 62
+    && (scalp.distanceToEma21Pct <= 0.3 || pivots.nearS1 || pivots.nearPp);
   if (!setupReady && score > 0) {
-    score -= 4;
+    score -= 8;
     reasons.push('Young: incomplete short-term setup — reduce conviction');
     appliedRules.push('wait_setup');
+  }
+  if (scalp.volumeRatio < config.scalp.minVolumeRatio) {
+    score -= 6;
+    reasons.push(`Volume ratio ${scalp.volumeRatio} below scalp min ${config.scalp.minVolumeRatio}`);
+    appliedRules.push('min_volume');
   }
 
   const confidence = clamp(Math.round(50 + score), 0, 100);
@@ -946,7 +963,7 @@ function analyzeScalpStrategy(market, fearGreed = {}, regime = {}) {
     reasons.push('Young/Borovkov: confidence ok but setup incomplete — WAIT');
   } else if (trend15m === 'down' && confidence <= 38) {
     action = 'SELL';
-  } else if (confidence >= 52) {
+  } else if (confidence >= 58) {
     action = 'HOLD';
   }
 
@@ -3509,10 +3526,20 @@ function updatePaperState(decisions) {
       symbols: config.scalp.symbols,
       minConfidence: config.scalp.minConfidence,
       maxPositionUsd: config.scalp.maxPositionUsd,
+      maxOpenPositions: config.scalp.maxOpenPositions,
       takeProfitPct: config.scalp.takeProfitPct,
-      stopLossPct: config.scalp.stopLossPct
+      stopLossPct: config.scalp.stopLossPct,
+      cooldownMinutes: config.scalp.cooldownMinutes,
+      lossCooldownMinutes: config.scalp.lossCooldownMinutes,
+      maxConsecutiveLosses: config.scalp.maxConsecutiveLosses,
+      minVolumeRatio: config.scalp.minVolumeRatio,
+      requireAiOk: config.scalp.requireAiOk,
+      requireCursorOk: config.scalp.requireCursorOk,
+      blockOnAiVeto: config.scalp.blockOnAiVeto,
+      requireSwingNotBearish: config.scalp.requireSwingNotBearish
     }
   };
+  state.scalpMeta = state.scalpMeta || {};
 
   const events = [];
   applyScalpPaperExits(state, decisions).forEach((event) => events.push(event));
@@ -3682,6 +3709,12 @@ function applyScalpPaperExits(state, decisions) {
       state.stats.losses += 1;
     }
     delete state.positions[symbol];
+    recordScalpCooldown(state, symbol, {
+      closedAt: new Date().toISOString(),
+      reason: exitReason,
+      pnlUsd,
+      loss: pnlUsd < 0
+    });
     events.push(paperEvent('SCALP_CLOSE', decision, price, {
       qty: position.qty,
       grossUsd,
@@ -3695,6 +3728,40 @@ function applyScalpPaperExits(state, decisions) {
   return events;
 }
 
+function recordScalpCooldown(state, symbol, { closedAt, reason, pnlUsd, loss }) {
+  state.scalpMeta = state.scalpMeta || {};
+  const prev = state.scalpMeta[symbol] || {};
+  const consecutiveLosses = loss ? (Number(prev.consecutiveLosses) || 0) + 1 : 0;
+  let cooldownMinutes = config.scalp.cooldownMinutes;
+  if (loss) {
+    cooldownMinutes = Math.max(cooldownMinutes, config.scalp.lossCooldownMinutes);
+  }
+  if (consecutiveLosses >= config.scalp.maxConsecutiveLosses) {
+    cooldownMinutes = Math.max(cooldownMinutes, config.scalp.consecutiveLossCooldownMinutes);
+  }
+  const closedMs = Date.parse(closedAt) || Date.now();
+  state.scalpMeta[symbol] = {
+    lastCloseAt: closedAt,
+    lastCloseReason: reason,
+    lastPnlUsd: round(pnlUsd, 4),
+    consecutiveLosses,
+    cooldownUntil: new Date(closedMs + cooldownMinutes * 60 * 1000).toISOString()
+  };
+}
+
+function getScalpCooldownBlock(state, symbol) {
+  const meta = (state.scalpMeta || {})[symbol];
+  if (!meta || !meta.cooldownUntil) {
+    return null;
+  }
+  const untilMs = Date.parse(meta.cooldownUntil);
+  if (!Number.isFinite(untilMs) || untilMs <= Date.now()) {
+    return null;
+  }
+  const minutesLeft = Math.ceil((untilMs - Date.now()) / 60000);
+  return `scalp cooldown ${minutesLeft}m (after ${meta.lastCloseReason || 'close'}, losses=${meta.consecutiveLosses || 0})`;
+}
+
 function applyScalpPaperDecision(state, decision) {
   if (!config.scalp.paperEnabled) {
     return null;
@@ -3703,8 +3770,11 @@ function applyScalpPaperDecision(state, decision) {
   const symbol = decision.symbol;
   const price = Number(decision.market && decision.market.lastPrice);
   const scalp = decision.scalpSignal || {};
+  const ai = decision.aiAnalyst || {};
+  const cursor = decision.cursorAnalyst || {};
   const positions = state.positions || {};
   state.positions = positions;
+  state.scalpMeta = state.scalpMeta || {};
 
   if (!price || !config.scalp.symbols.includes(symbol) || positions[symbol]) {
     return null;
@@ -3720,13 +3790,69 @@ function applyScalpPaperDecision(state, decision) {
     return null;
   }
 
+  const blocks = [];
   if (scalp.trend15m !== 'up') {
-    return paperEvent('SCALP_SKIP_BUY', decision, price, { blocks: ['15m trend not up'] });
+    blocks.push('15m trend not up');
+  }
+  if (!scalp.setupReady) {
+    blocks.push('scalp setup not ready');
   }
 
-  const orderBook = decision.market.orderBook || {};
+  const openScalps = Object.values(positions).filter((position) => position.strategy === 'scalp').length;
+  if (openScalps >= config.scalp.maxOpenPositions) {
+    blocks.push(`max open scalps reached (${config.scalp.maxOpenPositions})`);
+  }
+
+  const cooldownBlock = getScalpCooldownBlock(state, symbol);
+  if (cooldownBlock) {
+    blocks.push(cooldownBlock);
+  }
+
+  const orderBook = (decision.market && decision.market.orderBook) || {};
   if (orderBook.available && orderBook.spreadPct > config.scalp.maxSpreadPct) {
-    return paperEvent('SCALP_SKIP_BUY', decision, price, { blocks: ['spread too wide'] });
+    blocks.push('spread too wide');
+  }
+  if (orderBook.available && Number(orderBook.imbalance) < -0.12) {
+    blocks.push('order book sell pressure');
+  }
+
+  const scalpIndicators = (decision.market && decision.market.scalpIndicators) || {};
+  if (scalpIndicators.available && Number(scalpIndicators.volumeRatio) < config.scalp.minVolumeRatio) {
+    blocks.push(`volume ratio below ${config.scalp.minVolumeRatio}`);
+  }
+
+  if (config.scalp.requireSwingNotBearish) {
+    const finalAction = decision.finalAction;
+    if (finalAction === 'SELL' || finalAction === 'EXIT') {
+      blocks.push(`swing action is ${finalAction}`);
+    }
+  }
+
+  if (config.scalp.requireAiOk) {
+    if (ai.status !== 'ok') {
+      blocks.push(`DeepSeek not ok (${ai.status || 'missing'})`);
+    } else if (ai.action === 'SELL' || ai.action === 'EXIT') {
+      blocks.push(`DeepSeek action ${ai.action}`);
+    }
+  }
+  if (config.scalp.requireCursorOk) {
+    if (cursor.status !== 'ok') {
+      blocks.push(`Cursor not ok (${cursor.status || 'missing'})`);
+    } else if (cursor.action === 'SELL' || cursor.action === 'EXIT') {
+      blocks.push(`Cursor action ${cursor.action}`);
+    }
+  }
+  if (config.scalp.blockOnAiVeto) {
+    if (ai.veto || ai.verdict === 'veto') {
+      blocks.push('DeepSeek veto');
+    }
+    if (cursor.veto || cursor.verdict === 'veto') {
+      blocks.push('Cursor veto');
+    }
+  }
+
+  if (blocks.length) {
+    return paperEvent('SCALP_SKIP_BUY', decision, price, { blocks, scalp });
   }
 
   const positionUsd = Math.min(config.scalp.maxPositionUsd, state.cashUsd || 0);

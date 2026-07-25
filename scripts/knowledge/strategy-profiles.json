@@ -8,7 +8,7 @@
       "providers": ["bybit"],
       "assetClasses": ["crypto"],
       "symbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
-      "minConfidence": 62,
+      "minConfidence": 74,
       "sellThreshold": 38,
       "ensembleWeights": {
         "technical": 0.28,
