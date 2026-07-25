@@ -4789,12 +4789,51 @@ function withTimeout(promise, ms, message) {
   });
 }
 
+function parseBacktestRange(cliArgs = {}) {
+  const monthRaw = cliArgs.month ? String(cliArgs.month).trim() : '';
+  let fromIso = cliArgs.from ? String(cliArgs.from).trim() : '';
+  let toIso = cliArgs.to ? String(cliArgs.to).trim() : '';
+  if (monthRaw) {
+    const match = monthRaw.match(/^(\d{4})-(\d{2})$/);
+    if (!match) {
+      throw new Error(`Invalid --month ${monthRaw}. Use YYYY-MM (e.g. 2026-06).`);
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    fromIso = fromIso || `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    toIso = toIso || `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  }
+  if (!fromIso && !toIso) {
+    return { from: null, to: null, rangeStartMs: null, rangeEndMs: null, label: null };
+  }
+  const rangeStartMs = fromIso ? Date.parse(`${fromIso}T00:00:00.000Z`) : null;
+  const rangeEndMs = toIso ? Date.parse(`${toIso}T23:59:59.999Z`) : null;
+  if (fromIso && !Number.isFinite(rangeStartMs)) {
+    throw new Error(`Invalid --from date: ${fromIso}`);
+  }
+  if (toIso && !Number.isFinite(rangeEndMs)) {
+    throw new Error(`Invalid --to date: ${toIso}`);
+  }
+  if (rangeStartMs != null && rangeEndMs != null && rangeStartMs > rangeEndMs) {
+    throw new Error(`Backtest range start is after end: ${fromIso} > ${toIso}`);
+  }
+  return {
+    from: fromIso || null,
+    to: toIso || null,
+    rangeStartMs,
+    rangeEndMs,
+    label: monthRaw || `${fromIso || '?'}..${toIso || '?'}`
+  };
+}
+
 async function runBacktestReport(cliArgs = {}) {
   ensureDir(config.dataDir);
   const mode = String(cliArgs.mode || config.backtest.mode || 'rules').toLowerCase();
   const symbols = splitList(cliArgs.symbols || config.backtest.symbols.join(','));
   const interval = String(cliArgs.interval || config.backtest.interval);
   const days = numberArg(cliArgs.days, 0);
+  const range = parseBacktestRange(cliArgs);
   const warmupBars = numberArg(cliArgs.warmup, config.backtest.warmupBars);
   const windowBars = numberArg(cliArgs.window, config.backtest.windowBars);
   const startBalanceUsd = numberArg(cliArgs.startBalance, config.backtest.startBalanceUsd);
@@ -4802,8 +4841,12 @@ async function runBacktestReport(cliArgs = {}) {
   const minConfidence = numberArg(cliArgs.minConfidence, config.backtest.minConfidence);
   const feeRate = numberArg(cliArgs.fee, config.backtest.feeRate);
   const intervalMinutes = Number(interval) || 15;
-  const daysCandleLimit = days > 0
-    ? Math.ceil((days * 24 * 60) / intervalMinutes) + Math.max(warmupBars, 60) + 20
+  const rangeDays = range.rangeStartMs != null && range.rangeEndMs != null
+    ? Math.max(1, Math.ceil((range.rangeEndMs - range.rangeStartMs) / (24 * 3600 * 1000)) + 1)
+    : 0;
+  const effectiveDays = rangeDays || days;
+  const daysCandleLimit = effectiveDays > 0
+    ? Math.ceil((effectiveDays * 24 * 60) / intervalMinutes) + Math.max(warmupBars, 60) + 40
     : 0;
   const candleLimit = numberArg(
     cliArgs.limit || cliArgs.candles,
@@ -4811,7 +4854,13 @@ async function runBacktestReport(cliArgs = {}) {
   );
   const options = {
     interval,
-    days: days || null,
+    days: effectiveDays || null,
+    month: cliArgs.month ? String(cliArgs.month) : null,
+    from: range.from,
+    to: range.to,
+    rangeStartMs: range.rangeStartMs,
+    rangeEndMs: range.rangeEndMs,
+    rangeLabel: range.label,
     candleLimit,
     warmupBars,
     windowBars,
@@ -5156,14 +5205,34 @@ async function fetchBacktestCandles(symbol, interval, limit, options = {}) {
   if (isFinamSymbol(symbol)) {
     return fetchFinamBacktestCandles(symbol, interval, limit, options);
   }
-  return fetchBybitBacktestCandles(symbol, interval, limit);
+  return fetchBybitBacktestCandles(symbol, interval, limit, options);
 }
 
-async function fetchBybitBacktestCandles(symbol, interval, limit) {
+function resolveBacktestFetchWindow(interval, limit, options = {}) {
+  const intervalMinutes = Number(interval) || 15;
+  const warmupBars = Math.max(40, Number(options.warmupBars) || 60);
+  const warmupMs = warmupBars * intervalMinutes * 60 * 1000;
+  if (options.rangeStartMs != null || options.rangeEndMs != null) {
+    const endMs = options.rangeEndMs != null ? options.rangeEndMs : Date.now();
+    const startMs = options.rangeStartMs != null
+      ? options.rangeStartMs - warmupMs
+      : endMs - (Math.max(Number(options.days) || 30, 7) * 24 * 3600 * 1000) - warmupMs;
+    return { startMs, endMs };
+  }
+  const days = Number(options.days) > 0
+    ? Number(options.days)
+    : Math.max(7, Math.ceil(((Number(limit) || 500) * intervalMinutes) / (24 * 60)));
+  const endMs = Date.now();
+  const startMs = endMs - (days * 24 * 3600 * 1000) - warmupMs;
+  return { startMs, endMs };
+}
+
+async function fetchBybitBacktestCandles(symbol, interval, limit, options = {}) {
   const category = marketCategory(symbol);
-  const needed = Math.min(Math.max(Number(limit) || 100, 50), 5000);
+  const needed = Math.min(Math.max(Number(limit) || 100, 50), 8000);
+  const { startMs, endMs } = resolveBacktestFetchWindow(interval, limit, options);
   const byStart = new Map();
-  let endMs = null;
+  let cursorEnd = endMs;
 
   while (byStart.size < needed) {
     const batchLimit = Math.min(1000, needed - byStart.size);
@@ -5171,10 +5240,11 @@ async function fetchBybitBacktestCandles(symbol, interval, limit) {
       category,
       symbol,
       interval: String(interval),
-      limit: String(batchLimit)
+      limit: String(batchLimit),
+      end: String(cursorEnd)
     };
-    if (endMs != null) {
-      query.end = String(endMs);
+    if (Number.isFinite(startMs)) {
+      query.start = String(startMs);
     }
     const data = await bybitPublic('/v5/market/kline', query);
     const batch = parseKlineRows(data);
@@ -5182,14 +5252,17 @@ async function fetchBybitBacktestCandles(symbol, interval, limit) {
       break;
     }
     for (const candle of batch) {
+      if (candle.start < startMs || candle.start > endMs) {
+        continue;
+      }
       byStart.set(candle.start, candle);
     }
     const oldest = batch[0].start;
     const nextEnd = oldest - 1;
-    if (endMs != null && nextEnd >= endMs) {
+    if (nextEnd < startMs || nextEnd >= cursorEnd) {
       break;
     }
-    endMs = nextEnd;
+    cursorEnd = nextEnd;
     if (batch.length < batchLimit) {
       break;
     }
@@ -5199,7 +5272,7 @@ async function fetchBybitBacktestCandles(symbol, interval, limit) {
   if (candles.length < 80) {
     throw new Error(`Not enough klines for backtest ${symbol}: got ${candles.length}`);
   }
-  return candles.slice(-needed);
+  return candles;
 }
 
 async function fetchFinamBacktestCandles(symbol, interval, limit, options = {}) {
@@ -5211,26 +5284,23 @@ async function fetchFinamBacktestCandles(symbol, interval, limit, options = {}) 
   }
   const client = getFinamClient();
   const timeframe = intervalToFinamTimeframe(interval);
-  const intervalMinutes = Number(interval) || 15;
-  const days = Number(options.days) > 0
-    ? Number(options.days)
-    : Math.max(7, Math.ceil(((Number(limit) || 500) * intervalMinutes) / (24 * 60)));
-  // Extra calendar days help MOEX/FX session gaps and warmup bars.
-  const lookbackDays = Math.max(days + 3, 10);
-  const end = new Date();
-  const start = new Date(end.getTime() - lookbackDays * 24 * 3600 * 1000);
+  const { startMs, endMs } = resolveBacktestFetchWindow(interval, limit, options);
+  // Extra calendar buffer helps MOEX/FX session gaps.
+  const start = new Date(startMs - 3 * 24 * 3600 * 1000);
+  const end = new Date(endMs);
   const payload = await client.bars(symbol, {
     timeframe,
     startTime: start.toISOString(),
     endTime: end.toISOString()
   });
-  const candles = barsToCandles(payload);
-  const minBars = isFinamSymbol(symbol) ? 50 : 80;
+  const candles = barsToCandles(payload).filter((candle) => (
+    candle.start >= startMs - 3 * 24 * 3600 * 1000 && candle.start <= endMs
+  ));
+  const minBars = 50;
   if (candles.length < minBars) {
     throw new Error(`Not enough Finam bars for backtest ${symbol}: got ${candles.length}`);
   }
-  const needed = Math.min(Math.max(Number(limit) || candles.length, 50), candles.length);
-  return candles.slice(-needed);
+  return candles;
 }
 
 function backtestSymbolOnCandles(symbol, candles, options) {
@@ -5247,12 +5317,20 @@ function backtestSymbolOnCandles(symbol, candles, options) {
   const profile = bundle.primary;
   const profileId = bundle.primaryId;
   const calibrationEntry = strategyEngine.getCalibratedThresholds(symbol, profileId, calibrationDoc);
+  const rangeStartMs = Number.isFinite(options.rangeStartMs) ? options.rangeStartMs : null;
+  const rangeEndMs = Number.isFinite(options.rangeEndMs) ? options.rangeEndMs : null;
 
   for (let index = warmup; index < candles.length; index += 1) {
     const end = index + 1;
     const start = Math.max(0, end - windowBars);
     const window = candles.slice(start, end);
     const last = window[window.length - 1];
+    if (rangeStartMs != null && last.start < rangeStartMs) {
+      continue;
+    }
+    if (rangeEndMs != null && last.start > rangeEndMs) {
+      break;
+    }
     const lookback24h = Math.min(window.length, barsForApproxDay(options.interval));
     const price24hAgo = window[window.length - lookback24h].close;
     const market = assembleMarketFromCandles({
@@ -5754,6 +5832,9 @@ function summarizeBacktestReport(report) {
   const summary = {
     modes: Object.keys(report.runs || {}),
     days: report.options && report.options.days,
+    month: report.options && report.options.month,
+    from: report.options && report.options.from,
+    to: report.options && report.options.to,
     venues: report.venues || null
   };
   for (const [name, run] of Object.entries(report.runs || {})) {
@@ -5820,6 +5901,7 @@ function printHelp() {
   npm run brain:backtest
   node scripts/trading-brain.js backtest --mode rules --symbols BTCUSDT,ETHUSDT --limit 500
   node scripts/trading-brain.js backtest --mode rules --days 7 --interval 15 --symbols BTCUSDT,ETHUSDT,SBER@MISX,ROSN@MISX
+  node scripts/trading-brain.js backtest --mode rules --month 2026-06 --interval 15 --symbols BTCUSDT,ETHUSDT,SBER@MISX,ROSN@MISX
   node scripts/trading-brain.js backtest --mode ai --symbols BTCUSDT,ETHUSDT,SOLUSDT
   node scripts/trading-brain.js backtest --mode all
   node scripts/trading-brain.js loop
