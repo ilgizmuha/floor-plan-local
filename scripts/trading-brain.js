@@ -188,8 +188,8 @@ const config = {
     dayTimeframe: env('FINAM_DAY_TIMEFRAME', 'TIME_FRAME_M5'),
     scalpTimeframe: env('FINAM_SCALP_TIMEFRAME', 'TIME_FRAME_M5'),
     scalpHigherTf: env('FINAM_SCALP_HIGHER_TF', 'TIME_FRAME_H4'),
-    scalpBarLookbackHours: numberEnv('FINAM_SCALP_BAR_LOOKBACK_HOURS', 72),
-    scalpHigherTfLookbackHours: numberEnv('FINAM_SCALP_HIGHER_TF_LOOKBACK_HOURS', 480),
+    scalpBarLookbackHours: numberEnv('FINAM_SCALP_BAR_LOOKBACK_HOURS', 720),
+    scalpHigherTfLookbackHours: numberEnv('FINAM_SCALP_HIGHER_TF_LOOKBACK_HOURS', 720),
     barLookbackHours: numberEnv('FINAM_BAR_LOOKBACK_HOURS', 48),
     timeoutMs: numberEnv('FINAM_TIMEOUT_MS', 20000),
     aiEnabled: env('FINAM_AI_ENABLED', 'false') === 'true',
@@ -659,10 +659,12 @@ function parseKlineRows(klineData) {
 }
 
 function buildScalpIndicators(candles, options = {}) {
-  // Shiryaev needs EMA144 — require enough bars
-  if (!candles || candles.length < 150) {
-    return { available: false };
+  // Prefer 150+ bars for EMA144; allow moderate history (80+) with softer EMA stack
+  const minBars = Number(options.minBars) || 80;
+  if (!candles || candles.length < minBars) {
+    return { available: false, reason: `need >= ${minBars} bars, got ${candles ? candles.length : 0}` };
   }
+  const fullEmaStack = candles.length >= 150;
 
   const closes = candles.map((candle) => candle.close);
   const volumes = candles.map((candle) => candle.volume);
@@ -675,8 +677,10 @@ function buildScalpIndicators(candles, options = {}) {
   const ema9Values = emaSeries(closes, 9);
   const ema21Values = emaSeries(closes, 21);
   const ema34Values = emaSeries(closes, 34);
-  const ema72Values = emaSeries(closes, 72);
-  const ema144Values = emaSeries(closes, 144);
+  const ema72Values = emaSeries(closes, Math.min(72, Math.max(34, Math.floor(closes.length / 2))));
+  const ema144Values = fullEmaStack
+    ? emaSeries(closes, 144)
+    : emaSeries(closes, Math.min(96, Math.max(48, Math.floor(closes.length * 0.6))));
   const ema9 = ema9Values[ema9Values.length - 1];
   const ema21 = ema21Values[ema21Values.length - 1];
   const ema34 = ema34Values[ema34Values.length - 1];
@@ -779,6 +783,8 @@ function buildScalpIndicators(candles, options = {}) {
   return {
     available: true,
     method: 'shiryaev_conservative',
+    fullEmaStack,
+    barCount: candles.length,
     timeframe: `${config.scalp.interval}m`,
     ema9: round(ema9, 4),
     ema21: round(ema21, 4),
@@ -1007,7 +1013,18 @@ function loadFeePolicy() {
 }
 
 function isScalpFeeEligible(market) {
-  const assetClass = market.assetClass || marketAssetClass(market.symbol);
+  const assetClass = market.assetClass || marketAssetClass(market.symbol) || finamAssetClass(market.symbol);
+  // Finam day-account FX/futures scalp is explicitly allowed on RM43P
+  if (market.provider === 'finam') {
+    const route = market.preferredAccount || resolveFinamAccountForSymbol(market.symbol);
+    const listed = config.finam.scalpSymbols.includes(market.symbol);
+    if (route.role === 'day' && (listed || assetClass === 'forex' || assetClass === 'futures')) {
+      return {
+        eligible: true,
+        reason: 'Finam RM43P scalp fee gate ok (FX/futures day account)'
+      };
+    }
+  }
   const policy = loadFeePolicy();
   const allowedClasses = config.scalp.allowedAssetClasses.length
     ? config.scalp.allowedAssetClasses

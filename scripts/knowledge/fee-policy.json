@@ -5,10 +5,11 @@
   "scalp": {
     "allowedAssetClasses": ["crypto"],
     "allowedSymbols": ["BTCUSDT", "ETHUSDT", "SOLUSDT"],
+    "finamScalpSymbols": ["USD000UTSTOM@MISX", "CNYRUB_TOM@MISX"],
     "notes": [
       "Bybit linear/crypto liquid pairs — приемлемый round-trip для TP ~0.35%",
       "Не включать spot forex-прокси (USDTEUR/BTCEUR) — spot комиссия ~0.2% круг",
-      "Финам (когда подключим): скальп только фьючерсы РФ или FX мейкер ≥50 лотов"
+      "Finam RM43P: скальп FX USD000UTSTOM/CNYRUB_TOM по правилам Ширяева"
     ]
   },
   "longOnly": {
