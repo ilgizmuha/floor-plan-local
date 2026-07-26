@@ -216,15 +216,20 @@ const config = {
     },
     longAccountId: env('FINAM_LONG_ACCOUNT_ID', '1748987'),
     dayAccountId: env('FINAM_DAY_ACCOUNT_ID', '2076665'),
-    // Long/swing symbols → REXQ4. Equities / metals / US stocks.
+    // Long/swing symbols → REXQ4. Liquid MOEX blue chips + metals (affordable on small accounts).
     symbols: splitList(env(
       'FINAM_SYMBOLS',
-      'SBER@MISX,GAZP@MISX,LKOH@MISX,ROSN@MISX,GLDRUB_TOM@MISX,AAPL@XNGS,TSLA@XNGS'
+      [
+        'SBER@MISX', 'GAZP@MISX', 'LKOH@MISX', 'ROSN@MISX',
+        'VTBR@MISX', 'TATN@MISX', 'SNGS@MISX', 'ALRS@MISX', 'MTSS@MISX', 'MOEX@MISX',
+        'GMKN@MISX', 'NLMK@MISX', 'MAGN@MISX', 'CHMF@MISX', 'T@MISX', 'AFLT@MISX',
+        'VKCO@MISX', 'IRAO@MISX', 'SLVRUB_TOM@MISX', 'GLDRUB_TOM@MISX'
+      ].join(',')
     )),
-    // Day/intraday (+ Finam scalp secondary) → RM43P. FX / futures / maker-friendly.
+    // Day/intraday (+ Finam scalp secondary) → RM43P. FX / silver.
     daySymbols: splitList(env(
       'FINAM_DAY_SYMBOLS',
-      'USD000UTSTOM@MISX,CNYRUB_TOM@MISX'
+      'USD000UTSTOM@MISX,CNYRUB_TOM@MISX,SLVRUB_TOM@MISX'
     )),
     // Explicit Finam scalp list (subset of daySymbols). Empty = use daySymbols + scalp_finam profile when eligible.
     scalpSymbols: splitList(env('FINAM_SCALP_SYMBOLS', 'USD000UTSTOM@MISX,CNYRUB_TOM@MISX')),
@@ -234,7 +239,8 @@ const config = {
     scalpHigherTf: env('FINAM_SCALP_HIGHER_TF', 'TIME_FRAME_H4'),
     scalpBarLookbackHours: numberEnv('FINAM_SCALP_BAR_LOOKBACK_HOURS', 720),
     scalpHigherTfLookbackHours: numberEnv('FINAM_SCALP_HIGHER_TF_LOOKBACK_HOURS', 720),
-    barLookbackHours: numberEnv('FINAM_BAR_LOOKBACK_HOURS', 48),
+    // Weekend FX needs >48h or USD/CNY drop out with "not enough bars".
+    barLookbackHours: numberEnv('FINAM_BAR_LOOKBACK_HOURS', 168),
     timeoutMs: numberEnv('FINAM_TIMEOUT_MS', 20000),
     aiEnabled: env('FINAM_AI_ENABLED', 'false') === 'true',
     tradingEnabled: env('FINAM_TRADING_ENABLED', 'false') === 'true',
