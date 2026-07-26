@@ -41,7 +41,7 @@
       "aiMode": "confirm_only"
     },
     "swing_tradfi": {
-      "label": "Swing TradFi 15m",
+      "label": "Swing TradFi 15m (linear shorts OK)",
       "strategyType": "swing",
       "timeframe": "15m",
       "providers": ["bybit"],
@@ -55,7 +55,7 @@
         "sentiment": 0.05
       },
       "sentimentMode": "veto_only",
-      "longOnly": true,
+      "longOnly": false,
       "regimeProfile": "swing",
       "aiMode": "confirm_only"
     },

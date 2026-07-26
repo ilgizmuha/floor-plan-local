@@ -29,7 +29,11 @@ const config = {
   baseUrl: env('BYBIT_BASE_URL', 'https://api.bybit.com').replace(/\/+$/, ''),
   category: env('BRAIN_CATEGORY', 'spot'),
   symbols: splitList(env('BRAIN_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT,LINKUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT,USDTEUR,BTCEUR,ETHEUR')),
-  linearSymbols: new Set(splitList(env('BRAIN_LINEAR_SYMBOLS', 'XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT'))),
+  // Linear perps: shorts enabled here (crypto + metals/commodities). Spot stays long/close-only.
+  linearSymbols: new Set(splitList(env(
+    'BRAIN_LINEAR_SYMBOLS',
+    'BTCUSDT,ETHUSDT,SOLUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT'
+  ))),
   interval: env('BRAIN_INTERVAL', '15'),
   klineLimit: numberEnv('BRAIN_KLINE_LIMIT', 400),
   minConfidence: numberEnv('BRAIN_MIN_CONFIDENCE', 70),
@@ -37,9 +41,31 @@ const config = {
   maxPositionUsd: numberEnv('BRAIN_MAX_POSITION_USD', 20),
   maxDailyLossUsd: numberEnv('BRAIN_MAX_DAILY_LOSS_USD', 5),
   dataDir: env('BRAIN_DATA_DIR', path.join(process.cwd(), 'data')),
-  newsSources: splitList(env('BRAIN_NEWS_SOURCES', 'https://cointelegraph.com/rss,https://www.coindesk.com/arc/outboundfeeds/rss/')),
-  htmlNewsSources: splitList(env('BRAIN_HTML_NEWS_SOURCES', 'https://forklog.com/en/news-and-analysis/,https://t.me/s/forklogfeed')),
+  newsSources: splitList(env(
+    'BRAIN_NEWS_SOURCES',
+    [
+      'https://cointelegraph.com/rss',
+      'https://www.coindesk.com/arc/outboundfeeds/rss/'
+    ].join(',')
+  )),
+  htmlNewsSources: splitList(env(
+    'BRAIN_HTML_NEWS_SOURCES',
+    [
+      'https://forklog.com/en/news-and-analysis/',
+      'https://t.me/s/forklogfeed',
+      'https://cointelegraph.com/',
+      'https://www.coindesk.com/ru',
+      'https://www.coindesk.com/',
+      'https://github.com/DCGCoinDesk'
+    ].join(',')
+  )),
   newsLookbackHours: numberEnv('BRAIN_NEWS_LOOKBACK_HOURS', 12),
+  shorts: {
+    enabled: env('SHORTS_ENABLED', 'true') === 'true',
+    // Empty = all BRAIN_LINEAR_SYMBOLS. Finam equities stay long-only via profiles.
+    symbols: splitList(env('SHORT_SYMBOLS', '')),
+    minConfidence: numberEnv('SHORT_MIN_CONFIDENCE', 75)
+  },
   fearGreed: {
     enabled: env('FEAR_GREED_ENABLED', 'true') === 'true',
     url: env('FEAR_GREED_URL', 'https://api.alternative.me/fng/'),
@@ -501,7 +527,11 @@ async function runBrainCycle() {
       consensus,
       risk,
       qualityFeedback: getSymbolQualityFeedback(qualityFeedback, market.symbol),
-      finalAction: risk.allowed ? consensus.action : 'WAIT',
+      // Entries need risk.ok; SELL/EXIT still surface so paper can close longs or cover shorts.
+      // Short opens additionally require risk.blocks empty inside applyPaperDecision.
+      finalAction: risk.allowed
+        ? consensus.action
+        : (['SELL', 'EXIT', 'HOLD'].includes(consensus.action) ? consensus.action : 'WAIT'),
       dryRun: config.dryRun
     };
   }));
@@ -1369,7 +1399,7 @@ async function collectNews() {
       const items = parseRss(xml)
         .filter((item) => !item.timestamp || item.timestamp >= cutoff)
         .slice(0, 20)
-        .map((item) => ({ ...item, source }));
+        .map((item) => ({ ...item, source, sourceLabel: sourceLabel(source) }));
       allItems.push(...items);
     } catch (error) {
       sourceErrors[sourceLabel(source)] = error.message;
@@ -1377,20 +1407,38 @@ async function collectNews() {
   }
 
   for (const source of config.htmlNewsSources) {
+    const label = sourceLabel(source);
     try {
+      // GitHub org page is not a news feed — map DCGCoinDesk → CoinDesk RSS under that label.
+      if (/github\.com\/DCGCoinDesk/i.test(source)) {
+        const rssUrl = 'https://www.coindesk.com/arc/outboundfeeds/rss/';
+        const response = await fetch(rssUrl, { headers: { 'User-Agent': 'TradingBrain/1.0' } });
+        if (!response.ok) {
+          sourceErrors[label] = `HTTP ${response.status}`;
+          continue;
+        }
+        const xml = await response.text();
+        const items = parseRss(xml)
+          .filter((item) => !item.timestamp || item.timestamp >= cutoff)
+          .slice(0, 20)
+          .map((item) => ({ ...item, source, sourceLabel: label }));
+        allItems.push(...items);
+        continue;
+      }
+
       const response = await fetch(source, { headers: { 'User-Agent': 'TradingBrain/1.0' } });
       if (!response.ok) {
-        sourceErrors[sourceLabel(source)] = `HTTP ${response.status}`;
+        sourceErrors[label] = `HTTP ${response.status}`;
         continue;
       }
       const html = await response.text();
       const items = parseHtmlNews(html, source)
         .filter((item) => !item.timestamp || item.timestamp >= cutoff)
         .slice(0, 20)
-        .map((item) => ({ ...item, source, sourceLabel: sourceLabel(source) }));
+        .map((item) => ({ ...item, source, sourceLabel: label }));
       allItems.push(...items);
     } catch (error) {
-      sourceErrors[sourceLabel(source)] = error.message;
+      sourceErrors[label] = error.message;
     }
   }
 
@@ -1701,6 +1749,16 @@ function applyRegimeToSignal(signal, regime, market) {
   if (regime.regime === 'trend_up' && signal.action === 'BUY' && indicators.higherTfBias !== 'bearish') {
     next.confidence = clamp(next.confidence + 3, 0, 100);
     next.reasons = [...(signal.reasons || []), 'Regime gate (trend_up): trend-follow boost'];
+  }
+
+  if (
+    signal.action === 'SELL'
+    && symbolAllowsShort(market.symbol)
+    && regime.regime === 'trend_down'
+    && indicators.higherTfBias === 'bearish'
+  ) {
+    next.confidence = clamp(next.confidence + 4, 0, 100);
+    next.reasons = [...(signal.reasons || []), 'Regime gate (trend_down): short-follow boost'];
   }
 
   return next;
@@ -2125,6 +2183,9 @@ function buildAiMessages(market, news, signal, fearGreed = {}, strategyContext =
     'Analyze indicatorAnalysis, higherTfBias, recentCandles, regime, order book and derivatives first.',
     'Prefer capital protection and fewer high-quality trades (win-rate mindset >= 55%).',
     'If HTF is bearish or regime is trend_down/volatile, do not BUY.',
+    'On Bybit linear perps, SELL while flat can OPEN a short when HTF bearish / trend_down — that is the decline-edge path.',
+    'Do not short Finam equities; do not short into HTF bullish or trend_up.',
+    'EXIT covers any open side; BUY covers a short; SELL exits a long or opens a short when flat on linear.',
     'Cite concrete metric values and which KB rule applied.',
     'Return only valid JSON.',
     'JSON schema: {"verdict":"decide|confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short metric analysis","reasoning":"short reason","factors":["RSI ...","KB ..."]}.'
@@ -3553,19 +3614,69 @@ function swingGuardStopLossPct(assetClass) {
   return Number(config.swingGuard.stopLossPct) || 2.8;
 }
 
-function evaluateSwingExit({ action, confidence, pnlPct, exitStreak, assetClass, higherTfBias }) {
+function symbolAllowsShort(symbol) {
+  if (!config.shorts.enabled) {
+    return false;
+  }
+  if (String(symbol || '').includes('@')) {
+    // Finam equities/FX: no open-short path yet (close-only SELL).
+    return false;
+  }
+  if (config.shorts.symbols.length) {
+    return config.shorts.symbols.includes(symbol);
+  }
+  return config.linearSymbols.has(symbol);
+}
+
+function positionMarkPnl(position, price, feeRate = config.paper.feeRate) {
+  const qty = Number(position.qty) || 0;
+  const markUsd = qty * price;
+  const closeFeeUsd = markUsd * feeRate;
+  const side = position.side === 'short' ? 'short' : 'long';
+  let pnlUsd;
+  if (side === 'short') {
+    pnlUsd = (position.entryPrice * qty) - markUsd - closeFeeUsd - (position.openFeeUsd || 0);
+  } else {
+    pnlUsd = markUsd - closeFeeUsd - position.costUsd - (position.openFeeUsd || 0);
+  }
+  const basis = (position.costUsd || 0) + (position.openFeeUsd || 0);
+  const pnlPct = basis > 0 ? round((pnlUsd / basis) * 100, 4) : 0;
+  const equityValueUsd = side === 'short'
+    ? round((position.costUsd || 0) + ((position.entryPrice - price) * qty), 4)
+    : round(markUsd, 4);
+  return {
+    side,
+    markUsd: round(markUsd, 4),
+    closeFeeUsd: round(closeFeeUsd, 4),
+    pnlUsd: round(pnlUsd, 4),
+    pnlPct,
+    equityValueUsd
+  };
+}
+
+function isPositionExitAction(side, action) {
+  if (side === 'short') {
+    return action === 'BUY' || action === 'EXIT';
+  }
+  return action === 'SELL' || action === 'EXIT';
+}
+
+function evaluateSwingExit({ action, confidence, pnlPct, exitStreak, assetClass, higherTfBias, side = 'long' }) {
+  const exitAction = isPositionExitAction(side, action);
   if (!config.swingGuard.enabled) {
-    return { shouldExit: action === 'SELL' || action === 'EXIT', reason: 'legacy_signal_exit' };
+    return { shouldExit: exitAction, reason: 'legacy_signal_exit' };
   }
   const stopPct = swingGuardStopLossPct(assetClass);
   if (pnlPct <= -stopPct) {
     return { shouldExit: true, reason: `swing stop-loss ${stopPct}%` };
   }
-  if (higherTfBias === 'bearish' && pnlPct <= 0) {
+  if (side === 'long' && higherTfBias === 'bearish' && pnlPct <= 0) {
     return { shouldExit: true, reason: 'higher TF flipped bearish while flat/red' };
   }
-  const isExitAction = action === 'SELL' || action === 'EXIT';
-  if (!isExitAction) {
+  if (side === 'short' && higherTfBias === 'bullish' && pnlPct <= 0) {
+    return { shouldExit: true, reason: 'higher TF flipped bullish while flat/red short' };
+  }
+  if (!exitAction) {
     return { shouldExit: false, reason: null, exitStreak: 0 };
   }
   const nextStreak = (Number(exitStreak) || 0) + 1;
@@ -3590,18 +3701,26 @@ function evaluateSwingEntryBlocks({
   assetClass,
   higherTfBias,
   meta = {},
-  weeklyOpens = 0
+  weeklyOpens = 0,
+  side = 'long'
 }) {
   const blocks = [];
   if (!config.swingGuard.enabled) {
     return blocks;
   }
-  const effectiveMin = Math.max(Number(minConfidence) || 0, config.swingGuard.minConfidence || 0);
+  const shortFloor = side === 'short' ? (config.shorts.minConfidence || 0) : 0;
+  const effectiveMin = Math.max(Number(minConfidence) || 0, config.swingGuard.minConfidence || 0, shortFloor);
   if (confidence < effectiveMin) {
     blocks.push(`swing guard min confidence (${effectiveMin})`);
   }
-  if (config.swingGuard.requireHigherTfNotBearish && higherTfBias === 'bearish') {
+  if (side === 'long' && config.swingGuard.requireHigherTfNotBearish && higherTfBias === 'bearish') {
     blocks.push('swing guard: higher TF bearish');
+  }
+  if (side === 'short' && higherTfBias === 'bullish') {
+    blocks.push('swing guard: higher TF bullish blocks short');
+  }
+  if (side === 'short' && higherTfBias === 'neutral' && confidence < effectiveMin + 3) {
+    blocks.push('swing guard: short needs clearer HTF bearish bias');
   }
   if (weeklyOpens >= config.swingGuard.maxOpensPerWeek) {
     blocks.push(`swing guard: weekly open cap ${config.swingGuard.maxOpensPerWeek}`);
@@ -3620,8 +3739,7 @@ function evaluateSwingEntryBlocks({
       blocks.push(`swing guard reentry move ${round(movePct, 3)}%<${config.swingGuard.reentryMinMovePct}%`);
     }
   }
-  // Keep unused param referenced for future asset-class nuances.
-  if (assetClass === 'crypto' && higherTfBias === 'neutral' && confidence < effectiveMin + 3) {
+  if (side === 'long' && assetClass === 'crypto' && higherTfBias === 'neutral' && confidence < effectiveMin + 3) {
     blocks.push('swing guard: crypto needs clearer HTF or higher confidence');
   }
   return blocks;
@@ -3847,11 +3965,17 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
     blocks.push('live mode disabled for this brain stage');
   }
 
+  const shortEntry = signal.action === 'SELL' && symbolAllowsShort(market.symbol);
+  const shortMinConfidence = Math.max(minConfidence, config.shorts.minConfidence || 0);
+
   if (signal.confidence < minConfidence && signal.action === 'BUY') {
     blocks.push(`confidence below effective minimum (${minConfidence})`);
   }
+  if (shortEntry && signal.confidence < shortMinConfidence) {
+    blocks.push(`short confidence below minimum (${shortMinConfidence})`);
+  }
 
-  if (config.regime.enabled && regime.regime === 'volatile' && signal.action === 'BUY') {
+  if (config.regime.enabled && regime.regime === 'volatile' && (signal.action === 'BUY' || shortEntry)) {
     riskScore += 20;
     blocks.push('volatile regime blocks entries');
   }
@@ -3859,6 +3983,11 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
   if (config.regime.enabled && regime.regime === 'trend_down' && signal.action === 'BUY') {
     riskScore += 15;
     blocks.push('downtrend regime blocks swing BUY');
+  }
+
+  if (config.regime.enabled && regime.regime === 'trend_up' && shortEntry) {
+    riskScore += 15;
+    blocks.push('uptrend regime blocks swing SHORT');
   }
 
   if (
@@ -3869,6 +3998,11 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
   ) {
     riskScore += 20;
     blocks.push('higher TF bearish blocks swing BUY');
+  }
+
+  if (shortEntry && i.higherTfBias === 'bullish') {
+    riskScore += 20;
+    blocks.push('higher TF bullish blocks swing SHORT');
   }
 
   if (aiAnalyst.enabled && aiAnalyst.status !== 'disabled') {
@@ -3898,9 +4032,13 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
     riskScore += i.volatilityPct * 4;
   }
 
-  if (i.rsi14 > 76) {
+  if (signal.action === 'BUY' && i.rsi14 > 76) {
     riskScore += 18;
     blocks.push('RSI extreme');
+  }
+  if (shortEntry && i.rsi14 < 24) {
+    riskScore += 18;
+    blocks.push('RSI extreme for short');
   }
 
   if (market.change24hPct < -8 || market.change24hPct > 12) {
@@ -3930,6 +4068,9 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
     if (fearGreed.value >= 80 && signal.action === 'BUY') {
       riskScore += 15;
       blocks.push('extreme market greed');
+    } else if (fearGreed.value <= 15 && shortEntry) {
+      riskScore += 8;
+      blocks.push('extreme fear — short entry caution');
     } else if (fearGreed.value >= 75) {
       riskScore += 8;
     } else if (fearGreed.value <= 15) {
@@ -4075,7 +4216,68 @@ function parseHtmlNews(html, source) {
   if (source.includes('forklog.com')) {
     return parseForkLogHtml(html, source);
   }
+  if (source.includes('cointelegraph.com')) {
+    return parseCointelegraphHtml(html, source);
+  }
+  if (source.includes('coindesk.com')) {
+    return parseCoinDeskHtml(html, source);
+  }
   return parseGenericHtmlNews(html, source);
+}
+
+function parseCointelegraphHtml(html, source) {
+  const seen = new Set();
+  const items = [];
+  const linkPattern = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = linkPattern.exec(html)) && items.length < 40) {
+    const link = absolutizeUrl(decodeEntities(match[1]), source);
+    if (!/cointelegraph\.com\/(news|magazine|explained)\//i.test(link) || seen.has(link)) {
+      continue;
+    }
+    const title = decodeEntities(stripTags(match[2]));
+    if (!isUsefulNewsTitle(title)) {
+      continue;
+    }
+    seen.add(link);
+    items.push({
+      title,
+      description: '',
+      link,
+      publishedAt: '',
+      timestamp: 0
+    });
+  }
+  return items.length ? items : parseGenericHtmlNews(html, source);
+}
+
+function parseCoinDeskHtml(html, source) {
+  const seen = new Set();
+  const items = [];
+  const linkPattern = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = linkPattern.exec(html)) && items.length < 40) {
+    const link = absolutizeUrl(decodeEntities(match[1]), source);
+    if (
+      !/coindesk\.com\/(ru\/)?(markets|policy|business|tech|consensus|daybook|opinion|news|web3|finance)\//i.test(link)
+      || seen.has(link)
+    ) {
+      continue;
+    }
+    const title = decodeEntities(stripTags(match[2]));
+    if (!isUsefulNewsTitle(title)) {
+      continue;
+    }
+    seen.add(link);
+    items.push({
+      title,
+      description: '',
+      link,
+      publishedAt: '',
+      timestamp: 0
+    });
+  }
+  return items.length ? items : parseGenericHtmlNews(html, source);
 }
 
 function parseForkLogHtml(html, source) {
@@ -4144,11 +4346,13 @@ function scoreText(text) {
   const lower = text.toLowerCase();
   const positive = [
     'etf inflow', 'approval', 'approved', 'bullish', 'surge', 'rally', 'record high',
-    'accumulation', 'institutional', 'adoption', 'rate cut', 'easing', 'breakout'
+    'accumulation', 'institutional', 'adoption', 'rate cut', 'easing', 'breakout',
+    'приток', 'одобрение', 'рост', 'ралли', 'бычий', 'adoption'
   ];
   const negative = [
     'hack', 'exploit', 'lawsuit', 'sec charges', 'outflow', 'ban', 'banned',
-    'crackdown', 'liquidation', 'selloff', 'bearish', 'recession', 'rate hike'
+    'crackdown', 'liquidation', 'selloff', 'bearish', 'recession', 'rate hike',
+    'хак', 'запрет', 'обвал', 'иск', 'медвеж', 'распродажа', 'отток'
   ];
   const hits = [];
   let score = 0;
@@ -4316,10 +4520,15 @@ function applyPaperDecision(state, decision) {
     ? decision.market.indicators.higherTfBias
     : ((decision.regime && decision.regime.higherTfBias) || 'neutral');
 
-  if (!position && action === 'BUY') {
+  const openSide = !position && action === 'BUY'
+    ? 'long'
+    : (!position && action === 'SELL' && symbolAllowsShort(symbol) ? 'short' : null);
+
+  if (openSide) {
     const weekKey = isoWeekKey(decision.timestamp || new Date().toISOString());
     state.swingWeekly[symbol] = state.swingWeekly[symbol] || {};
     const weeklyOpens = Number(state.swingWeekly[symbol][weekKey] || 0);
+    const neededAiAction = openSide === 'short' ? 'SELL' : 'BUY';
     const blocks = [];
     if ((consensus.confidence || 0) < paperMinConfidence) {
       blocks.push(`paper confidence below minimum (${paperMinConfidence})`);
@@ -4328,16 +4537,16 @@ function applyPaperDecision(state, decision) {
       blocks.push('risk manager has blocks');
     }
     if (config.paper.requireDeepSeekOk && ai.status !== 'ok') {
-      blocks.push('DeepSeek not ok');
+      blocks.push('AI analyst not ok');
     }
     if (config.paper.requireCursorOk && cursor.status !== 'ok') {
       blocks.push('Cursor not ok');
     }
-    if (config.paper.requireDeepSeekOk && ai.action !== 'BUY') {
-      blocks.push('DeepSeek does not confirm BUY');
+    if (config.paper.requireDeepSeekOk && ai.action !== neededAiAction) {
+      blocks.push(`AI does not confirm ${neededAiAction}`);
     }
-    if (config.paper.requireCursorOk && cursor.action !== 'BUY') {
-      blocks.push('Cursor does not confirm BUY');
+    if (config.paper.requireCursorOk && cursor.action !== neededAiAction && !(openSide === 'short' && cursor.action === 'EXIT')) {
+      blocks.push(`Cursor does not confirm ${neededAiAction}`);
     }
     blocks.push(...evaluateSwingEntryBlocks({
       confidence: consensus.confidence || 0,
@@ -4347,21 +4556,23 @@ function applyPaperDecision(state, decision) {
       assetClass,
       higherTfBias,
       meta: state.swingMeta[symbol] || {},
-      weeklyOpens
+      weeklyOpens,
+      side: openSide
     }));
     if (blocks.length) {
-      return paperEvent('SKIP_BUY', decision, price, { blocks });
+      return paperEvent(openSide === 'short' ? 'SKIP_SHORT' : 'SKIP_BUY', decision, price, { blocks });
     }
 
     const positionUsd = Math.min(config.paper.maxPositionUsd, state.cashUsd || 0);
     if (positionUsd <= 0) {
-      return paperEvent('SKIP_BUY', decision, price, { blocks: ['no paper cash'] });
+      return paperEvent(openSide === 'short' ? 'SKIP_SHORT' : 'SKIP_BUY', decision, price, { blocks: ['no paper cash'] });
     }
 
     const feeUsd = positionUsd * config.paper.feeRate;
     const qty = positionUsd / price;
     positions[symbol] = {
       symbol,
+      side: openSide,
       qty,
       entryPrice: price,
       entryTime: decision.timestamp,
@@ -4375,22 +4586,26 @@ function applyPaperDecision(state, decision) {
     state.swingWeekly[symbol][weekKey] = weeklyOpens + 1;
     state.cashUsd = round((state.cashUsd || 0) - positionUsd - feeUsd, 4);
     state.stats.opened += 1;
-    return paperEvent('OPEN', decision, price, { qty, positionUsd, feeUsd });
+    return paperEvent(openSide === 'short' ? 'OPEN_SHORT' : 'OPEN', decision, price, {
+      qty,
+      positionUsd,
+      feeUsd,
+      side: openSide
+    });
   }
 
-  if (position && (action === 'SELL' || action === 'EXIT' || config.swingGuard.enabled)) {
-    const grossUsd = position.qty * price;
-    const closeFeeUsd = grossUsd * config.paper.feeRate;
-    const pnlPct = percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd);
+  if (position && (isPositionExitAction(position.side || 'long', action) || config.swingGuard.enabled)) {
+    const mark = positionMarkPnl(position, price, config.paper.feeRate);
     const exitEval = evaluateSwingExit({
       action,
       confidence: consensus.confidence || 0,
-      pnlPct,
+      pnlPct: mark.pnlPct,
       exitStreak: position.exitStreak || 0,
       assetClass: position.assetClass || assetClass,
-      higherTfBias
+      higherTfBias,
+      side: mark.side
     });
-    if (action === 'SELL' || action === 'EXIT') {
+    if (isPositionExitAction(mark.side, action)) {
       position.exitStreak = exitEval.exitStreak || 0;
     } else if (!exitEval.shouldExit) {
       position.exitStreak = 0;
@@ -4399,11 +4614,11 @@ function applyPaperDecision(state, decision) {
     if (!exitEval.shouldExit) {
       return null;
     }
-    const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
-    state.cashUsd = round((state.cashUsd || 0) + grossUsd - closeFeeUsd, 4);
-    state.realizedPnlUsd = round((state.realizedPnlUsd || 0) + pnlUsd, 4);
+    // Return margin + pnl: cash was reduced by cost+openFee at entry.
+    state.cashUsd = round((state.cashUsd || 0) + position.costUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
+    state.realizedPnlUsd = round((state.realizedPnlUsd || 0) + mark.pnlUsd, 4);
     state.stats.closed += 1;
-    if (pnlUsd >= 0) {
+    if (mark.pnlUsd >= 0) {
       state.stats.wins += 1;
     } else {
       state.stats.losses += 1;
@@ -4416,12 +4631,13 @@ function applyPaperDecision(state, decision) {
       lastCloseReason: exitEval.reason
     };
     delete positions[symbol];
-    return paperEvent('CLOSE', decision, price, {
+    return paperEvent(mark.side === 'short' ? 'CLOSE_SHORT' : 'CLOSE', decision, price, {
       qty: position.qty,
-      grossUsd,
-      closeFeeUsd,
-      pnlUsd,
-      pnlPct,
+      side: mark.side,
+      grossUsd: mark.markUsd,
+      closeFeeUsd: mark.closeFeeUsd,
+      pnlUsd: mark.pnlUsd,
+      pnlPct: mark.pnlPct,
       reason: exitEval.reason
     });
   }
@@ -4696,13 +4912,13 @@ function markPaperPositions(state, decisions) {
   let unrealizedPnlUsd = 0;
   for (const position of Object.values(state.positions || {})) {
     const price = latestPrices[position.symbol] || position.entryPrice;
-    const valueUsd = position.qty * price;
-    const closeFeeUsd = valueUsd * config.paper.feeRate;
-    openPositionValueUsd += valueUsd;
-    unrealizedPnlUsd += valueUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
+    const mark = positionMarkPnl(position, price, config.paper.feeRate);
+    openPositionValueUsd += mark.equityValueUsd;
+    unrealizedPnlUsd += mark.pnlUsd;
+    position.side = mark.side;
     position.markPrice = price;
-    position.unrealizedPnlUsd = round(valueUsd - closeFeeUsd - position.costUsd - position.openFeeUsd, 4);
-    position.unrealizedPnlPct = round(percentChange(position.costUsd + position.openFeeUsd, valueUsd - closeFeeUsd), 4);
+    position.unrealizedPnlUsd = mark.pnlUsd;
+    position.unrealizedPnlPct = mark.pnlPct;
   }
 
   return {
@@ -4932,6 +5148,15 @@ function sourceLabel(source) {
     }
     if (url.hostname.includes('t.me')) {
       return 'Telegram';
+    }
+    if (url.hostname.includes('cointelegraph.com')) {
+      return 'Cointelegraph';
+    }
+    if (url.hostname.includes('coindesk.com')) {
+      return url.pathname.startsWith('/ru') ? 'CoinDesk RU' : 'CoinDesk';
+    }
+    if (url.hostname.includes('github.com') && /DCGCoinDesk/i.test(url.pathname)) {
+      return 'DCGCoinDesk';
     }
     return url.hostname.replace(/^www\./, '');
   } catch (error) {
@@ -5482,7 +5707,7 @@ async function backtestSymbolWithAiBrain(symbol, candles, options) {
       source = 'ai_brain_holdover';
     }
 
-    // Keep hard safety gates even in brain mode.
+    // Keep hard safety gates even in brain mode (entries only; exits stay actionable).
     if (action === 'BUY' && market.indicators.higherTfBias === 'bearish') {
       action = 'WAIT';
       source = 'ai_brain_htf_block';
@@ -5491,6 +5716,7 @@ async function backtestSymbolWithAiBrain(symbol, candles, options) {
       action = 'WAIT';
       source = 'ai_brain_regime_block';
     }
+    // Short opens are gated later in simulateBacktestPaper / paper (flat + SELL + linear).
 
     decisions.push({
       timestamp: new Date(last.start).toISOString(),
@@ -6055,6 +6281,7 @@ function backtestSymbolOnCandles(symbol, candles, options) {
       timestamp: new Date(last.start).toISOString(),
       symbol,
       assetClass,
+      // BUY entries require risk.ok; SELL may open a short (gated in paper sim) or exit a long.
       finalAction: risk.allowed ? consensus.action : (consensus.action === 'BUY' ? 'WAIT' : consensus.action),
       consensus: {
         action: consensus.action,
@@ -6282,11 +6509,17 @@ function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options
     config.minConfidence
   );
 
+  const shortEntry = signal.action === 'SELL' && symbolAllowsShort(market.symbol);
+  const shortMinConfidence = Math.max(minConfidence, config.shorts.minConfidence || 0);
+
   if (signal.action === 'BUY' && (signal.confidence || 0) < minConfidence) {
     blocks.push(`confidence below backtest minimum (${minConfidence})`);
   }
+  if (shortEntry && (signal.confidence || 0) < shortMinConfidence) {
+    blocks.push(`short confidence below minimum (${shortMinConfidence})`);
+  }
 
-  if (config.regime.enabled && regime.regime === 'volatile' && signal.action === 'BUY') {
+  if (config.regime.enabled && regime.regime === 'volatile' && (signal.action === 'BUY' || shortEntry)) {
     riskScore += 20;
     blocks.push('volatile regime blocks entries');
   }
@@ -6294,6 +6527,11 @@ function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options
   if (config.regime.enabled && regime.regime === 'trend_down' && signal.action === 'BUY') {
     riskScore += 15;
     blocks.push('downtrend regime blocks swing BUY');
+  }
+
+  if (config.regime.enabled && regime.regime === 'trend_up' && shortEntry) {
+    riskScore += 15;
+    blocks.push('uptrend regime blocks swing SHORT');
   }
 
   if (
@@ -6306,6 +6544,11 @@ function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options
     blocks.push('higher TF bearish blocks swing BUY');
   }
 
+  if (shortEntry && indicators.higherTfBias === 'bullish') {
+    riskScore += 20;
+    blocks.push('higher TF bullish blocks swing SHORT');
+  }
+
   if (indicators.volatilityPct > 3.5) {
     riskScore += 25;
     blocks.push('volatility too high');
@@ -6313,9 +6556,13 @@ function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options
     riskScore += (indicators.volatilityPct || 0) * 4;
   }
 
-  if (indicators.rsi14 > 76) {
+  if (signal.action === 'BUY' && indicators.rsi14 > 76) {
     riskScore += 18;
     blocks.push('RSI extreme');
+  }
+  if (shortEntry && indicators.rsi14 < 24) {
+    riskScore += 18;
+    blocks.push('RSI extreme for short');
   }
 
   if (market.change24hPct < -8 || market.change24hPct > 12) {
@@ -6375,7 +6622,11 @@ function simulateBacktestPaper(decisions, options = {}) {
       continue;
     }
 
-    if (!position && decision.finalAction === 'BUY') {
+    const openSide = !position && decision.finalAction === 'BUY'
+      ? 'long'
+      : (!position && decision.finalAction === 'SELL' && symbolAllowsShort(decision.symbol) ? 'short' : null);
+
+    if (openSide) {
       const weekKey = isoWeekKey(decision.timestamp);
       const weeklyOpens = opensByWeek[weekKey] || 0;
       const entryBlocks = evaluateSwingEntryBlocks({
@@ -6386,7 +6637,8 @@ function simulateBacktestPaper(decisions, options = {}) {
         assetClass,
         higherTfBias,
         meta,
-        weeklyOpens
+        weeklyOpens,
+        side: openSide
       });
       if (entryBlocks.length) {
         skippedEntries += 1;
@@ -6396,6 +6648,7 @@ function simulateBacktestPaper(decisions, options = {}) {
           const feeUsd = positionUsd * feeRate;
           const qty = positionUsd / price;
           position = {
+            side: openSide,
             entryPrice: price,
             entryTime: decision.timestamp,
             qty,
@@ -6409,10 +6662,11 @@ function simulateBacktestPaper(decisions, options = {}) {
           opensByWeek[weekKey] = weeklyOpens + 1;
           exitStreak = 0;
           trades.push({
-            type: 'OPEN',
+            type: openSide === 'short' ? 'OPEN_SHORT' : 'OPEN',
             timestamp: decision.timestamp,
             price,
             qty,
+            side: openSide,
             positionUsd,
             feeUsd,
             confidence
@@ -6420,18 +6674,18 @@ function simulateBacktestPaper(decisions, options = {}) {
         }
       }
     } else if (position) {
-      const grossUsd = position.qty * price;
-      const closeFeeUsd = grossUsd * feeRate;
-      const pnlPct = percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd);
+      const side = position.side === 'short' ? 'short' : 'long';
+      const mark = positionMarkPnl(position, price, feeRate);
       const exitEval = evaluateSwingExit({
         action: decision.finalAction,
         confidence,
-        pnlPct,
+        pnlPct: mark.pnlPct,
         exitStreak: position.exitStreak || exitStreak,
         assetClass: position.assetClass || assetClass,
-        higherTfBias
+        higherTfBias,
+        side
       });
-      if (decision.finalAction === 'SELL' || decision.finalAction === 'EXIT') {
+      if (isPositionExitAction(side, decision.finalAction)) {
         position.exitStreak = exitEval.exitStreak || 0;
         exitStreak = position.exitStreak;
       } else {
@@ -6439,16 +6693,16 @@ function simulateBacktestPaper(decisions, options = {}) {
         exitStreak = 0;
       }
       if (exitEval.shouldExit) {
-        const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
-        cashUsd = round(cashUsd + grossUsd - closeFeeUsd, 4);
-        realizedPnlUsd = round(realizedPnlUsd + pnlUsd, 4);
+        cashUsd = round(cashUsd + position.costUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
+        realizedPnlUsd = round(realizedPnlUsd + mark.pnlUsd, 4);
         trades.push({
-          type: 'CLOSE',
+          type: side === 'short' ? 'CLOSE_SHORT' : 'CLOSE',
           timestamp: decision.timestamp,
           price,
           qty: position.qty,
-          pnlUsd: round(pnlUsd, 4),
-          pnlPct: round(pnlPct, 4),
+          side,
+          pnlUsd: mark.pnlUsd,
+          pnlPct: mark.pnlPct,
           holdBars: null,
           confidence,
           reason: exitEval.reason
@@ -6462,7 +6716,7 @@ function simulateBacktestPaper(decisions, options = {}) {
       }
     }
 
-    const openValue = position ? position.qty * price : 0;
+    const openValue = position ? positionMarkPnl(position, price, feeRate).equityValueUsd : 0;
     const equityUsd = round(cashUsd + openValue, 4);
     peakEquity = Math.max(peakEquity, equityUsd);
     const drawdownPct = peakEquity > 0 ? percentChange(peakEquity, equityUsd) : 0;
@@ -6473,33 +6727,35 @@ function simulateBacktestPaper(decisions, options = {}) {
       timestamp: decision.timestamp,
       equityUsd,
       cashUsd: round(cashUsd, 4),
-      open: Boolean(position)
+      open: Boolean(position),
+      side: position ? (position.side || 'long') : null
     });
   }
 
   if (position) {
     const last = decisions[decisions.length - 1];
     const price = Number(last.market && last.market.lastPrice) || position.entryPrice;
-    const grossUsd = position.qty * price;
-    const closeFeeUsd = grossUsd * feeRate;
-    const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
-    cashUsd = round(cashUsd + grossUsd - closeFeeUsd, 4);
-    realizedPnlUsd = round(realizedPnlUsd + pnlUsd, 4);
+    const side = position.side === 'short' ? 'short' : 'long';
+    const mark = positionMarkPnl(position, price, feeRate);
+    cashUsd = round(cashUsd + position.costUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
+    realizedPnlUsd = round(realizedPnlUsd + mark.pnlUsd, 4);
     trades.push({
-      type: 'FORCE_CLOSE',
+      type: side === 'short' ? 'FORCE_CLOSE_SHORT' : 'FORCE_CLOSE',
       timestamp: last.timestamp,
       price,
       qty: position.qty,
-      pnlUsd: round(pnlUsd, 4),
-      pnlPct: round(percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd), 4),
+      side,
+      pnlUsd: mark.pnlUsd,
+      pnlPct: mark.pnlPct,
       confidence: position.confidence
     });
     position = null;
   }
 
-  const closed = trades.filter((trade) => trade.type === 'CLOSE' || trade.type === 'FORCE_CLOSE');
+  const closed = trades.filter((trade) => /CLOSE/.test(trade.type));
   const wins = closed.filter((trade) => trade.pnlUsd >= 0).length;
   const endEquity = equityCurve.length ? equityCurve[equityCurve.length - 1].equityUsd : startBalanceUsd;
+  const opens = trades.filter((trade) => trade.type === 'OPEN' || trade.type === 'OPEN_SHORT');
   return {
     startBalanceUsd,
     endEquityUsd: round(cashUsd, 4),
@@ -6508,6 +6764,7 @@ function simulateBacktestPaper(decisions, options = {}) {
     realizedPnlUsd,
     maxDrawdownPct: round(maxDrawdownPct, 4),
     skippedEntries,
+    shortsEnabled: config.shorts.enabled,
     swingGuard: {
       enabled: config.swingGuard.enabled,
       cooldownMinutes: config.swingGuard.cooldownMinutes,
@@ -6515,7 +6772,8 @@ function simulateBacktestPaper(decisions, options = {}) {
       exitConfirmBars: config.swingGuard.exitConfirmBars
     },
     trades: closed.length,
-    opens: trades.filter((trade) => trade.type === 'OPEN').length,
+    opens: opens.length,
+    shortOpens: opens.filter((trade) => trade.side === 'short').length,
     wins,
     losses: closed.length - wins,
     winRatePct: closed.length ? round((wins / closed.length) * 100, 2) : 0,
@@ -6675,6 +6933,7 @@ function printHelp() {
   node scripts/trading-brain.js backtest --mode rules --symbols BTCUSDT,ETHUSDT --limit 500
   node scripts/trading-brain.js backtest --mode rules --days 7 --interval 15 --symbols BTCUSDT,ETHUSDT,SBER@MISX,ROSN@MISX
   node scripts/trading-brain.js backtest --mode rules --month 2026-06 --interval 15 --symbols BTCUSDT,ETHUSDT,SBER@MISX,ROSN@MISX
+  node scripts/trading-brain.js backtest --mode ai-brain --days 7 --ai-every 12 --ai-role brain --symbols BTCUSDT,ETHUSDT,GAZP@MISX
   node scripts/trading-brain.js backtest --mode ai --symbols BTCUSDT,ETHUSDT,SOLUSDT
   node scripts/trading-brain.js backtest --mode all
   node scripts/trading-brain.js loop

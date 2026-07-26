@@ -10,6 +10,8 @@
   "hardRules": [
     "No BUY when higher TF bias is bearish",
     "No BUY in trend_down or volatile regime",
+    "On Bybit linear symbols, SELL can OPEN a short when flat and HTF is bearish / trend_down",
+    "No short on Finam equities (long_finam stays long-only / close-only)",
     "No immediate re-entry after EXIT without structure change",
     "Long-only profiles must never open shorts",
     "Crypto scalp is fee-sensitive — prefer swing/day holds unless scalp setup is A+",
@@ -17,28 +19,31 @@
   ],
   "entryPlaybook": {
     "preferred": "HTF bullish + LTF pullback + momentum turn (RSI recover / MACD improve / bounce from EMA or BB lower)",
+    "preferredShort": "HTF bearish + LTF bounce into resistance + momentum roll over (RSI fail / MACD weaken) on Bybit linear",
     "avoid": [
       "Buying mid-rally into resistance with RSI > 70",
-      "Catching falling knives in HTF downtrend",
+      "Catching falling knives in HTF downtrend with longs",
+      "Shorting into HTF bullish trend",
       "Range chop with ADX < 18 and no clear level reaction",
       "Metals/crypto when HTF mixed and quality feedback is poor"
     ]
   },
   "exitPlaybook": {
     "prefer": [
-      "HTF structure break / bias flip bearish",
+      "HTF structure break / bias flip against the position",
       "Stop-loss hit",
       "Take-profit / measured move completed",
-      "Multiple confirming weak bars, not one noisy SELL"
+      "Multiple confirming weak bars, not one noisy flip"
     ],
     "avoid": [
-      "Exiting a green HTF-aligned long on a single weak 15m SELL"
+      "Exiting a green HTF-aligned long on a single weak 15m SELL",
+      "Covering a green HTF-aligned short on a single weak 15m BUY"
     ]
   },
   "venueBias": {
-    "bybit_crypto": "Trade only clear trend_up pullbacks; skip most range/transition",
-    "bybit_metals": "Strict filter; often skip unless HTF and volume agree",
-    "finam_equities": "Swing/long — hold trend legs, avoid countertrend longs",
+    "bybit_crypto_linear": "Longs in trend_up; shorts in trend_down on perps — best decline edge",
+    "bybit_metals_linear": "Swing long/short on XAU/XAG linear when HTF aligned",
+    "finam_equities": "Swing/long only — hold trend legs, no equity shorts",
     "finam_fx": "Day/swing hold can work; fewer trades, let winners run"
   },
   "books": [
@@ -67,7 +72,7 @@
   ],
   "profiles": {
     "swing_crypto": { "minConfidence": 75, "style": "swing", "longBias": true },
-    "swing_tradfi": { "minConfidence": 75, "style": "swing", "longOnly": true },
+    "swing_tradfi": { "minConfidence": 75, "style": "swing", "longOnly": false, "linearShorts": true },
     "long_finam": { "minConfidence": 75, "style": "position/swing", "longOnly": true },
     "day_finam": { "minConfidence": 65, "style": "intraday/day hold" },
     "scalp_finam": { "minConfidence": 75, "style": "shiryaev conservative scalp" }
