@@ -117,7 +117,8 @@ const config = {
     feeRate: numberEnv('PAPER_FEE_RATE', 0.001),
     symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT,USDTEUR,BTCEUR,ETHEUR')),
     requireDeepSeekOk: env('PAPER_REQUIRE_DEEPSEEK_OK', 'true') === 'true',
-    requireCursorOk: env('PAPER_REQUIRE_CURSOR_OK', 'true') === 'true'
+    // Cursor temporarily disabled — keep code path, do not require for paper opens.
+    requireCursorOk: env('PAPER_REQUIRE_CURSOR_OK', 'false') === 'true'
   },
   scalp: {
     enabled: env('SCALP_ENABLED', 'true') === 'true',
@@ -149,7 +150,8 @@ const config = {
     sessionAssetClasses: splitList(env('SCALP_SESSION_ASSET_CLASSES', 'forex,futures')),
     forceFlatAtSessionEnd: env('SCALP_FORCE_FLAT_SESSION_END', 'true') === 'true',
     requireAiOk: env('SCALP_REQUIRE_AI_OK', 'true') === 'true',
-    requireCursorOk: env('SCALP_REQUIRE_CURSOR_OK', 'true') === 'true',
+    // Cursor temporarily disabled — keep code path, do not require for scalp opens.
+    requireCursorOk: env('SCALP_REQUIRE_CURSOR_OK', 'false') === 'true',
     blockOnAiVeto: env('SCALP_BLOCK_ON_AI_VETO', 'true') === 'true',
     requireSwingNotBearish: env('SCALP_REQUIRE_SWING_NOT_BEARISH', 'true') === 'true',
     symbols: splitList(env('SCALP_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT')),
@@ -2656,7 +2658,6 @@ function tradingStatsReport() {
   const paper = readJsonFile(path.join(config.dataDir, 'paper-state.json')) || {};
   const finamState = readJsonFile(path.join(config.dataDir, 'finam-state.json')) || {};
   const quality = readJsonFile(path.join(config.dataDir, 'quality.json')) || {};
-  const decisionsPath = path.join(config.dataDir, 'decisions.jsonl');
   const recent = readDecisionsTail(config.decisionsLog.statusTailLines);
   const actionCounts = {};
   const finamActions = {};
