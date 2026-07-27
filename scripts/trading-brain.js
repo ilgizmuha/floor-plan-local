@@ -41,6 +41,13 @@ const config = {
   maxPositionUsd: numberEnv('BRAIN_MAX_POSITION_USD', 20),
   maxDailyLossUsd: numberEnv('BRAIN_MAX_DAILY_LOSS_USD', 5),
   dataDir: env('BRAIN_DATA_DIR', path.join(process.cwd(), 'data')),
+  decisionsLog: {
+    maxBytes: numberEnv('DECISIONS_JSONL_MAX_MB', 32) * 1024 * 1024,
+    qualityTailLines: numberEnv('DECISIONS_QUALITY_TAIL_LINES', 5000),
+    backtestTailLines: numberEnv('DECISIONS_BACKTEST_TAIL_LINES', 15000),
+    statusTailLines: numberEnv('DECISIONS_STATUS_TAIL_LINES', 400),
+    rotateKeep: numberEnv('DECISIONS_ROTATE_KEEP', 3)
+  },
   newsSources: splitList(env(
     'BRAIN_NEWS_SOURCES',
     [
@@ -542,18 +549,18 @@ async function runBrainCycle() {
     };
   }));
 
-  appendJsonl(path.join(config.dataDir, 'decisions.jsonl'), decisions);
+  appendJsonl(path.join(config.dataDir, 'decisions.jsonl'), decisions.map(compactDecisionForLog));
   const paper = updatePaperState(decisions);
   const finamTrading = await executeFinamTrading(decisions, finamAccounts).catch((error) => ({
     enabled: config.finam.tradingEnabled,
     error: error.message,
     events: []
   }));
-  const quality = computeSignalQuality(readAllDecisions());
+  const quality = computeSignalQuality(readDecisionsTail(config.decisionsLog.qualityTailLines));
   writeJson(path.join(config.dataDir, 'latest.json'), {
     timestamp: new Date().toISOString(),
     dryRun: config.dryRun,
-    decisions,
+    decisions: decisions.map(compactDecisionForLog),
     paper,
     quality,
     finam: {
@@ -2650,9 +2657,7 @@ function tradingStatsReport() {
   const finamState = readJsonFile(path.join(config.dataDir, 'finam-state.json')) || {};
   const quality = readJsonFile(path.join(config.dataDir, 'quality.json')) || {};
   const decisionsPath = path.join(config.dataDir, 'decisions.jsonl');
-  const recent = fs.existsSync(decisionsPath)
-    ? fs.readFileSync(decisionsPath, 'utf8').trim().split('\n').filter(Boolean).slice(-300).map((line) => parseJson(line)).filter(Boolean)
-    : [];
+  const recent = readDecisionsTail(config.decisionsLog.statusTailLines);
   const actionCounts = {};
   const finamActions = {};
   for (const row of recent) {
@@ -5019,34 +5024,171 @@ function computeSignalQuality(rows) {
   return quality;
 }
 
-function readAllDecisions() {
-  const filePath = path.join(config.dataDir, 'decisions.jsonl');
+function compactDecisionForLog(decision) {
+  const market = decision.market || {};
+  const ind = market.indicators || {};
+  return {
+    timestamp: decision.timestamp,
+    symbol: decision.symbol,
+    finalAction: decision.finalAction,
+    dryRun: decision.dryRun,
+    consensus: decision.consensus,
+    signal: decision.signal ? {
+      action: decision.signal.action,
+      confidence: decision.signal.confidence,
+      score: decision.signal.score,
+      strategyProfile: decision.signal.strategyProfile,
+      effectiveMinConfidence: decision.signal.effectiveMinConfidence,
+      reasons: (decision.signal.reasons || []).slice(0, 4)
+    } : undefined,
+    regime: decision.regime,
+    risk: decision.risk ? {
+      allowed: decision.risk.allowed,
+      blocks: decision.risk.blocks,
+      riskScore: decision.risk.riskScore
+    } : undefined,
+    aiAnalyst: decision.aiAnalyst ? {
+      status: decision.aiAnalyst.status,
+      action: decision.aiAnalyst.action,
+      confidence: decision.aiAnalyst.confidence,
+      riskLevel: decision.aiAnalyst.riskLevel,
+      veto: decision.aiAnalyst.veto,
+      reasoning: String(decision.aiAnalyst.reasoning || '').slice(0, 240)
+    } : undefined,
+    cursorAnalyst: decision.cursorAnalyst ? {
+      status: decision.cursorAnalyst.status,
+      action: decision.cursorAnalyst.action,
+      confidence: decision.cursorAnalyst.confidence,
+      veto: decision.cursorAnalyst.veto
+    } : undefined,
+    market: {
+      symbol: market.symbol,
+      provider: market.provider,
+      assetClass: market.assetClass,
+      lastPrice: market.lastPrice,
+      change24hPct: market.change24hPct,
+      indicators: {
+        rsi14: ind.rsi14,
+        trendPct: ind.trendPct,
+        volatilityPct: ind.volatilityPct,
+        adx14: ind.adx14,
+        higherTfBias: ind.higherTfBias,
+        higherTfTrendPct: ind.higherTfTrendPct,
+        bollingerPosition: ind.bollingerPosition,
+        volumeRatio: ind.volumeRatio
+      },
+      orderBook: market.orderBook && market.orderBook.available ? {
+        available: true,
+        spreadPct: market.orderBook.spreadPct,
+        imbalance: market.orderBook.imbalance
+      } : { available: false },
+      derivatives: market.derivatives && market.derivatives.available ? {
+        available: true,
+        fundingRatePct: market.derivatives.fundingRatePct
+      } : { available: false }
+    },
+    scalpSignal: decision.scalpSignal ? {
+      action: decision.scalpSignal.action,
+      confidence: decision.scalpSignal.confidence,
+      setupReady: decision.scalpSignal.setupReady
+    } : undefined
+  };
+}
+
+function readJsonlTail(filePath, limit = 500) {
   if (!fs.existsSync(filePath)) {
     return [];
   }
-  return fs.readFileSync(filePath, 'utf8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => parseJson(line))
-    .filter(Boolean);
+  const maxLines = Math.max(1, Number(limit) || 500);
+  const stat = fs.statSync(filePath);
+  if (stat.size === 0) {
+    return [];
+  }
+
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const chunkSize = 64 * 1024;
+    let position = stat.size;
+    let leftover = '';
+    const rawLines = [];
+
+    while (position > 0 && rawLines.length < maxLines) {
+      const readSize = Math.min(chunkSize, position);
+      position -= readSize;
+      const buffer = Buffer.alloc(readSize);
+      fs.readSync(fd, buffer, 0, readSize, position);
+      leftover = buffer.toString('utf8') + leftover;
+      const parts = leftover.split('\n');
+      leftover = parts.shift() || '';
+      for (let index = parts.length - 1; index >= 0; index -= 1) {
+        const line = parts[index].trim();
+        if (!line) {
+          continue;
+        }
+        rawLines.unshift(line);
+        if (rawLines.length >= maxLines) {
+          break;
+        }
+      }
+    }
+    if (leftover.trim() && rawLines.length < maxLines) {
+      rawLines.unshift(leftover.trim());
+    }
+    return rawLines.map((line) => parseJson(line)).filter(Boolean);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function rotateJsonlIfNeeded(filePath, maxBytes, keep = 3) {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+  const stat = fs.statSync(filePath);
+  if (stat.size <= maxBytes) {
+    return false;
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const rotatedPath = `${filePath}.${stamp}.bak`;
+  fs.renameSync(filePath, rotatedPath);
+  fs.writeFileSync(filePath, '');
+
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  const backups = fs.readdirSync(dir)
+    .filter((name) => name.startsWith(`${base}.`) && name.endsWith('.bak'))
+    .sort()
+    .reverse();
+  for (const old of backups.slice(Math.max(1, Number(keep) || 3))) {
+    try {
+      fs.unlinkSync(path.join(dir, old));
+    } catch (error) {
+      // ignore cleanup errors
+    }
+  }
+  console.error(new Date().toISOString(), `Rotated ${filePath} (${stat.size} bytes) -> ${rotatedPath}`);
+  return true;
+}
+
+function readDecisionsTail(limit) {
+  return readJsonlTail(path.join(config.dataDir, 'decisions.jsonl'), limit);
+}
+
+function readAllDecisions(limit = config.decisionsLog.backtestTailLines) {
+  return readDecisionsTail(limit);
 }
 
 function readLatestDecisions(limit) {
-  const filePath = path.join(config.dataDir, 'decisions.jsonl');
-  if (!fs.existsSync(filePath)) {
-    return [];
-  }
-  return fs.readFileSync(filePath, 'utf8')
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .slice(-limit)
-    .map((line) => parseJson(line))
-    .filter(Boolean);
+  return readDecisionsTail(Math.max(1, Number(limit) || config.decisionsLog.statusTailLines));
 }
 
 function appendJsonl(filePath, rows) {
+  if (!rows.length) {
+    return;
+  }
+  if (filePath.endsWith('decisions.jsonl')) {
+    rotateJsonlIfNeeded(filePath, config.decisionsLog.maxBytes, config.decisionsLog.rotateKeep);
+  }
   const text = rows.map((row) => JSON.stringify(row)).join('\n') + '\n';
   fs.appendFileSync(filePath, text);
 }
