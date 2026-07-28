@@ -112,7 +112,12 @@ const config = {
   paper: {
     enabled: env('PAPER_TRADING_ENABLED', 'true') === 'true',
     startBalanceUsd: numberEnv('PAPER_START_BALANCE_USD', 1000),
-    maxPositionUsd: numberEnv('PAPER_MAX_POSITION_USD', 20),
+    // Margin per trade as % of equity (2% risk). Notional = margin * leverage on linear.
+    positionRiskPct: numberEnv('PAPER_POSITION_RISK_PCT', 2),
+    // Bybit linear perps leverage. Spot-like paper symbols stay 1x.
+    leverage: Math.max(1, numberEnv('PAPER_LEVERAGE', 5)),
+    // Optional absolute margin cap in USD (0 = only risk %).
+    maxPositionUsd: numberEnv('PAPER_MAX_POSITION_USD', 0),
     minConfidence: numberEnv('PAPER_MIN_CONFIDENCE', 75),
     feeRate: numberEnv('PAPER_FEE_RATE', 0.001),
     symbols: splitList(env('PAPER_SYMBOLS', 'BTCUSDT,ETHUSDT,SOLUSDT,XAUUSDT,XAGUSDT,TSLAUSDT,NVDAUSDT,CLUSDT,XAUTUSDT,USDTEUR,BTCEUR,ETHEUR')),
@@ -132,7 +137,8 @@ const config = {
     stopLossPct: numberEnv('SCALP_STOP_LOSS_PCT', 0.28),
     maxSpreadPct: numberEnv('SCALP_MAX_SPREAD_PCT', 0.05),
     paperEnabled: env('SCALP_PAPER_ENABLED', 'true') === 'true',
-    maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 12),
+    // Scalp margin cap (0 = use paper risk %). Linear uses PAPER_LEVERAGE.
+    maxPositionUsd: numberEnv('SCALP_MAX_POSITION_USD', 0),
     maxOpenPositions: numberEnv('SCALP_MAX_OPEN_POSITIONS', 1),
     // 0 = unlimited number of scalp trades per day (still gated by setup/SL/TP/cooldown)
     maxDailyOpens: numberEnv('SCALP_MAX_DAILY_OPENS', 0),
@@ -305,7 +311,9 @@ const config = {
     warmupBars: numberEnv('BACKTEST_WARMUP_BARS', 60),
     windowBars: numberEnv('BACKTEST_WINDOW_BARS', 120),
     startBalanceUsd: numberEnv('BACKTEST_START_BALANCE_USD', numberEnv('PAPER_START_BALANCE_USD', 1000)),
-    maxPositionUsd: numberEnv('BACKTEST_MAX_POSITION_USD', numberEnv('PAPER_MAX_POSITION_USD', 20)),
+    maxPositionUsd: numberEnv('BACKTEST_MAX_POSITION_USD', numberEnv('PAPER_MAX_POSITION_USD', 0)),
+    positionRiskPct: numberEnv('BACKTEST_POSITION_RISK_PCT', numberEnv('PAPER_POSITION_RISK_PCT', 2)),
+    leverage: Math.max(1, numberEnv('BACKTEST_LEVERAGE', numberEnv('PAPER_LEVERAGE', 5))),
     minConfidence: numberEnv('BACKTEST_MIN_CONFIDENCE', numberEnv('PAPER_MIN_CONFIDENCE', 75)),
     feeRate: numberEnv('BACKTEST_FEE_RATE', numberEnv('PAPER_FEE_RATE', 0.001)),
     mode: env('BACKTEST_MODE', 'rules'), // rules | ai | both | all
@@ -3640,29 +3648,72 @@ function symbolAllowsShort(symbol) {
   return config.linearSymbols.has(symbol);
 }
 
+function paperLeverageForSymbol(symbol) {
+  // Spot-style pairs stay 1x; Bybit linear perps use configured leverage.
+  if (config.linearSymbols.has(symbol)) {
+    return Math.max(1, Number(config.paper.leverage) || 1);
+  }
+  return 1;
+}
+
+function resolvePaperSize({ equityUsd, cashUsd, price, symbol, marginCapUsd = null, leverage = null }) {
+  const lev = Math.max(1, Number(leverage != null ? leverage : paperLeverageForSymbol(symbol)) || 1);
+  const equity = Math.max(0, Number(equityUsd) || 0);
+  const cash = Math.max(0, Number(cashUsd) || 0);
+  const riskPct = Math.max(0, Number(config.paper.positionRiskPct) || 0);
+  let marginUsd = riskPct > 0 ? equity * (riskPct / 100) : Number(config.paper.maxPositionUsd) || 0;
+  const absoluteCap = marginCapUsd != null
+    ? Number(marginCapUsd)
+    : Number(config.paper.maxPositionUsd) || 0;
+  if (absoluteCap > 0) {
+    marginUsd = Math.min(marginUsd || absoluteCap, absoluteCap);
+  }
+  // Need margin + open fee on notional available in cash.
+  // fee ≈ notional * feeRate = margin * lev * feeRate → cash need ≈ margin * (1 + lev * feeRate)
+  const feeFactor = 1 + (lev * (Number(config.paper.feeRate) || 0));
+  const maxMarginByCash = feeFactor > 0 ? cash / feeFactor : 0;
+  marginUsd = Math.min(marginUsd, maxMarginByCash);
+  marginUsd = round(Math.max(0, marginUsd), 4);
+  const notionalUsd = round(marginUsd * lev, 4);
+  const feeUsd = round(notionalUsd * (Number(config.paper.feeRate) || 0), 4);
+  const qty = price > 0 ? notionalUsd / price : 0;
+  return {
+    leverage: lev,
+    marginUsd,
+    notionalUsd,
+    feeUsd,
+    qty,
+    riskPct
+  };
+}
+
 function positionMarkPnl(position, price, feeRate = config.paper.feeRate) {
   const qty = Number(position.qty) || 0;
   const markUsd = qty * price;
   const closeFeeUsd = markUsd * feeRate;
   const side = position.side === 'short' ? 'short' : 'long';
-  let pnlUsd;
-  if (side === 'short') {
-    pnlUsd = (position.entryPrice * qty) - markUsd - closeFeeUsd - (position.openFeeUsd || 0);
-  } else {
-    pnlUsd = markUsd - closeFeeUsd - position.costUsd - (position.openFeeUsd || 0);
-  }
-  const basis = (position.costUsd || 0) + (position.openFeeUsd || 0);
+  const marginUsd = Number(
+    position.marginUsd != null ? position.marginUsd : position.costUsd
+  ) || 0;
+  const entryNotional = Number(position.notionalUsd)
+    || ((Number(position.entryPrice) || 0) * qty)
+    || marginUsd;
+  const pricePnlUsd = side === 'short'
+    ? (Number(position.entryPrice) * qty) - markUsd
+    : markUsd - entryNotional;
+  const pnlUsd = pricePnlUsd - closeFeeUsd - (position.openFeeUsd || 0);
+  const basis = marginUsd + (position.openFeeUsd || 0);
   const pnlPct = basis > 0 ? round((pnlUsd / basis) * 100, 4) : 0;
-  const equityValueUsd = side === 'short'
-    ? round((position.costUsd || 0) + ((position.entryPrice - price) * qty), 4)
-    : round(markUsd, 4);
+  const equityValueUsd = round(marginUsd + pricePnlUsd, 4);
   return {
     side,
     markUsd: round(markUsd, 4),
     closeFeeUsd: round(closeFeeUsd, 4),
     pnlUsd: round(pnlUsd, 4),
     pnlPct,
-    equityValueUsd
+    equityValueUsd,
+    marginUsd: round(marginUsd, 4),
+    leverage: Number(position.leverage) || 1
   };
 }
 
@@ -4437,6 +4488,8 @@ function updatePaperState(decisions) {
   state.enabled = config.paper.enabled;
   state.config = {
     symbols: config.paper.symbols,
+    positionRiskPct: config.paper.positionRiskPct,
+    leverage: config.paper.leverage,
     maxPositionUsd: config.paper.maxPositionUsd,
     minConfidence: config.paper.minConfidence,
     feeRate: config.paper.feeRate,
@@ -4449,6 +4502,7 @@ function updatePaperState(decisions) {
       symbols: config.scalp.symbols,
       minConfidence: config.scalp.minConfidence,
       maxPositionUsd: config.scalp.maxPositionUsd,
+      leverage: config.paper.leverage,
       maxOpenPositions: config.scalp.maxOpenPositions,
       maxDailyOpens: config.scalp.maxDailyOpens,
       takeProfitPct: config.scalp.takeProfitPct,
@@ -4575,59 +4629,73 @@ function applyPaperDecision(state, decision) {
       return paperEvent(openSide === 'short' ? 'SKIP_SHORT' : 'SKIP_BUY', decision, price, { blocks });
     }
 
-    const positionUsd = Math.min(config.paper.maxPositionUsd, state.cashUsd || 0);
-    if (positionUsd <= 0) {
+    const size = resolvePaperSize({
+      equityUsd: Number(state.equityUsd) || Number(state.cashUsd) || config.paper.startBalanceUsd,
+      cashUsd: state.cashUsd || 0,
+      price,
+      symbol
+    });
+    if (size.marginUsd <= 0 || size.qty <= 0) {
       return paperEvent(openSide === 'short' ? 'SKIP_SHORT' : 'SKIP_BUY', decision, price, { blocks: ['no paper cash'] });
     }
 
-    const feeUsd = positionUsd * config.paper.feeRate;
-    const qty = positionUsd / price;
     positions[symbol] = {
       symbol,
       side: openSide,
-      qty,
+      qty: size.qty,
       entryPrice: price,
       entryTime: decision.timestamp,
-      costUsd: positionUsd,
-      openFeeUsd: feeUsd,
+      marginUsd: size.marginUsd,
+      notionalUsd: size.notionalUsd,
+      leverage: size.leverage,
+      costUsd: size.marginUsd,
+      openFeeUsd: size.feeUsd,
       confidence: consensus.confidence || 0,
       strategy: 'swing',
       assetClass,
       exitStreak: 0
     };
     state.swingWeekly[symbol][weekKey] = weeklyOpens + 1;
-    state.cashUsd = round((state.cashUsd || 0) - positionUsd - feeUsd, 4);
+    state.cashUsd = round((state.cashUsd || 0) - size.marginUsd - size.feeUsd, 4);
     state.stats.opened += 1;
     return paperEvent(openSide === 'short' ? 'OPEN_SHORT' : 'OPEN', decision, price, {
-      qty,
-      positionUsd,
-      feeUsd,
+      qty: size.qty,
+      positionUsd: size.marginUsd,
+      marginUsd: size.marginUsd,
+      notionalUsd: size.notionalUsd,
+      leverage: size.leverage,
+      feeUsd: size.feeUsd,
       side: openSide
     });
   }
 
   if (position && (isPositionExitAction(position.side || 'long', action) || config.swingGuard.enabled)) {
     const mark = positionMarkPnl(position, price, config.paper.feeRate);
-    const exitEval = evaluateSwingExit({
-      action,
-      confidence: consensus.confidence || 0,
-      pnlPct: mark.pnlPct,
-      exitStreak: position.exitStreak || 0,
-      assetClass: position.assetClass || assetClass,
-      higherTfBias,
-      side: mark.side
-    });
-    if (isPositionExitAction(mark.side, action)) {
+    // Paper liquidation when margin is wiped.
+    const liquidated = mark.equityValueUsd <= 0;
+    const exitEval = liquidated
+      ? { shouldExit: true, reason: `leveraged liquidation (${mark.leverage}x)` }
+      : evaluateSwingExit({
+        action,
+        confidence: consensus.confidence || 0,
+        pnlPct: mark.pnlPct,
+        exitStreak: position.exitStreak || 0,
+        assetClass: position.assetClass || assetClass,
+        higherTfBias,
+        side: mark.side
+      });
+    if (!liquidated && isPositionExitAction(mark.side, action)) {
       position.exitStreak = exitEval.exitStreak || 0;
-    } else if (!exitEval.shouldExit) {
+    } else if (!liquidated && !exitEval.shouldExit) {
       position.exitStreak = 0;
       return null;
     }
     if (!exitEval.shouldExit) {
       return null;
     }
-    // Return margin + pnl: cash was reduced by cost+openFee at entry.
-    state.cashUsd = round((state.cashUsd || 0) + position.costUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
+    const marginUsd = Number(position.marginUsd != null ? position.marginUsd : position.costUsd) || 0;
+    // Return margin + pnl: cash was reduced by margin+openFee at entry.
+    state.cashUsd = round((state.cashUsd || 0) + marginUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
     state.realizedPnlUsd = round((state.realizedPnlUsd || 0) + mark.pnlUsd, 4);
     state.stats.closed += 1;
     if (mark.pnlUsd >= 0) {
@@ -4646,6 +4714,9 @@ function applyPaperDecision(state, decision) {
     return paperEvent(mark.side === 'short' ? 'CLOSE_SHORT' : 'CLOSE', decision, price, {
       qty: position.qty,
       side: mark.side,
+      leverage: mark.leverage,
+      marginUsd,
+      notionalUsd: position.notionalUsd,
       grossUsd: mark.markUsd,
       closeFeeUsd: mark.closeFeeUsd,
       pnlUsd: mark.pnlUsd,
@@ -4675,14 +4746,21 @@ function applyScalpPaperExits(state, decisions) {
       continue;
     }
     const price = latestPrices[symbol] || position.entryPrice;
-    const grossUsd = position.qty * price;
-    const closeFeeUsd = grossUsd * config.paper.feeRate;
-    const pnlPct = percentChange(position.costUsd + position.openFeeUsd, grossUsd - closeFeeUsd);
+    const mark = positionMarkPnl(position, price, config.paper.feeRate);
+    const entryNotional = Number(position.notionalUsd)
+      || ((Number(position.entryPrice) || 0) * (Number(position.qty) || 0))
+      || Number(position.costUsd)
+      || 0;
+    // Scalp TP/SL stay price-move based (notional %), not margin-leveraged %.
+    const pricePnlUsd = mark.pnlUsd + mark.closeFeeUsd + (position.openFeeUsd || 0);
+    const pnlPct = entryNotional > 0 ? round((pricePnlUsd / entryNotional) * 100, 4) : mark.pnlPct;
     const decision = decisionBySymbol[symbol] || { symbol, market: { lastPrice: price } };
     const scalp = decision.scalpSignal || {};
 
     let exitReason = null;
-    if (pnlPct >= config.scalp.takeProfitPct) {
+    if (mark.equityValueUsd <= 0) {
+      exitReason = `scalp liquidation (${mark.leverage}x)`;
+    } else if (pnlPct >= config.scalp.takeProfitPct) {
       exitReason = `scalp take-profit ${config.scalp.takeProfitPct}%`;
     } else if (pnlPct <= -config.scalp.stopLossPct) {
       exitReason = `scalp stop-loss ${config.scalp.stopLossPct}%`;
@@ -4700,11 +4778,11 @@ function applyScalpPaperExits(state, decisions) {
       continue;
     }
 
-    const pnlUsd = grossUsd - closeFeeUsd - position.costUsd - position.openFeeUsd;
-    state.cashUsd = round((state.cashUsd || 0) + grossUsd - closeFeeUsd, 4);
-    state.realizedPnlUsd = round((state.realizedPnlUsd || 0) + pnlUsd, 4);
+    const marginUsd = Number(position.marginUsd != null ? position.marginUsd : position.costUsd) || 0;
+    state.cashUsd = round((state.cashUsd || 0) + marginUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
+    state.realizedPnlUsd = round((state.realizedPnlUsd || 0) + mark.pnlUsd, 4);
     state.stats.closed += 1;
-    if (pnlUsd >= 0) {
+    if (mark.pnlUsd >= 0) {
       state.stats.wins += 1;
     } else {
       state.stats.losses += 1;
@@ -4713,14 +4791,17 @@ function applyScalpPaperExits(state, decisions) {
     recordScalpCooldown(state, symbol, {
       closedAt: new Date().toISOString(),
       reason: exitReason,
-      pnlUsd,
-      loss: pnlUsd < 0
+      pnlUsd: mark.pnlUsd,
+      loss: mark.pnlUsd < 0
     });
     events.push(paperEvent('SCALP_CLOSE', decision, price, {
       qty: position.qty,
-      grossUsd,
-      closeFeeUsd,
-      pnlUsd,
+      leverage: mark.leverage,
+      marginUsd,
+      notionalUsd: position.notionalUsd || entryNotional,
+      grossUsd: mark.markUsd,
+      closeFeeUsd: mark.closeFeeUsd,
+      pnlUsd: mark.pnlUsd,
       pnlPct,
       reason: exitReason
     }));
@@ -4867,32 +4948,43 @@ function applyScalpPaperDecision(state, decision) {
     return paperEvent('SCALP_SKIP_BUY', decision, price, { blocks, scalp });
   }
 
-  const positionUsd = Math.min(config.scalp.maxPositionUsd, state.cashUsd || 0);
-  if (positionUsd <= 0) {
+  const size = resolvePaperSize({
+    equityUsd: Number(state.equityUsd) || Number(state.cashUsd) || config.paper.startBalanceUsd,
+    cashUsd: state.cashUsd || 0,
+    price,
+    symbol,
+    marginCapUsd: config.scalp.maxPositionUsd > 0 ? config.scalp.maxPositionUsd : null
+  });
+  if (size.marginUsd <= 0 || size.qty <= 0) {
     return paperEvent('SCALP_SKIP_BUY', decision, price, { blocks: ['no paper cash'] });
   }
 
-  const feeUsd = positionUsd * config.paper.feeRate;
-  const qty = positionUsd / price;
   positions[symbol] = {
     symbol,
     strategy: 'scalp',
-    qty,
+    side: 'long',
+    qty: size.qty,
     entryPrice: price,
     entryTime: decision.timestamp,
-    costUsd: positionUsd,
-    openFeeUsd: feeUsd,
+    marginUsd: size.marginUsd,
+    notionalUsd: size.notionalUsd,
+    leverage: size.leverage,
+    costUsd: size.marginUsd,
+    openFeeUsd: size.feeUsd,
     confidence: scalp.confidence || 0,
     takeProfitPct: config.scalp.takeProfitPct,
     stopLossPct: config.scalp.stopLossPct
   };
-  state.cashUsd = round((state.cashUsd || 0) - positionUsd - feeUsd, 4);
+  state.cashUsd = round((state.cashUsd || 0) - size.marginUsd - size.feeUsd, 4);
   state.stats.opened += 1;
   ensureScalpDailyState(state).opens += 1;
   return paperEvent('SCALP_OPEN', decision, price, {
-    qty,
-    positionUsd,
-    feeUsd,
+    qty: size.qty,
+    positionUsd: size.marginUsd,
+    marginUsd: size.marginUsd,
+    notionalUsd: size.notionalUsd,
+    leverage: size.leverage,
+    feeUsd: size.feeUsd,
     scalp,
     method: 'shiryaev_conservative',
     dailyOpens: state.scalpDaily.opens
@@ -6733,8 +6825,10 @@ function applyBacktestRisk(signal, market, ruleSignal = {}, regime = {}, options
 
 function simulateBacktestPaper(decisions, options = {}) {
   const startBalanceUsd = Number(options.startBalanceUsd) || config.backtest.startBalanceUsd;
-  const maxPositionUsd = Number(options.maxPositionUsd) || config.backtest.maxPositionUsd;
+  const maxPositionUsd = Number(options.maxPositionUsd != null ? options.maxPositionUsd : config.backtest.maxPositionUsd) || 0;
   const feeRate = Number(options.feeRate) || config.backtest.feeRate;
+  const riskPct = Number(options.positionRiskPct != null ? options.positionRiskPct : config.backtest.positionRiskPct) || config.paper.positionRiskPct;
+  const defaultLeverage = Math.max(1, Number(options.leverage != null ? options.leverage : config.backtest.leverage) || 1);
   const minConfidence = Math.max(
     Number(options.minConfidence) || 0,
     config.backtest.minConfidence,
@@ -6792,32 +6886,51 @@ function simulateBacktestPaper(decisions, options = {}) {
       if (entryBlocks.length) {
         skippedEntries += 1;
       } else {
-        const positionUsd = Math.min(maxPositionUsd, cashUsd);
-        if (positionUsd > 0) {
-          const feeUsd = positionUsd * feeRate;
-          const qty = positionUsd / price;
+        const equityUsd = cashUsd;
+        const lev = config.linearSymbols.has(decision.symbol) ? defaultLeverage : 1;
+        const prevRisk = config.paper.positionRiskPct;
+        const prevFee = config.paper.feeRate;
+        config.paper.positionRiskPct = riskPct;
+        config.paper.feeRate = feeRate;
+        const size = resolvePaperSize({
+          equityUsd,
+          cashUsd,
+          price,
+          symbol: decision.symbol,
+          marginCapUsd: maxPositionUsd > 0 ? maxPositionUsd : null,
+          leverage: lev
+        });
+        config.paper.positionRiskPct = prevRisk;
+        config.paper.feeRate = prevFee;
+        if (size.marginUsd > 0 && size.qty > 0) {
           position = {
             side: openSide,
             entryPrice: price,
             entryTime: decision.timestamp,
-            qty,
-            costUsd: positionUsd,
-            openFeeUsd: feeUsd,
+            qty: size.qty,
+            marginUsd: size.marginUsd,
+            notionalUsd: size.notionalUsd,
+            leverage: size.leverage,
+            costUsd: size.marginUsd,
+            openFeeUsd: size.feeUsd,
             confidence,
             assetClass,
             exitStreak: 0
           };
-          cashUsd = round(cashUsd - positionUsd - feeUsd, 4);
+          cashUsd = round(cashUsd - size.marginUsd - size.feeUsd, 4);
           opensByWeek[weekKey] = weeklyOpens + 1;
           exitStreak = 0;
           trades.push({
             type: openSide === 'short' ? 'OPEN_SHORT' : 'OPEN',
             timestamp: decision.timestamp,
             price,
-            qty,
+            qty: size.qty,
             side: openSide,
-            positionUsd,
-            feeUsd,
+            leverage: size.leverage,
+            marginUsd: size.marginUsd,
+            notionalUsd: size.notionalUsd,
+            positionUsd: size.marginUsd,
+            feeUsd: size.feeUsd,
             confidence
           });
         }
@@ -6825,24 +6938,28 @@ function simulateBacktestPaper(decisions, options = {}) {
     } else if (position) {
       const side = position.side === 'short' ? 'short' : 'long';
       const mark = positionMarkPnl(position, price, feeRate);
-      const exitEval = evaluateSwingExit({
-        action: decision.finalAction,
-        confidence,
-        pnlPct: mark.pnlPct,
-        exitStreak: position.exitStreak || exitStreak,
-        assetClass: position.assetClass || assetClass,
-        higherTfBias,
-        side
-      });
-      if (isPositionExitAction(side, decision.finalAction)) {
+      const liquidated = mark.equityValueUsd <= 0;
+      const exitEval = liquidated
+        ? { shouldExit: true, reason: `leveraged liquidation (${mark.leverage}x)` }
+        : evaluateSwingExit({
+          action: decision.finalAction,
+          confidence,
+          pnlPct: mark.pnlPct,
+          exitStreak: position.exitStreak || exitStreak,
+          assetClass: position.assetClass || assetClass,
+          higherTfBias,
+          side
+        });
+      if (!liquidated && isPositionExitAction(side, decision.finalAction)) {
         position.exitStreak = exitEval.exitStreak || 0;
         exitStreak = position.exitStreak;
-      } else {
+      } else if (!liquidated) {
         position.exitStreak = 0;
         exitStreak = 0;
       }
       if (exitEval.shouldExit) {
-        cashUsd = round(cashUsd + position.costUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
+        const marginUsd = Number(position.marginUsd != null ? position.marginUsd : position.costUsd) || 0;
+        cashUsd = round(cashUsd + marginUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
         realizedPnlUsd = round(realizedPnlUsd + mark.pnlUsd, 4);
         trades.push({
           type: side === 'short' ? 'CLOSE_SHORT' : 'CLOSE',
@@ -6850,6 +6967,8 @@ function simulateBacktestPaper(decisions, options = {}) {
           price,
           qty: position.qty,
           side,
+          leverage: mark.leverage,
+          marginUsd,
           pnlUsd: mark.pnlUsd,
           pnlPct: mark.pnlPct,
           holdBars: null,
@@ -6886,7 +7005,8 @@ function simulateBacktestPaper(decisions, options = {}) {
     const price = Number(last.market && last.market.lastPrice) || position.entryPrice;
     const side = position.side === 'short' ? 'short' : 'long';
     const mark = positionMarkPnl(position, price, feeRate);
-    cashUsd = round(cashUsd + position.costUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
+    const marginUsd = Number(position.marginUsd != null ? position.marginUsd : position.costUsd) || 0;
+    cashUsd = round(cashUsd + marginUsd + mark.pnlUsd + (position.openFeeUsd || 0), 4);
     realizedPnlUsd = round(realizedPnlUsd + mark.pnlUsd, 4);
     trades.push({
       type: side === 'short' ? 'FORCE_CLOSE_SHORT' : 'FORCE_CLOSE',
@@ -6894,6 +7014,8 @@ function simulateBacktestPaper(decisions, options = {}) {
       price,
       qty: position.qty,
       side,
+      leverage: mark.leverage,
+      marginUsd,
       pnlUsd: mark.pnlUsd,
       pnlPct: mark.pnlPct,
       confidence: position.confidence
@@ -6914,6 +7036,8 @@ function simulateBacktestPaper(decisions, options = {}) {
     maxDrawdownPct: round(maxDrawdownPct, 4),
     skippedEntries,
     shortsEnabled: config.shorts.enabled,
+    leverage: defaultLeverage,
+    positionRiskPct: riskPct,
     swingGuard: {
       enabled: config.swingGuard.enabled,
       cooldownMinutes: config.swingGuard.cooldownMinutes,
