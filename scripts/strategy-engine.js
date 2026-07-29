@@ -543,9 +543,10 @@ function createStrategyEngine(options = {}) {
     const regime = context.regime || {};
     const quality = context.qualityFeedback || {};
     const calibration = context.calibration || {};
+    const compact = Boolean(context.compact);
     const indicatorAnalysis = summarizeIndicatorsForAi(market);
-    const recentCandles = summarizeRecentCandles(market, 12);
-    return {
+    const recentCandles = summarizeRecentCandles(market, compact ? 6 : 12);
+    const base = {
       role: 'indicator_analyst_and_confirm_judge',
       symbol: market.symbol,
       strategy: {
@@ -560,8 +561,8 @@ function createStrategyEngine(options = {}) {
         action: ruleSignal.action,
         confidence: ruleSignal.confidence,
         score: ruleSignal.score,
-        reasons: (ruleSignal.reasons || []).slice(0, 10),
-        components: ruleSignal.components || {},
+        reasons: (ruleSignal.reasons || []).slice(0, compact ? 5 : 10),
+        components: compact ? undefined : (ruleSignal.components || {}),
         vetoBlocks: ruleSignal.vetoBlocks || []
       },
       regime: {
@@ -569,26 +570,15 @@ function createStrategyEngine(options = {}) {
         preferredStrategy: regime.preferredStrategy,
         allowSwingBuy: regime.allowSwingBuy,
         allowSwingSell: regime.allowSwingSell,
-        reasons: (regime.reasons || []).slice(0, 4)
+        reasons: (regime.reasons || []).slice(0, compact ? 2 : 4)
       },
-      qualityFeedback: quality,
-      analysisRequired: {
-        mustReview: [
-          'trend (SMA/EMA/ADX)',
-          'momentum (RSI/MACD/momentumPct)',
-          'volatility and Bollinger position',
-          'volume ratio',
-          'order book pressure/spread if available',
-          'derivatives funding/OI if available',
-          'recent candle structure',
-          'news score and Fear & Greed as veto context only'
-        ],
-        outputMustInclude: [
-          'indicatorSummary citing concrete values',
-          'factors[] with specific metric names',
-          'verdict confirm|veto|downgrade based on indicator agreement with setup'
-        ]
-      },
+      qualityFeedback: compact
+        ? {
+          hitRatePct: quality.hitRatePct,
+          trades: quality.trades,
+          note: quality.note
+        }
+        : quality,
       indicatorAnalysis,
       recentCandles,
       market: {
@@ -596,30 +586,56 @@ function createStrategyEngine(options = {}) {
         change24hPct: market.change24hPct,
         assetClass: market.assetClass,
         provider: market.provider,
-        indicators: market.indicators,
+        indicators: compact ? undefined : market.indicators,
         orderBook: market.orderBook || { available: false },
         derivatives: market.derivatives || { available: false },
-        scalpIndicators: market.scalpIndicators || { available: false }
+        scalpIndicators: compact ? undefined : (market.scalpIndicators || { available: false })
       },
       news: {
         score: news.score,
         itemCount: news.itemCount,
-        topTitles: (news.top || []).slice(0, 5).map((item) => item.title)
+        topTitles: (news.top || []).slice(0, compact ? 3 : 5).map((item) => item.title)
       },
       fearGreed: {
         available: fearGreed.available,
         value: fearGreed.value,
         classification: fearGreed.classification
-      },
-      instructions: [
-        'First ANALYZE indicators, order book, derivatives and recent candles.',
-        'Then judge the rule setup: confirm only if metrics support it.',
-        'Do NOT invent a new unrelated setup.',
-        'If indicators contradict the setup, veto or downgrade.',
-        'In reasoning and factors cite concrete numbers (e.g. RSI 72, ADX 18, spread 0.12%).',
-        'JSON: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short analysis of metrics","reasoning":"short","factors":["RSI ...","MACD ...","book ..."]}'
+      }
+    };
+    if (compact) {
+      base.instructions = [
+        'Judge the rule setup from indicatorAnalysis and HTF bias.',
+        'Confirm only if metrics support it; otherwise veto/WAIT.',
+        'Cite concrete numbers in factors.'
+      ];
+      return base;
+    }
+    base.analysisRequired = {
+      mustReview: [
+        'trend (SMA/EMA/ADX)',
+        'momentum (RSI/MACD/momentumPct)',
+        'volatility and Bollinger position',
+        'volume ratio',
+        'order book pressure/spread if available',
+        'derivatives funding/OI if available',
+        'recent candle structure',
+        'news score and Fear & Greed as veto context only'
+      ],
+      outputMustInclude: [
+        'indicatorSummary citing concrete values',
+        'factors[] with specific metric names',
+        'verdict confirm|veto|downgrade based on indicator agreement with setup'
       ]
     };
+    base.instructions = [
+      'First ANALYZE indicators, order book, derivatives and recent candles.',
+      'Then judge the rule setup: confirm only if metrics support it.',
+      'Do NOT invent a new unrelated setup.',
+      'If indicators contradict the setup, veto or downgrade.',
+      'In reasoning and factors cite concrete numbers (e.g. RSI 72, ADX 18, spread 0.12%).',
+      'JSON: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short analysis of metrics","reasoning":"short","factors":["RSI ...","MACD ...","book ..."]}'
+    ];
+    return base;
   }
 
   function scoreSentimentForProfile(news, fearGreed, profile) {

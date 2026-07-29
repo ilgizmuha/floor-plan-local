@@ -90,7 +90,16 @@ const config = {
     minConfidence: numberEnv('AI_ANALYST_MIN_CONFIDENCE', 60),
     // confirm = validate rules setup; brain = AI is primary decision maker
     role: env('AI_ANALYST_ROLE', 'confirm'),
-    knowledgePath: env('AI_KNOWLEDGE_PATH', path.join(__dirname, 'knowledge', 'ai-trading-kb.json'))
+    knowledgePath: env('AI_KNOWLEDGE_PATH', path.join(__dirname, 'knowledge', 'ai-trading-kb.json')),
+    // Call AI only when rules propose an actionable setup (saves most HOLD traffic).
+    onlyOnCandidates: env('AI_ONLY_ON_CANDIDATES', 'true') === 'true',
+    candidateActions: splitList(env('AI_CANDIDATE_ACTIONS', 'BUY,SELL,EXIT')),
+    // Pause AI calls after 402 / insufficient balance (minutes).
+    balanceBackoffMinutes: numberEnv('AI_BALANCE_BACKOFF_MINUTES', 120),
+    // Reuse last OK verdict per symbol+setup within TTL (0 = off).
+    cacheTtlSeconds: numberEnv('AI_CACHE_TTL_SECONDS', 900),
+    // Smaller prompts / payloads to cut tokens per call.
+    compactPayload: env('AI_COMPACT_PAYLOAD', 'true') === 'true'
   },
   cursor: {
     enabled: env('CURSOR_ANALYST_ENABLED', 'false') === 'true',
@@ -336,6 +345,11 @@ const strategyEngine = createStrategyEngine({
   knowledgeDir: path.join(__dirname, 'knowledge')
 });
 
+/** @type {number} epoch ms until which AI HTTP calls are paused (balance/quota errors) */
+let aiBalanceBackoffUntilMs = 0;
+/** @type {Map<string, {expiresAt:number, verdict:object, key:string}>} */
+const aiVerdictCache = new Map();
+
 main().catch((error) => {
   console.error('Error:', error.message);
   if (error.details) {
@@ -441,21 +455,15 @@ async function runBrainCycle() {
     let signal = analyzeMarketWithProfile(market, news, fearGreed, qualityFeedback, profile, profileId, calibrationEntry);
     signal = applyRegimeToSignal(signal, regime, market);
     signal.regime = regime;
-    const skipAi = market.provider === 'finam' && !config.finam.aiEnabled;
+    const skipAiVenue = market.provider === 'finam' && !config.finam.aiEnabled;
+    const skipAiHold = config.ai.onlyOnCandidates && !isAiCandidateAction(signal.action);
+    const skipAi = skipAiVenue || skipAiHold;
+    const skipAiReason = skipAiVenue
+      ? 'AI skipped for Finam (set FINAM_AI_ENABLED=true to enable)'
+      : `AI skipped: rules action ${signal.action || 'HOLD'} is not a candidate (AI_ONLY_ON_CANDIDATES)`;
     const [aiAnalyst, algoVaultAnalyst] = await Promise.all([
       skipAi
-        ? Promise.resolve({
-          enabled: false,
-          status: 'skipped',
-          provider: 'finam',
-          model: null,
-          action: null,
-          confidence: 0,
-          riskLevel: 'unknown',
-          veto: false,
-          reasoning: 'AI skipped for Finam (set FINAM_AI_ENABLED=true to enable)',
-          factors: []
-        })
+        ? Promise.resolve(makeSkippedAiAnalyst(skipAiReason))
         : runAiAnalyst(market, news, signal, fearGreed, {
           profile,
           profileId,
@@ -467,18 +475,9 @@ async function runBrainCycle() {
       runAlgoVaultAnalyst(market)
     ]);
     const cursorAnalyst = skipAi
-      ? {
-        enabled: false,
-        status: 'skipped',
-        provider: 'cursor',
-        model: null,
-        action: null,
-        confidence: 0,
-        riskLevel: 'unknown',
-        veto: false,
-        reasoning: 'Cursor skipped for Finam (set FINAM_AI_ENABLED=true to enable)',
-        factors: []
-      }
+      ? makeSkippedCursorAnalyst(skipAiVenue
+        ? 'Cursor skipped for Finam (set FINAM_AI_ENABLED=true to enable)'
+        : 'Cursor skipped: non-candidate setup')
       : await runCursorAnalyst(market, news, signal, aiAnalyst, algoVaultAnalyst, fearGreed, {
         profile,
         profileId,
@@ -560,6 +559,12 @@ async function runBrainCycle() {
   }));
 
   appendJsonl(path.join(config.dataDir, 'decisions.jsonl'), decisions.map(compactDecisionForLog));
+  const aiStats = decisions.reduce((acc, d) => {
+    const st = (d.aiAnalyst && d.aiAnalyst.status) || 'none';
+    acc[st] = (acc[st] || 0) + 1;
+    return acc;
+  }, {});
+  console.log(new Date().toISOString(), 'AI call stats:', JSON.stringify(aiStats));
   const paper = updatePaperState(decisions);
   const finamTrading = await executeFinamTrading(decisions, finamAccounts).catch((error) => ({
     enabled: config.finam.tradingEnabled,
@@ -2136,10 +2141,68 @@ async function runAiAnalyst(market, news, signal, fearGreed = {}, strategyContex
     };
   }
 
+  const now = Date.now();
+  if (aiBalanceBackoffUntilMs > now) {
+    const minsLeft = Math.max(1, Math.ceil((aiBalanceBackoffUntilMs - now) / 60000));
+    return {
+      enabled: true,
+      status: 'backoff',
+      provider: config.ai.provider,
+      model: config.ai.model,
+      action: null,
+      confidence: 0,
+      riskLevel: 'unknown',
+      veto: true,
+      reasoning: `AI paused after balance/quota error; retry in ~${minsLeft}m`,
+      factors: ['balance_backoff']
+    };
+  }
+
+  const cacheKey = buildAiCacheKey(market, signal, strategyContext);
+  if (config.ai.cacheTtlSeconds > 0) {
+    const cached = aiVerdictCache.get(market.symbol);
+    if (cached && cached.key === cacheKey && cached.expiresAt > now) {
+      return {
+        ...cached.verdict,
+        reasoning: `[cache] ${cached.verdict.reasoning || ''}`.slice(0, 500),
+        factors: [...(cached.verdict.factors || []).slice(0, 7), 'ai_cache_hit']
+      };
+    }
+  }
+
   try {
     const response = await aiRequest(buildAiMessages(market, news, signal, fearGreed, strategyContext));
-    return normalizeAiVerdict(response);
+    const verdict = normalizeAiVerdict(response);
+    if (config.ai.cacheTtlSeconds > 0) {
+      aiVerdictCache.set(market.symbol, {
+        key: cacheKey,
+        expiresAt: now + config.ai.cacheTtlSeconds * 1000,
+        verdict
+      });
+    }
+    return verdict;
   } catch (error) {
+    if (isAiBalanceOrQuotaError(error)) {
+      const backoffMs = Math.max(1, config.ai.balanceBackoffMinutes) * 60 * 1000;
+      aiBalanceBackoffUntilMs = Date.now() + backoffMs;
+      console.error(
+        new Date().toISOString(),
+        `AI balance/quota error — pausing calls for ${config.ai.balanceBackoffMinutes}m:`,
+        error.message
+      );
+      return {
+        enabled: true,
+        status: 'backoff',
+        provider: config.ai.provider,
+        model: config.ai.model,
+        action: null,
+        confidence: 0,
+        riskLevel: 'unknown',
+        veto: true,
+        reasoning: `AI Analyst balance/quota error: ${error.message}`,
+        factors: ['balance_backoff']
+      };
+    }
     return {
       enabled: true,
       status: 'error',
@@ -2155,6 +2218,64 @@ async function runAiAnalyst(market, news, signal, fearGreed = {}, strategyContex
   }
 }
 
+function isAiCandidateAction(action) {
+  const normalized = String(action || '').toUpperCase();
+  return (config.ai.candidateActions || []).map((a) => String(a).toUpperCase()).includes(normalized);
+}
+
+function makeSkippedAiAnalyst(reason) {
+  return {
+    enabled: false,
+    status: 'skipped',
+    provider: config.ai.provider,
+    model: null,
+    action: null,
+    confidence: 0,
+    riskLevel: 'unknown',
+    veto: false,
+    reasoning: reason,
+    factors: ['ai_skipped']
+  };
+}
+
+function makeSkippedCursorAnalyst(reason) {
+  return {
+    enabled: false,
+    status: 'skipped',
+    provider: 'cursor',
+    model: null,
+    action: null,
+    confidence: 0,
+    riskLevel: 'unknown',
+    veto: false,
+    reasoning: reason,
+    factors: ['cursor_skipped']
+  };
+}
+
+function buildAiCacheKey(market, signal, strategyContext = {}) {
+  return [
+    market.symbol,
+    signal.action,
+    Math.round(Number(signal.confidence) || 0),
+    strategyContext.profileId || '',
+    strategyContext.aiRole || config.ai.role,
+    (strategyContext.regime && strategyContext.regime.regime) || ''
+  ].join('|');
+}
+
+function isAiBalanceOrQuotaError(error) {
+  const msg = String(error && error.message || error || '').toLowerCase();
+  return (
+    msg.includes('insufficient balance')
+    || msg.includes('insufficient_quota')
+    || msg.includes('exceeded your current quota')
+    || msg.includes('payment required')
+    || /\bhttp 402\b/.test(msg)
+    || /\b402\b/.test(msg) && msg.includes('balance')
+  );
+}
+
 function loadAiTradingKnowledge() {
   const filePath = config.ai.knowledgePath;
   const doc = readJsonFile(filePath);
@@ -2168,61 +2289,69 @@ function buildAiMessages(market, news, signal, fearGreed = {}, strategyContext =
   const role = String(strategyContext.aiRole || config.ai.role || 'confirm').toLowerCase();
   const knowledge = loadAiTradingKnowledge();
   const scalpKb = loadScalpingKnowledge();
+  const compact = config.ai.compactPayload !== false;
   const payload = strategyEngine.buildRichAiPayload(market, news, fearGreed, signal, {
     profile: strategyContext.profile || {},
     profileId: strategyContext.profileId,
     regime: strategyContext.regime || signal.regime || {},
     qualityFeedback: strategyContext.qualityFeedback || signal.qualityFeedback || {},
-    calibration: strategyContext.calibration || {}
+    calibration: strategyContext.calibration || {},
+    compact
   });
   payload.aiRole = role;
-  payload.knowledgeBase = {
-    version: knowledge.version,
-    objectives: knowledge.objectives || [],
-    hardRules: knowledge.hardRules || [],
-    entryPlaybook: knowledge.entryPlaybook || {},
-    exitPlaybook: knowledge.exitPlaybook || {},
-    venueBias: knowledge.venueBias || {},
-    profiles: knowledge.profiles || {},
-    books: (knowledge.books || []).map((book) => ({
-      id: book.id,
-      title: book.title,
-      useFor: book.useFor,
-      rules: (book.rules || []).slice(0, 8)
-    })),
-    scalpPrimaryMethod: scalpKb.primaryMethod || null,
-    swingGuard: {
-      requireHigherTfNotBearish: config.swingGuard.requireHigherTfNotBearish,
-      minConfidence: config.swingGuard.minConfidence,
-      maxOpensPerWeek: config.swingGuard.maxOpensPerWeek,
-      cooldownMinutes: config.swingGuard.cooldownMinutes
-    }
-  };
+  if (compact) {
+    payload.knowledgeBase = {
+      version: knowledge.version,
+      hardRules: (knowledge.hardRules || []).slice(0, 8),
+      entryPlaybook: knowledge.entryPlaybook
+        ? { prefer: (knowledge.entryPlaybook.prefer || []).slice(0, 4), avoid: (knowledge.entryPlaybook.avoid || []).slice(0, 4) }
+        : {},
+      scalpPrimaryMethod: scalpKb.primaryMethod || null
+    };
+  } else {
+    payload.knowledgeBase = {
+      version: knowledge.version,
+      objectives: knowledge.objectives || [],
+      hardRules: knowledge.hardRules || [],
+      entryPlaybook: knowledge.entryPlaybook || {},
+      exitPlaybook: knowledge.exitPlaybook || {},
+      venueBias: knowledge.venueBias || {},
+      profiles: knowledge.profiles || {},
+      books: (knowledge.books || []).map((book) => ({
+        id: book.id,
+        title: book.title,
+        useFor: book.useFor,
+        rules: (book.rules || []).slice(0, 8)
+      })),
+      scalpPrimaryMethod: scalpKb.primaryMethod || null,
+      swingGuard: {
+        requireHigherTfNotBearish: config.swingGuard.requireHigherTfNotBearish,
+        minConfidence: config.swingGuard.minConfidence,
+        maxOpensPerWeek: config.swingGuard.maxOpensPerWeek,
+        cooldownMinutes: config.swingGuard.cooldownMinutes
+      }
+    };
+  }
 
   const systemBrain = [
-    'You are the PRIMARY trading brain for this symbol (temporary Mistral analyst slot).',
-    'Use knowledgeBase hardRules/entryPlaybook/exitPlaybook as mandatory policy.',
-    'Rule setup in payload is advisory context only — YOU decide action.',
-    'Analyze indicatorAnalysis, higherTfBias, recentCandles, regime, order book and derivatives first.',
-    'Prefer capital protection and fewer high-quality trades (win-rate mindset >= 55%).',
-    'If HTF is bearish or regime is trend_down/volatile, do not BUY.',
-    'On Bybit linear perps, SELL while flat can OPEN a short when HTF bearish / trend_down — that is the decline-edge path.',
+    'You are the PRIMARY trading brain for this symbol.',
+    'Use knowledgeBase hardRules/entryPlaybook as mandatory policy.',
+    'Rule setup is advisory — YOU decide action.',
+    'Prefer capital protection and fewer high-quality trades.',
+    'If HTF bearish or regime trend_down/volatile, do not BUY.',
+    'On Bybit linear, SELL while flat can OPEN a short when HTF bearish / trend_down.',
     'Do not short Finam equities; do not short into HTF bullish or trend_up.',
-    'EXIT covers any open side; BUY covers a short; SELL exits a long or opens a short when flat on linear.',
-    'Cite concrete metric values and which KB rule applied.',
     'Return only valid JSON.',
-    'JSON schema: {"verdict":"decide|confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short metric analysis","reasoning":"short reason","factors":["RSI ...","KB ..."]}.'
+    'JSON: {"verdict":"decide|confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short","reasoning":"short","factors":["..."]}.'
   ].join(' ');
 
   const systemConfirm = [
-    'You are an indicator analyst and conservative confirm-only trading judge.',
+    'You are a conservative confirm-only trading judge.',
     'Use knowledgeBase hardRules as veto/confirm policy.',
-    'First analyze indicatorAnalysis, recentCandles, order book and derivatives in the payload.',
-    'Then confirm, veto, or downgrade the provided rule setup — do NOT invent new setups.',
-    'Cite concrete metric values in indicatorSummary, reasoning and factors.',
-    'If metrics contradict the setup or break KB hardRules, veto or WAIT. Prefer capital protection.',
+    'Confirm, veto, or downgrade the rule setup — do NOT invent new setups.',
+    'If metrics contradict the setup, veto or WAIT.',
     'Return only valid JSON.',
-    'JSON schema: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short metric analysis","reasoning":"short reason","factors":["RSI ...","MACD ..."]}.'
+    'JSON: {"verdict":"confirm|veto|downgrade","action":"BUY|SELL|HOLD|WAIT|EXIT","confidence":0-100,"riskLevel":"low|medium|high","veto":boolean,"indicatorSummary":"short","reasoning":"short","factors":["..."]}.'
   ].join(' ');
 
   return [
@@ -3872,7 +4001,7 @@ function normalizeCursorVerdict(raw) {
 }
 
 function combineSignals(ruleSignal, aiAnalyst, cursorAnalyst = {}) {
-  if (!aiAnalyst.enabled || aiAnalyst.status === 'disabled') {
+  if (!aiAnalyst.enabled || aiAnalyst.status === 'disabled' || aiAnalyst.status === 'skipped') {
     return combineWithCursorOnly(ruleSignal, cursorAnalyst);
   }
 
@@ -4068,7 +4197,7 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
     blocks.push('higher TF bullish blocks swing SHORT');
   }
 
-  if (aiAnalyst.enabled && aiAnalyst.status !== 'disabled') {
+  if (aiAnalyst.enabled && !['disabled', 'skipped'].includes(aiAnalyst.status)) {
     if (aiAnalyst.status !== 'ok') {
       blocks.push('AI analyst unavailable');
     }
@@ -4078,7 +4207,7 @@ function applyRiskManager(signal, market, aiAnalyst = {}, cursorAnalyst = {}, fe
     }
   }
 
-  if (cursorAnalyst.enabled && cursorAnalyst.status !== 'disabled') {
+  if (cursorAnalyst.enabled && !['disabled', 'skipped'].includes(cursorAnalyst.status)) {
     if (cursorAnalyst.status !== 'ok') {
       blocks.push('Cursor Analyst unavailable');
     }
@@ -7219,6 +7348,12 @@ Environment:
   AI_ANALYST_BASE_URL=https://api.openai.com/v1
   AI_ANALYST_API_KEY=...
   AI_ANALYST_MODEL=gpt-4o-mini
+  AI_ONLY_ON_CANDIDATES=true
+  AI_CANDIDATE_ACTIONS=BUY,SELL,EXIT
+  AI_BALANCE_BACKOFF_MINUTES=120
+  AI_CACHE_TTL_SECONDS=900
+  AI_COMPACT_PAYLOAD=true
+  FINAM_AI_ENABLED=false
   CURSOR_ANALYST_ENABLED=false
   CURSOR_API_KEY=cursor_...
   CURSOR_ANALYST_MODEL=auto
