@@ -12877,6 +12877,9 @@ function yvo_ajax_frontend_generate_contract() {
     if (function_exists('yvo_egrn_normalize_property_by_object_type')) {
         $property = yvo_egrn_normalize_property_by_object_type($property);
     }
+    if (trim((string) ($property['furniture_list'] ?? '')) === '' && trim((string) ($property['what_stays'] ?? '')) !== '') {
+        $property['furniture_list'] = trim((string) $property['what_stays']);
+    }
     $property = yvo_normalize_house_with_plot_cadastral($property);
     if (trim((string) ($property['city'] ?? '')) === '' && $property['address'] !== '') {
         $city_from_addr = yvo_extract_city_from_address($property['address']);
@@ -13100,11 +13103,18 @@ function yvo_ajax_frontend_generate_contract() {
     if (yvo_dkp_modern_export_enabled($contract_type, $dkp_options)) {
         $repl_styled = yvo_get_dkp_ipoteka_placeholder_map($sellers, $buyers, $property, $dkp_options, $contract_type);
         $repl_styled['CONTRACT_TYPE'] = $contract_type;
-        if (!yvo_parties_styled_html_has_fio(isset($repl_styled['SELLERS_BLOCK']) ? (string) $repl_styled['SELLERS_BLOCK'] : '')) {
-            wp_send_json_error(array('message' => 'Не удалось сформировать карточку продавца: отсутствует ФИО в верстке договора. Проверьте данные продавца.'));
-        }
-        if (!yvo_parties_styled_html_has_fio(isset($repl_styled['BUYERS_BLOCK']) ? (string) $repl_styled['BUYERS_BLOCK'] : '')) {
-            wp_send_json_error(array('message' => 'Не удалось сформировать карточку покупателя: отсутствует ФИО в верстке договора. Проверьте данные покупателя.'));
+        $tpl_styled = isset($repl_styled['dkp_template_id']) ? (string) $repl_styled['dkp_template_id'] : $template_id;
+        if (function_exists('yvo_dkp_uses_classic_style') && yvo_dkp_uses_classic_style($tpl_styled)) {
+            if (!function_exists('yvo_classic_dkp_parties_valid') || !yvo_classic_dkp_parties_valid($repl_styled, $sellers, $buyers)) {
+                wp_send_json_error(array('message' => 'Не удалось сформировать преамбулу договора: проверьте ФИО и паспортные данные продавца и покупателя.'));
+            }
+        } else {
+            if (!yvo_parties_styled_html_has_fio(isset($repl_styled['SELLERS_BLOCK']) ? (string) $repl_styled['SELLERS_BLOCK'] : '')) {
+                wp_send_json_error(array('message' => 'Не удалось сформировать карточку продавца: отсутствует ФИО в верстке договора. Проверьте данные продавца.'));
+            }
+            if (!yvo_parties_styled_html_has_fio(isset($repl_styled['BUYERS_BLOCK']) ? (string) $repl_styled['BUYERS_BLOCK'] : '')) {
+                wp_send_json_error(array('message' => 'Не удалось сформировать карточку покупателя: отсутствует ФИО в верстке договора. Проверьте данные покупателя.'));
+            }
         }
         $styled_html_content = yvo_generate_dkp_ipoteka_full_styled_html($contract_content_raw, $repl_styled, $contract_type);
         $debug['html_mode'] = ($styled_html_content !== '') ? 'dkp_qwen_full' : 'from_full_text';

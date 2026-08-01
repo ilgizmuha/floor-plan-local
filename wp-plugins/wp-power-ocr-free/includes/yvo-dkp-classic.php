@@ -40,8 +40,28 @@ function yvo_extract_region_from_address($address) {
     return '________________';
 }
 
-/** Строка «Город Уфа Республика Башкортостан … дата» для классического шаблона. */
-function yvo_build_dkp_classic_city_date_line($contract_city, $contract_date, $region = '') {
+/** Дата договора в формате «01» августа 2026 г. */
+function yvo_format_classic_dkp_date_display($contract_date) {
+    $contract_date = trim((string) $contract_date);
+    if ($contract_date === '' || $contract_date === '________________') {
+        return '«__» __________ 20__ г.';
+    }
+    if (preg_match('/«/u', $contract_date)) {
+        return $contract_date;
+    }
+    if (preg_match('/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/u', $contract_date, $m)) {
+        $day = str_pad($m[1], 2, '0', STR_PAD_LEFT);
+        $month_gen = function_exists('yvo_russian_month_genitive') ? yvo_russian_month_genitive($m[2]) : '';
+        if ($month_gen === '') {
+            $month_gen = '__________';
+        }
+        return '«' . $day . '» ' . $month_gen . ' ' . $m[3] . ' г.';
+    }
+    return $contract_date;
+}
+
+/** Левая часть строки «Город … Республика …». */
+function yvo_build_dkp_classic_city_region_text($contract_city, $region = '') {
     $city = trim((string) $contract_city);
     if ($city === '' || $city === '________________') {
         $city = '________________';
@@ -55,11 +75,25 @@ function yvo_build_dkp_classic_city_date_line($contract_city, $contract_date, $r
     if ($region === '') {
         $region = '________________';
     }
-    $date = trim((string) $contract_date);
-    if ($date === '' || $date === '________________') {
-        $date = '«__» __________ 20__ г.';
-    }
-    return 'Город ' . $city . ' ' . $region . str_repeat(' ', max(1, 80 - mb_strlen($city . $region, 'UTF-8'))) . $date;
+    return 'Город ' . $city . ' ' . $region;
+}
+
+/** Строка «Город Уфа Республика Башкортостан … дата» для классического шаблона (txt). */
+function yvo_build_dkp_classic_city_date_line($contract_city, $contract_date, $region = '') {
+    $left = yvo_build_dkp_classic_city_region_text($contract_city, $region);
+    $date = yvo_format_classic_dkp_date_display($contract_date);
+    $pad = max(1, 72 - mb_strlen($left, 'UTF-8') - mb_strlen($date, 'UTF-8'));
+    return $left . str_repeat(' ', $pad) . $date;
+}
+
+/** HTML-таблица «город слева — дата справа» (как в образце). */
+function yvo_build_dkp_classic_city_date_html($contract_city, $contract_date, $region = '', array $bold_terms = array()) {
+    $left = yvo_build_dkp_classic_city_region_text($contract_city, $region);
+    $date = yvo_format_classic_dkp_date_display($contract_date);
+    return '<table class="dkp-city-date-table" role="presentation"><tr>'
+        . '<td class="dkp-city-date-left">' . yvo_classic_dkp_boldify_html($left, $bold_terms) . '</td>'
+        . '<td class="dkp-city-date-right">' . yvo_classic_dkp_boldify_html($date, $bold_terms) . '</td>'
+        . '</tr></table>';
 }
 
 /**
@@ -237,6 +271,9 @@ function yvo_build_variant2_essential_section(array $property_data, array $optio
         $vacate = $m[0];
     }
     $furniture = trim((string) ($property_data['furniture_list'] ?? ''));
+    if ($furniture === '' && !empty($property_data['what_stays'])) {
+        $furniture = trim((string) $property_data['what_stays']);
+    }
     $furniture_clause = $furniture !== ''
         ? ' Продавец передает покупателю недвижимое имущество вместе с мебелью: ' . $furniture . '.'
         : '';
@@ -326,7 +363,7 @@ function yvo_classic_dkp_collect_bold_terms(array $replacements, $contract_text)
     return $terms;
 }
 
-/** Оборачивает известные фразы в <strong>. */
+/** Оборачивает известные фразы в <strong> (без вложенных strong). */
 function yvo_classic_dkp_boldify_html($html, array $terms) {
     $escaped = htmlspecialchars((string) $html, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
     foreach ($terms as $term) {
@@ -335,15 +372,62 @@ function yvo_classic_dkp_boldify_html($html, array $terms) {
             continue;
         }
         $e = htmlspecialchars($term, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-        if ($e === '' || strpos($escaped, '<strong>' . $e . '</strong>') !== false) {
+        if ($e === '' || strpos($escaped, $e) === false) {
             continue;
         }
-        if (strpos($escaped, $e) === false) {
+        $parts = preg_split('/(<strong>.*?<\/strong>)/s', $escaped, -1, PREG_SPLIT_DELIM_CAPTURE);
+        if (!is_array($parts)) {
             continue;
         }
-        $escaped = str_replace($e, '<strong>' . $e . '</strong>', $escaped);
+        foreach ($parts as $i => $part) {
+            if ($i % 2 === 1) {
+                continue;
+            }
+            if (strpos($part, $e) !== false) {
+                $parts[$i] = str_replace($e, '<strong>' . $e . '</strong>', $part);
+            }
+        }
+        $escaped = implode('', $parts);
     }
     return $escaped;
+}
+
+/** Подчёркивание ссылки на кредитный договор (п. 2.2.2). */
+function yvo_classic_dkp_underline_credit_refs($html) {
+    return preg_replace(
+        '/(Кредитным договором №\s+[^<]+?)(?=,\s*заключенным)/ui',
+        '<span class="dkp-underline">$1</span>',
+        (string) $html
+    );
+}
+
+/** Преамбула классического ДКП содержит ФИО всех сторон. */
+function yvo_classic_dkp_parties_valid(array $replacements, array $sellers, array $buyers) {
+    $preamble = isset($replacements['CLASSIC_PARTIES_PREAMBLE'])
+        ? trim((string) $replacements['CLASSIC_PARTIES_PREAMBLE'])
+        : '';
+    if ($preamble === '') {
+        return false;
+    }
+    foreach ($sellers as $s) {
+        if (!is_array($s)) {
+            continue;
+        }
+        $name = trim((string) ($s['full_name'] ?? ''));
+        if ($name !== '' && mb_stripos($preamble, $name, 0, 'UTF-8') === false) {
+            return false;
+        }
+    }
+    foreach ($buyers as $b) {
+        if (!is_array($b)) {
+            continue;
+        }
+        $name = trim((string) ($b['full_name'] ?? ''));
+        if ($name !== '' && mb_stripos($preamble, $name, 0, 'UTF-8') === false) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /** CSS классического ДКП (как на образце). */
@@ -351,12 +435,17 @@ function yvo_dkp_classic_styles_css() {
     return "body{margin:0;padding:0;background:#fff;color:#000;font-family:'Times New Roman',Times,serif;font-size:12pt;line-height:1.35;}"
         . ".page{width:210mm;min-height:297mm;margin:0 auto;padding:18mm 16mm 14mm;box-sizing:border-box;}"
         . ".dkp-title{text-align:center;font-weight:bold;font-size:13pt;margin:0 0 10pt;}"
-        . ".dkp-city-date{font-size:12pt;margin:0 0 14pt;white-space:pre-wrap;}"
+        . ".dkp-city-date{font-size:12pt;margin:0 0 14pt;}"
+        . ".dkp-city-date-table{width:100%;border-collapse:collapse;margin:0;}"
+        . ".dkp-city-date-left{text-align:left;vertical-align:top;padding:0;}"
+        . ".dkp-city-date-right{text-align:right;vertical-align:top;padding:0;white-space:nowrap;}"
         . ".dkp-preamble{text-align:justify;margin:0 0 14pt;text-indent:0;}"
         . ".dkp-body{text-align:justify;}"
         . ".dkp-clause{margin:0 0 8pt;text-indent:1.25cm;}"
         . ".dkp-section{font-weight:bold;margin:12pt 0 6pt;text-indent:0;}"
-        . ".dkp-subclause{text-indent:1.25cm;margin:0 0 6pt;}"
+        . ".dkp-subclause{margin:0 0 6pt;text-indent:1.25cm;}"
+        . ".dkp-subclause-l3{margin:0 0 6pt 1.25cm;text-indent:1.25cm;}"
+        . ".dkp-underline{text-decoration:underline;}"
         . ".dkp-signatures{margin-top:18pt;}"
         . ".dkp-signatures .sig-label{font-weight:bold;margin:16pt 0 4pt;}"
         . ".dkp-signatures .sig-line{border-bottom:1px solid #000;height:14pt;margin:0 0 2pt;}"
@@ -383,24 +472,44 @@ function yvo_classic_dkp_body_to_html($contract_text, array $bold_terms) {
         if ($trim === '') {
             continue;
         }
-        if (preg_match('/^(\d+)\.\s+(.+)$/u', $trim, $sec) && !preg_match('/^\d+\.\d+/u', $trim)) {
-            $html .= '<div class="dkp-section">' . yvo_classic_dkp_boldify_html($sec[1] . '. ' . $sec[2], $bold_terms) . '</div>';
+        if (preg_match('/^((?:\d+\.)+)\s*(.+)$/u', $trim, $num_match)) {
+            $num = rtrim($num_match[1], '.');
+            $text = $num_match[2];
+            $depth = count(explode('.', $num));
+            $line = $num . '. ' . $text;
+            $styled = yvo_classic_dkp_underline_credit_refs(yvo_classic_dkp_boldify_html($line, $bold_terms));
+            if ($depth === 1) {
+                $html .= '<div class="dkp-section">' . $styled . '</div>';
+                continue;
+            }
+            if ($depth === 2) {
+                $html .= '<div class="dkp-subclause">' . $styled . '</div>';
+                continue;
+            }
+            $html .= '<div class="dkp-subclause dkp-subclause-l3">' . $styled . '</div>';
             continue;
         }
-        $html .= '<div class="dkp-clause">' . yvo_classic_dkp_boldify_html($trim, $bold_terms) . '</div>';
+        $html .= '<div class="dkp-clause">' . yvo_classic_dkp_underline_credit_refs(yvo_classic_dkp_boldify_html($trim, $bold_terms)) . '</div>';
     }
     return $html;
 }
 
 /** Классический HTML всего договора. */
 function yvo_generate_dkp_classic_styled_html($contract_content_raw, array $replacements, $contract_type = 'sale') {
-    $city_line = isset($replacements['DKP_CLASSIC_CITY_DATE_LINE'])
-        ? (string) $replacements['DKP_CLASSIC_CITY_DATE_LINE']
-        : '';
     $preamble = isset($replacements['CLASSIC_PARTIES_PREAMBLE'])
         ? (string) $replacements['CLASSIC_PARTIES_PREAMBLE']
         : '';
     $bold_terms = yvo_classic_dkp_collect_bold_terms($replacements, $contract_content_raw);
+    $city = isset($replacements['CONTRACT_CITY']) ? (string) $replacements['CONTRACT_CITY'] : '';
+    $date = isset($replacements['CONTRACT_DATE']) ? (string) $replacements['CONTRACT_DATE'] : '';
+    $region = isset($replacements['CONTRACT_REGION']) ? (string) $replacements['CONTRACT_REGION'] : '';
+    if ($city === '' && isset($replacements['DKP_CLASSIC_CITY_DATE_LINE'])) {
+        $city_line_raw = (string) $replacements['DKP_CLASSIC_CITY_DATE_LINE'];
+        if (preg_match('/^Город\s+(.+?)\s+«/u', $city_line_raw, $m)) {
+            $city = trim($m[1]);
+        }
+    }
+    $city_date_html = yvo_build_dkp_classic_city_date_html($city, $date, $region, $bold_terms);
     $body_html = yvo_classic_dkp_body_to_html($contract_content_raw, $bold_terms);
     $sigs_html = yvo_signatures_block_text_to_html(isset($replacements['SIGNATURES_BLOCK']) ? (string) $replacements['SIGNATURES_BLOCK'] : '', false);
     if ($sigs_html !== '') {
@@ -410,7 +519,7 @@ function yvo_generate_dkp_classic_styled_html($contract_content_raw, array $repl
         . '<style>' . yvo_dkp_classic_styles_css() . '</style></head><body spellcheck="false">'
         . '<div class="page">'
         . '<div class="dkp-title">Договор купли-продажи</div>'
-        . '<div class="dkp-city-date">' . yvo_classic_dkp_boldify_html($city_line, $bold_terms) . '</div>'
+        . '<div class="dkp-city-date">' . $city_date_html . '</div>'
         . '<div class="dkp-preamble">' . yvo_classic_dkp_boldify_html($preamble, $bold_terms) . '</div>'
         . '<div class="dkp-body">' . $body_html . '</div>'
         . $sigs_html
