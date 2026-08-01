@@ -1,0 +1,5 @@
+{
+  "install": "npm install && chmod +x scripts/vps.sh deploy/vps-manage.sh deploy/deploy-vps.sh",
+  "start": "npm start",
+  "terminals": []
+}

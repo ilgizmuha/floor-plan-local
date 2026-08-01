@@ -1,0 +1,265 @@
+.yvo-pc-landing {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px 16px 48px;
+  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  color: #0f172a;
+}
+.yvo-pc-breadcrumb {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.yvo-pc-breadcrumb a { color: #2563eb; text-decoration: none; }
+.yvo-pc-hero {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+  margin-bottom: 32px;
+}
+.yvo-pc-hero h1 {
+  font-size: clamp(28px, 4vw, 40px);
+  font-weight: 800;
+  line-height: 1.15;
+  margin-bottom: 10px;
+}
+.yvo-pc-hero__lead {
+  font-size: 18px;
+  color: #334155;
+  margin-bottom: 14px;
+}
+.yvo-pc-hero__bullets {
+  margin: 0 0 18px;
+  padding-left: 20px;
+  color: #475569;
+  line-height: 1.5;
+}
+.yvo-pc-price-badge {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eff6ff, #f8fafc);
+  border: 1px solid rgba(37, 99, 235, 0.15);
+}
+.yvo-pc-price-badge__main { font-size: 15px; }
+.yvo-pc-price-badge__sub { font-size: 13px; color: #64748b; }
+.yvo-pc-price-badge__sub--ok { color: #15803d; font-weight: 700; }
+.yvo-pc-card {
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  padding: 18px;
+}
+.yvo-pc-drop {
+  border: 2px dashed rgba(37, 99, 235, 0.35);
+  border-radius: 14px;
+  padding: 18px 14px;
+  text-align: center;
+  cursor: pointer;
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.04), #fff);
+  margin-bottom: 14px;
+  transition: border-color 0.2s, background 0.2s;
+}
+.yvo-pc-drop.is-drag { border-color: #2563eb; background: rgba(37, 99, 235, 0.08); }
+.yvo-pc-drop__title { font-weight: 800; font-size: 16px; margin-bottom: 6px; }
+.yvo-pc-drop__hint { font-size: 13px; color: #475569; margin-bottom: 4px; }
+.yvo-pc-drop__hint a { color: #2563eb; }
+.yvo-pc-drop__meta { font-size: 12px; color: #94a3b8; }
+.yvo-pc-file-list { margin-top: 10px; font-size: 12px; text-align: left; color: #334155; }
+.yvo-pc-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: #334155;
+}
+.yvo-pc-input,
+.yvo-pc-textarea {
+  width: 100%;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font: inherit;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+}
+.yvo-pc-textarea { resize: vertical; min-height: 100px; }
+.yvo-pc-input:focus,
+.yvo-pc-textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+.yvo-pc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 12px;
+  border: none;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  width: 100%;
+}
+.yvo-pc-btn--primary {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.28);
+}
+.yvo-pc-btn--primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.yvo-pc-btn--secondary {
+  background: #f1f5f9;
+  color: #0f172a;
+  width: auto;
+}
+.yvo-pc-wallet-hint { font-size: 12px; color: #64748b; margin-top: 10px; text-align: center; }
+.yvo-pc-disclaimer { font-size: 11px; color: #94a3b8; margin-top: 12px; line-height: 1.4; }
+.yvo-pc-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 32px;
+}
+.yvo-pc-stat {
+  background: #fff;
+  border-radius: 14px;
+  padding: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  text-align: center;
+}
+.yvo-pc-stat strong { display: block; font-size: 20px; margin-bottom: 4px; }
+.yvo-pc-stat span { font-size: 12px; color: #64748b; }
+.yvo-pc-section { margin-bottom: 32px; }
+.yvo-pc-section h2 { font-size: 22px; margin-bottom: 14px; }
+.yvo-pc-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.yvo-pc-steps li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: #fff;
+  border-radius: 14px;
+  padding: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  line-height: 1.45;
+}
+.yvo-pc-steps li span {
+  flex: 0 0 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 13px;
+}
+.yvo-pc-compare__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.yvo-pc-compare__col {
+  border-radius: 16px;
+  padding: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+}
+.yvo-pc-compare__col--before { background: #fef2f2; }
+.yvo-pc-compare__col--after { background: #f0fdf4; }
+.yvo-pc-compare__col h3 { margin-bottom: 10px; font-size: 16px; }
+.yvo-pc-compare__col ul { margin: 0; padding-left: 18px; line-height: 1.5; color: #334155; }
+.yvo-pc-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 100050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.yvo-pc-modal[hidden] { display: none !important; }
+.yvo-pc-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+.yvo-pc-modal__box {
+  position: relative;
+  background: #fff;
+  border-radius: 18px;
+  padding: 22px;
+  max-width: 440px;
+  width: 100%;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.2);
+  text-align: center;
+}
+.yvo-pc-modal__box--wide { max-width: 720px; text-align: left; max-height: 85vh; overflow: auto; }
+.yvo-pc-modal__close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  border: none;
+  background: transparent;
+  font-size: 28px;
+  line-height: 1;
+  cursor: pointer;
+  color: #64748b;
+}
+.yvo-pc-spinner {
+  width: 40px;
+  height: 40px;
+  margin: 16px auto 0;
+  border: 3px solid #e2e8f0;
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: yvo-pc-spin 0.8s linear infinite;
+}
+@keyframes yvo-pc-spin { to { transform: rotate(360deg); } }
+.yvo-pc-report {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #1e293b;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 12px 0;
+  max-height: 50vh;
+  overflow: auto;
+}
+.yvo-pc-modal__actions { display: flex; justify-content: flex-end; gap: 8px; }
+.yvo-pc-toast {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-size: 14px;
+  z-index: 100060;
+  max-width: 90vw;
+}
+body.yvo-property-check-page .yvo-cabinet-virtual-wrap { max-width: none; padding: 0; }
+@media (max-width: 860px) {
+  .yvo-pc-hero { grid-template-columns: 1fr; }
+  .yvo-pc-stats { grid-template-columns: 1fr; }
+  .yvo-pc-compare__grid { grid-template-columns: 1fr; }
+}

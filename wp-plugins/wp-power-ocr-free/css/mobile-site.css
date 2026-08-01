@@ -1,0 +1,232 @@
+/**
+ * Общие мобильные правки АРР / Dokii (≤767px).
+ * Подключается вместе с cabinet-auth на страницах кабинета и ДОКИ.
+ */
+
+@media (max-width: 767px) {
+
+    /* Без горизонтального скролла на страницах плагина */
+    body.yvo-cabinet-virtual:not(.wp-admin),
+    body.yvo-contract-form-doki-page:not(.wp-admin),
+    body.yvo-contract-form-page:not(.wp-admin),
+    body.yvo-deal-cabinet-page:not(.wp-admin) {
+        overflow-x: hidden;
+        max-width: 100vw;
+    }
+
+    /* Safe area (вырезы экрана) */
+    body.yvo-cabinet-virtual .yvo-cab-topbar-inner,
+    body.yvo-cabinet-inflow-header .yvo-cab-topbar-inner {
+        padding-left: max(10px, env(safe-area-inset-left, 0px));
+        padding-right: max(10px, env(safe-area-inset-right, 0px));
+    }
+
+    /* Админ-бар WP: шапка не уезжает под него */
+    body.admin-bar.yvo-plugin-site-header:not(.wp-admin) .yvo-cab-topbar {
+        top: 46px !important;
+    }
+
+    body.admin-bar.yvo-cabinet-inflow-header:not(.wp-admin),
+    body.admin-bar.yvo-contract-form-doki-page:not(.wp-admin),
+    body.admin-bar.yvo-contract-form-page:not(.wp-admin) {
+        padding-top: 46px !important;
+    }
+
+    /* Виртуальный кабинет — отступы контента */
+    .yvo-cabinet-virtual-wrap {
+        padding: 0 10px 20px;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    body.yvo-cabinet-route-pricing .yvo-cabinet-virtual-wrap,
+    body.yvo-cabinet-virtual.yvo-cabinet-route-pricing .yvo-cabinet-virtual-wrap {
+        padding: 0 8px 20px;
+    }
+
+    body.yvo-deal-cabinet-page .yvo-cabinet-virtual-wrap,
+    body.yvo-contract-form-doki-page .yvo-cabinet-virtual-wrap {
+        padding: 0 !important;
+    }
+
+    body.yvo-cabinet-virtual .yvo-cabinet-virtual-head {
+        margin: 0 0 8px;
+    }
+
+    body.yvo-cabinet-virtual .yvo-cabinet-virtual-head .yvo-cab-topbar {
+        border-radius: 12px;
+    }
+
+    /* Тарифы */
+    body.yvo-cabinet-virtual .yvo-pr-page {
+        padding-left: 0;
+        padding-right: 0;
+    }
+
+    .yvo-cabinet-virtual-wrap .yvo-pr-wrap {
+        max-width: 100%;
+    }
+
+    .yvo-pr-btn,
+    .yvo-pr-tier__foot .yvo-cabinet-btn,
+    .yvo-cabinet-btn,
+    .yvo-cab-login-card .button,
+    .yvo-cab-login-card input[type="submit"],
+    .yvo-cab-login-card .yvo-cabinet-btn {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+    }
+
+    .yvo-pr-compare__scroll {
+        -webkit-overflow-scrolling: touch;
+        margin: 0 -6px;
+        padding-bottom: 6px;
+    }
+
+    .yvo-pr-compare__scroll::after {
+        content: "← листайте →";
+        display: block;
+        text-align: center;
+        font-size: 11px;
+        color: #78716c;
+        margin-top: 6px;
+        font-weight: 600;
+    }
+
+    /* Профиль / кошелёк */
+    .yvo-cabinet-virtual-wrap .yvo-cabinet-auth {
+        margin: 8px 0;
+        padding: 14px;
+        border-radius: 14px;
+        max-width: none;
+    }
+
+    /* ДОКИ — hero и шаги */
+    .yvo-doki-contract-page .doki-hero-pills,
+    .yvo-doki-contract-page .doki-pills-row {
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+    }
+
+    .yvo-doki-contract-page .doki-pill {
+        min-height: 44px;
+        flex: 1 1 auto;
+        max-width: 100%;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .autofill-actions {
+        display: flex;
+        width: auto;
+        margin-left: auto;
+        gap: 6px;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-autofill-btn {
+        width: auto;
+        min-height: 30px;
+        padding: 5px 12px;
+        font-size: 0.74rem;
+        box-sizing: border-box;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-steps .step-pill {
+        min-width: 0;
+        flex: 1 1 0;
+        padding: 8px 6px;
+        font-size: 0.72rem;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-steps .step-pill-icon {
+        display: none;
+    }
+
+    .yvo-doki-contract-page .yvo-frontend-page,
+    .yvo-doki-contract-page .yvo-doki-form-skin {
+        padding-left: 10px;
+        padding-right: 10px;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    /* CRM Сделки */
+    body.yvo-cabinet-virtual.yvo-deal-cabinet-page .yvo-deal-cabinet-shell .topbar {
+        min-height: 44px;
+        padding: 6px 10px;
+    }
+
+    body.yvo-cabinet-virtual.yvo-deal-cabinet-page .yvo-deal-cabinet-shell .sidebar-toggle {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    body.yvo-cabinet-virtual.yvo-deal-cabinet-page .yvo-deal-cabinet-embed {
+        margin: 0;
+    }
+
+    .yvo-deal-cabinet-shell .modal {
+        max-height: 92dvh;
+        margin: 0;
+    }
+
+    .yvo-deal-cabinet-shell .modal-overlay {
+        padding: 10px;
+        align-items: flex-end;
+    }
+
+    .yvo-deal-cabinet-shell .modal-overlay.is-open .modal {
+        border-radius: 16px 16px 0 0;
+        width: 100%;
+        max-width: none;
+    }
+}
+
+@media (max-width: 420px) {
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-add-participant-btn__text {
+        display: none;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-add-participant-btn {
+        padding: 4px 6px;
+        min-width: 36px;
+        justify-content: center;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-participant-icon-btn__label {
+        font-size: 8px;
+        line-height: 1.1;
+        white-space: normal;
+    }
+}
+
+@media (max-width: 380px) {
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-participant-icon-btn__label-long {
+        display: none;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-participant-icon-btn__label-short {
+        display: block;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-participant-icon-btn {
+        min-height: 52px;
+        padding: 5px 2px;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin .yvo-doki-participant-icon-btn__label-short {
+        font-size: 8px;
+    }
+
+    .yvo-pr-head__title {
+        font-size: 1.65rem !important;
+    }
+}
+
+/* Подписи иконок: длинные по умолчанию, короткие только на узком экране */
+.yvo-doki-participant-icon-btn__label-short {
+    display: none;
+}

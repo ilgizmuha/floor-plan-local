@@ -1,0 +1,72 @@
+.wpo-container {
+    max-width: 1200px;
+    margin: 20px 0;
+}
+
+.wpo-card {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+    padding: 20px;
+    margin-bottom: 20px;
+    border-radius: 4px;
+}
+
+.wpo-card h2 {
+    margin-top: 0;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+.wpo-file-input {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+}
+
+.wpo-file-input input {
+    flex: 1;
+    min-width: 300px;
+}
+
+.wpo-actions {
+    margin: 20px 0;
+}
+
+.wpo-progress {
+    text-align: center;
+    padding: 30px;
+    background: #f8f8f8;
+    border-radius: 4px;
+    margin: 20px 0;
+}
+
+.wpo-result {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 4px;
+}
+
+.wpo-result.success {
+    border-left: 4px solid #46b450;
+}
+
+.wpo-result.error {
+    border-left: 4px solid #dc3232;
+}
+
+.wpo-result textarea {
+    width: 100%;
+    height: 200px;
+    font-family: monospace;
+    margin: 10px 0;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+}
+
+.notice {
+    margin: 10px 0;
+}

@@ -10,3 +10,5 @@ config.local.php
 data/*.json
 data/*.jsonl
 !data/knowledge/
+wp-plugins/wp-power-ocr-free/vendor/
+wp-plugins/wp-power-ocr-free/tmp/

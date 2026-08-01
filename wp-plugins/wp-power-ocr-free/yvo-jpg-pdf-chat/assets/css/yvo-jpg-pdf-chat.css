@@ -1,0 +1,502 @@
+/* Чат «JPG → PDF»: отдельный виджет, не зависит от ДОКИ */
+.yvo-jpg-pdf-chat {
+  --yvo-jpg-bg: #0f1419;
+  --yvo-jpg-panel: #1a222c;
+  --yvo-jpg-border: #2a3544;
+  --yvo-jpg-text: #e8eef5;
+  --yvo-jpg-muted: #8b9bb0;
+  --yvo-jpg-accent: #3d8bfd;
+  --yvo-jpg-accent2: #22c55e;
+  --yvo-jpg-bot: #243044;
+  --yvo-jpg-user: #163a5e;
+  max-width: 640px;
+  margin: 1.5rem auto;
+  border-radius: 16px;
+  border: 1px solid var(--yvo-jpg-border);
+  background: var(--yvo-jpg-bg);
+  color: var(--yvo-jpg-text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.yvo-jpg-pdf-chat__head {
+  padding: 14px 16px;
+  background: var(--yvo-jpg-panel);
+  border-bottom: 1px solid var(--yvo-jpg-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.yvo-jpg-pdf-chat__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.yvo-jpg-pdf-chat__badge {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(61, 139, 253, 0.2);
+  color: #9ecbff;
+  white-space: nowrap;
+}
+
+.yvo-jpg-pdf-chat__messages {
+  height: 280px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scroll-behavior: smooth;
+}
+
+.yvo-jpg-pdf-chat__bubble {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  word-break: break-word;
+}
+
+.yvo-jpg-pdf-chat__bubble--bot {
+  align-self: flex-start;
+  background: var(--yvo-jpg-bot);
+  border: 1px solid var(--yvo-jpg-border);
+}
+
+.yvo-jpg-pdf-chat__bubble--user {
+  align-self: flex-end;
+  background: var(--yvo-jpg-user);
+  border: 1px solid rgba(61, 139, 253, 0.35);
+}
+
+.yvo-jpg-pdf-chat__bubble--err {
+  align-self: flex-start;
+  background: #3d1a1a;
+  border: 1px solid #7f2d2d;
+}
+
+.yvo-jpg-pdf-chat__bubble pre,
+.yvo-jpg-pdf-chat__bubble .yvo-jpg-pdf-chat__ocr {
+  margin: 8px 0 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  font-size: 12px;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.yvo-jpg-pdf-chat__queue {
+  padding: 0 14px 10px;
+  border-bottom: 1px solid var(--yvo-jpg-border);
+}
+
+.yvo-jpg-pdf-chat__queue-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--yvo-jpg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.yvo-jpg-pdf-chat__queue-hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+  color: var(--yvo-jpg-accent);
+}
+
+.yvo-jpg-pdf-chat__details {
+  border-bottom: 1px solid var(--yvo-jpg-border);
+  background: var(--yvo-jpg-panel);
+}
+
+.yvo-jpg-pdf-chat__summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--yvo-jpg-text);
+  list-style-position: inside;
+}
+
+.yvo-jpg-pdf-chat__summary::-webkit-details-marker {
+  color: var(--yvo-jpg-muted);
+}
+
+.yvo-jpg-pdf-chat__pdf-opts {
+  padding: 0 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.yvo-jpg-pdf-chat__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--yvo-jpg-muted);
+}
+
+.yvo-jpg-pdf-chat__field--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.yvo-jpg-pdf-chat__field--inline input {
+  width: auto;
+}
+
+.yvo-jpg-pdf-chat__select,
+.yvo-jpg-pdf-chat__input {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--yvo-jpg-border);
+  background: var(--yvo-jpg-bg);
+  color: var(--yvo-jpg-text);
+  font-size: 13px;
+  max-width: 100%;
+}
+
+.yvo-jpg-pdf-chat__input--sm {
+  width: 4.5rem;
+}
+
+.yvo-jpg-pdf-chat__margin-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+}
+
+.yvo-jpg-pdf-chat__margin-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--yvo-jpg-muted);
+}
+
+.yvo-jpg-pdf-chat__thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.yvo-jpg-pdf-chat__thumb {
+  position: relative;
+  width: 80px;
+  height: 88px;
+  border-radius: 8px;
+  overflow: visible;
+  border: 2px solid var(--yvo-jpg-border);
+  cursor: grab;
+  background: var(--yvo-jpg-panel);
+}
+
+.yvo-jpg-pdf-chat__thumb-num {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 2;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(61, 139, 253, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.yvo-jpg-pdf-chat__thumb-pdf {
+  width: 100%;
+  height: 72px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(145deg, #2a3544, #1a222c);
+  border-radius: 6px;
+  padding: 4px;
+  box-sizing: border-box;
+}
+
+.yvo-jpg-pdf-chat__thumb-pdf-label {
+  font-size: 14px;
+  font-weight: 800;
+  color: #f87171;
+  letter-spacing: 0.06em;
+}
+
+.yvo-jpg-pdf-chat__thumb-pdf-name {
+  font-size: 9px;
+  color: var(--yvo-jpg-muted);
+  text-align: center;
+  word-break: break-all;
+  line-height: 1.15;
+  max-height: 2.4em;
+  overflow: hidden;
+}
+
+.yvo-jpg-pdf-chat__thumb-tools {
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  z-index: 2;
+}
+
+.yvo-jpg-pdf-chat__thumb-tool {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--yvo-jpg-border);
+  border-radius: 4px;
+  background: rgba(15, 20, 25, 0.92);
+  color: var(--yvo-jpg-text);
+  font-size: 11px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.yvo-jpg-pdf-chat__thumb-tool:hover:not(:disabled) {
+  border-color: var(--yvo-jpg-accent);
+  color: #fff;
+}
+
+.yvo-jpg-pdf-chat__thumb-tool:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.yvo-jpg-pdf-chat__thumb.is-dragging {
+  opacity: 0.55;
+}
+
+.yvo-jpg-pdf-chat__thumb img {
+  width: 100%;
+  height: 72px;
+  margin-top: 8px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+
+.yvo-jpg-pdf-chat__thumb-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.yvo-jpg-pdf-chat__thumb-remove:hover {
+  background: #b91c1c;
+}
+
+.yvo-jpg-pdf-chat__foot {
+  padding: 12px 14px 14px;
+  background: var(--yvo-jpg-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.yvo-jpg-pdf-chat__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.yvo-jpg-pdf-chat__btn {
+  appearance: none;
+  border: 1px solid var(--yvo-jpg-border);
+  background: var(--yvo-jpg-bg);
+  color: var(--yvo-jpg-text);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.yvo-jpg-pdf-chat__btn:hover:not(:disabled) {
+  border-color: var(--yvo-jpg-accent);
+  background: rgba(61, 139, 253, 0.08);
+}
+
+.yvo-jpg-pdf-chat__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.yvo-jpg-pdf-chat__btn--primary {
+  background: var(--yvo-jpg-accent);
+  border-color: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+.yvo-jpg-pdf-chat__btn--primary:hover:not(:disabled) {
+  background: #2f7ce8;
+}
+
+.yvo-jpg-pdf-chat__btn--success {
+  background: var(--yvo-jpg-accent2);
+  border-color: transparent;
+  color: #052e12;
+  font-weight: 600;
+}
+
+.yvo-jpg-pdf-chat__dropzone {
+  margin: 0 14px 10px;
+  padding: 14px 12px;
+  border: 2px dashed var(--yvo-jpg-border);
+  border-radius: 10px;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.yvo-jpg-pdf-chat__dropzone.is-dragover {
+  border-color: var(--yvo-jpg-accent);
+  background: rgba(61, 139, 253, 0.08);
+}
+
+.yvo-jpg-pdf-chat__dropzone-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--yvo-jpg-muted);
+}
+
+.yvo-jpg-pdf-chat__file-label {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.yvo-jpg-pdf-chat__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  opacity: 0;
+}
+
+.yvo-jpg-pdf-chat__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--yvo-jpg-muted);
+}
+
+.yvo-jpg-pdf-chat__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.yvo-jpg-pdf-chat__actions .yvo-jpg-pdf-chat__btn {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.yvo-jpg-pdf-chat__ai-row {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--yvo-jpg-border);
+  margin-top: 4px;
+}
+
+.yvo-jpg-pdf-chat__ai-label {
+  font-size: 11px;
+  color: var(--yvo-jpg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: 100%;
+}
+
+@media (min-width: 480px) {
+  .yvo-jpg-pdf-chat__ai-label {
+    width: auto;
+    margin-right: 4px;
+  }
+}
+
+.yvo-jpg-pdf-chat__btn--ai {
+  background: linear-gradient(135deg, #5b21b6, #7c3aed);
+  border-color: transparent;
+  color: #f5f3ff;
+  font-weight: 600;
+}
+
+.yvo-jpg-pdf-chat__btn--ai:hover:not(:disabled) {
+  filter: brightness(1.08);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.yvo-jpg-pdf-chat__spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: yvo-jpg-spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+
+@keyframes yvo-jpg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 600px) {
+  .yvo-jpg-pdf-chat {
+    margin: 1rem 0;
+    border-radius: 12px;
+    max-width: none;
+  }
+  .yvo-jpg-pdf-chat__messages {
+    height: 220px;
+  }
+}

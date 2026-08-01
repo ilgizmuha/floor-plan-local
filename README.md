@@ -115,6 +115,21 @@ npm run brain:backtest
 
 Плагин не хранит Bybit-ключи и не содержит торговую логику. На VPS он работает через ограниченный helper `deploy/trading-brain-panel-helper.sh`, установленный как `/usr/local/bin/trading-brain-panel`.
 
+## VPS и OCR-плагин (управление из Cursor)
+
+Для Cloud Agent и локальной разработки:
+
+```bash
+chmod +x scripts/vps.sh
+./scripts/vps.sh health          # статус VPS, brain, OCR
+./scripts/vps.sh ocr-status      # OCR-плагин (Яндекс Vision + DeepSeek)
+./scripts/vps.sh ocr-pull        # скачать плагин с VPS в репозиторий
+./scripts/vps.sh ocr-push        # залить правки плагина на VPS
+./scripts/vps.sh deploy all      # brain + panel + helpers
+```
+
+Подробности: `AGENTS.md`, OCR: `wp-plugins/wp-power-ocr-free/README.md`.
+
 ## Подключение к GitHub
 
 1. Создайте новый репозиторий на [github.com](https://github.com/new) (без README и .gitignore).
