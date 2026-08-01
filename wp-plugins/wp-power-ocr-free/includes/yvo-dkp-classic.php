@@ -209,7 +209,18 @@ function yvo_build_variant2_spouse_clause(array $property_data) {
     return '1.4. ' . $note . "\n";
 }
 
-/** Раздел 2 вариант 2 (собственные + кредит + Домклик). */
+/** Тип оплаты для варианта 2: cash | mortgage. */
+function yvo_variant2_payment_type(array $property_data, array $options) {
+    if (isset($options['payment_type']) && trim((string) $options['payment_type']) !== '') {
+        return sanitize_key((string) $options['payment_type']);
+    }
+    if (isset($property_data['payment_type']) && trim((string) $property_data['payment_type']) !== '') {
+        return sanitize_key((string) $property_data['payment_type']);
+    }
+    return 'mortgage';
+}
+
+/** Раздел 2 вариант 2 (наличные или собственные + кредит + Домклик). */
 function yvo_build_variant2_payment_section(array $property_data, array $options, array $buyers) {
     $g = function ($k, $fb = '__________') use ($options, $property_data) {
         if (isset($options[$k]) && trim((string) $options[$k]) !== '' && trim((string) $options[$k]) !== '[сумма]') {
@@ -222,6 +233,15 @@ function yvo_build_variant2_payment_section(array $property_data, array $options
     };
     $price = $g('property_price', '__________');
     $price_words = $g('property_price_words', '________________');
+    if (yvo_variant2_payment_type($property_data, $options) === 'cash') {
+        $seller_pay = trim((string) ($property_data['seller_details'] ?? $property_data['seller_details_mortgage'] ?? ''));
+        if ($seller_pay === '') {
+            $seller_pay = 'по реквизитам Продавца';
+        }
+        return "2.1. Стоимость Объекта составляет {$price} рублей ({$price_words}). Цена является окончательной и изменению не подлежит.\n"
+            . "2.2. Оплата стоимости Объекта производится Покупателем за счёт собственных денежных средств в полном объёме.\n"
+            . "2.3. Сумма в размере {$price} ({$price_words}) рублей уплачивается Покупателем Продавцу в день подписания настоящего Договора путём передачи наличных денежных средств (либо путём перечисления на счёт Продавца, {$seller_pay}).\n";
+    }
     $own = $g('loan_own_amount', '__________');
     $own_words = $g('loan_own_amount_words', '________________');
     $credit = $g('loan_credit_amount', '__________');
@@ -260,6 +280,15 @@ function yvo_build_variant2_payment_section(array $property_data, array $options
 
 /** Раздел 3 вариант 2. */
 function yvo_build_variant2_essential_section(array $property_data, array $options) {
+    if (yvo_variant2_payment_type($property_data, $options) === 'cash') {
+        if (function_exists('yvo_build_dkp_essential_section')) {
+            $cash = yvo_build_dkp_essential_section('nalichnye_den_sdelki', $options);
+            if ($cash !== '') {
+                return $cash . "\n"
+                    . "3.8. Продавец гарантирует, что не является иностранным агентом в понимании Федерального закона от 14.07.2022 N 255-ФЗ «О контроле за деятельностью лиц, находящихся под иностранным влиянием», и он не обязан использовать специальный рублевый счет, открытый в уполномоченном банке, режим которого, в том числе особенности внесения на него платежей и списания с него средств, устанавливается решением Совета директоров Центрального банка Российской Федерации, подлежащим официальному опубликованию в соответствии со статьей 7 Федерального закона от 10 июля 2002 года N 86-ФЗ «О Центральном банке Российской Федерации (Банке России).";
+            }
+        }
+    }
     $acceptance = isset($options['acceptance_days']) && trim((string) $options['acceptance_days']) !== ''
         ? trim((string) $options['acceptance_days']) : '14';
     if (preg_match('/\d+/', $acceptance, $m)) {
@@ -305,10 +334,17 @@ function yvo_build_classic_dkp_placeholder_extras($template_id, array $sellers, 
         'CONTRACT_REGION' => $region,
     );
     if ($tpl === 'default' || $tpl === 'contract-variant2') {
+        $pt = yvo_variant2_payment_type($property_data, $options);
         $extras['VARIANT2_PROPERTY_INLINE'] = yvo_build_variant2_property_inline($property_data);
         $extras['VARIANT2_SPOUSE_CLAUSE'] = yvo_build_variant2_spouse_clause($property_data);
         $extras['VARIANT2_PAYMENT_SECTION'] = yvo_build_variant2_payment_section($property_data, $options, $buyers);
         $extras['VARIANT2_ESSENTIAL_SECTION'] = yvo_build_variant2_essential_section($property_data, $options);
+        $extras['VARIANT2_CLAUSE_4_3'] = ($pt === 'cash')
+            ? '4.3. Переход права собственности на Объект подлежит государственной регистрации в территориальном управлении Федеральной службы государственной регистрации, кадастра и картографии.'
+            : '4.3. Переход права собственности и ипотека в силу закона в пользу Банка подлежат государственной регистрации в территориальном управлении Федеральной службы государственной регистрации, кадастра и картографии.';
+        $extras['VARIANT2_COPIES_CLAUSE'] = ($pt === 'cash')
+            ? '4.5. Договор составлен в 3 (трех) экземплярах, имеющих одинаковую юридическую силу: по одному для каждой из Сторон и один для органа регистрации прав.'
+            : '4.5. Договор составлен в 2 (двух) экземплярах: по одному из них вручается каждому участнику сделки.';
     }
     return $extras;
 }
