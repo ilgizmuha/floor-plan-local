@@ -18,8 +18,21 @@ This repo contains:
 
 Always prefer `./scripts/vps.sh` instead of ad-hoc root SSH.
 
+On first boot, `.cursor/environment.json` runs `deploy/bootstrap-vps-ssh.sh` to set up `~/.ssh/vps_key`.
+
 ```bash
-chmod +x scripts/vps.sh deploy/vps-manage.sh
+chmod +x scripts/vps.sh deploy/bootstrap-vps-ssh.sh
+bash deploy/bootstrap-vps-ssh.sh   # once per agent if install skipped
+./scripts/vps.sh health
+```
+
+**Secrets in Cursor Cloud dashboard** (Environment → Secrets):
+| Secret | Type | Purpose |
+|--------|------|---------|
+| `VPS_SSH_KEY` | Runtime Secret | private key (preferred) |
+| `VPS_SSH_PASSWORD` | Runtime Secret | fallback: auto keygen + install pubkey on VPS |
+
+Without secrets, warm-fork snapshots may still have `/tmp/cursor_vps_key`. deploy/vps-manage.sh
 
 # Health + services
 ./scripts/vps.sh health

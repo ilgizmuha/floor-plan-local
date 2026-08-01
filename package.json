@@ -16,7 +16,8 @@
     "brain:calibrate": "node scripts/trading-brain.js calibrate",
     "vps": "bash scripts/vps.sh",
     "vps:health": "bash scripts/vps.sh health",
-    "vps:deploy": "bash scripts/vps.sh deploy all"
+    "vps:deploy": "bash scripts/vps.sh deploy all",
+    "vps:setup": "bash deploy/bootstrap-vps-ssh.sh"
   },
   "dependencies": {
     "@cursor/sdk": "^1.0.24",

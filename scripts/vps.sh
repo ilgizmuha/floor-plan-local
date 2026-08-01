@@ -7,6 +7,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOST="${VPS_HOST:-159.194.229.87}"
 USER="${VPS_USER:-root}"
 KEY="${VPS_SSH_KEY:-}"
+if [[ -z "$KEY" && -f "${HOME}/.ssh/vps_key" ]]; then
+  KEY="${HOME}/.ssh/vps_key"
+fi
 REMOTE_HELPER="/usr/local/bin/vps-manage"
 REMOTE_BRAIN="/opt/trading-brain"
 REMOTE_WP_PLUGINS="/var/www/wp/wp-content/plugins"
@@ -14,6 +17,8 @@ REMOTE_WP_PLUGINS="/var/www/wp/wp-content/plugins"
 ssh_opts=(-o StrictHostKeyChecking=no -o IdentitiesOnly=yes)
 if [[ -n "$KEY" ]]; then
   ssh_opts+=(-i "$KEY")
+elif [[ -f "${HOME}/.ssh/vps_key" ]]; then
+  ssh_opts+=(-i "${HOME}/.ssh/vps_key")
 elif [[ -f /tmp/cursor_vps_key ]]; then
   ssh_opts+=(-i /tmp/cursor_vps_key)
 fi
