@@ -2180,7 +2180,7 @@
     function yvoFpTemplateIsHiddenFromDkpPicker(templateId) {
         var id = String(templateId || '');
         var idLower = id.toLowerCase();
-        if (id === 'act-sale-standard' || id === 'dkp-sale-standard') return true;
+        if (id === 'act-sale-standard') return true;
         if (/акт_приема|акт приема|act[-_ ]sale/i.test(id) || /akt[-_ ]priema/i.test(idLower)) return true;
         if (/^ПОЛНЫЙ_ТЕКСТ_|^ТЕКСТ_/i.test(id)) return true;
         return false;
@@ -2230,7 +2230,7 @@
             { value: 'preliminary', label: 'Предварительный договор купли-продажи' }
         ]
     };
-    var builtinTemplatesFallback = { default: 'ДКП обычный' };
+    var builtinTemplatesFallback = { default: 'ДКП вариант 2', 'dkp-sale-standard': 'ДКП стандартный' };
     var builtinCategoriesFallback = { default: 'sale' };
     function getTemplateOptionsForType(contractType) {
         var all = (typeof window.yvo_contract_templates === 'object' && window.yvo_contract_templates && Object.keys(window.yvo_contract_templates).length > 0) ? window.yvo_contract_templates : builtinTemplatesFallback;
@@ -2282,7 +2282,7 @@
             if (all.hasOwnProperty(id)) { list.push({ value: id, label: all[id] }); }
         }
         list = list.filter(function(o) { return o.value.indexOf('ПРОЧТИ_МЕНЯ') === -1 && o.label !== 'ПРОЧТИ МЕНЯ' && o.label !== 'МЕНЯ'; });
-        return list.length ? list : [{ value: 'default', label: 'ДКП обычный' }];
+        return list.length ? list : [{ value: 'default', label: 'ДКП вариант 2' }];
     }
     function updateContractTemplateOptions(contractType) {
         var opts = getTemplateOptionsForType(contractType);
@@ -2290,7 +2290,7 @@
         var cur = $sel.val();
         $sel.empty();
         if (!opts || opts.length === 0) {
-            opts = [{ value: 'default', label: 'ДКП обычный' }];
+            opts = [{ value: 'default', label: 'ДКП вариант 2' }];
         }
         opts.forEach(function(o) {
             $sel.append($('<option>').attr('value', o.value).text(o.label));

@@ -598,6 +598,7 @@ require_once YVO_PLUGIN_DIR . 'includes/yvo-cabinet-shortcodes.php';
 require_once YVO_PLUGIN_DIR . 'includes/yvo-templates-library.php';
 require_once YVO_PLUGIN_DIR . 'includes/yvo-doki-home.php';
 require_once YVO_PLUGIN_DIR . 'includes/yvo-deal-cabinet-storage.php';
+require_once YVO_PLUGIN_DIR . 'includes/yvo-dkp-classic.php';
 require_once YVO_PLUGIN_DIR . 'includes/yvo-public-header.php';
 require_once YVO_PLUGIN_DIR . 'includes/yvo-legal-compliance.php';
 require_once YVO_PLUGIN_DIR . 'includes/yvo-yookassa.php';
@@ -3945,7 +3946,6 @@ function yvo_get_removed_template_ids() {
         'contract-variant3',
         'dkp-ipoteka-akkreditiv-full',
         'gift-kvartira-apartment',
-        'act-sale-standard',
         'dkp-sale-standard',
     );
 }
@@ -3955,7 +3955,8 @@ function yvo_get_available_templates() {
     $list = array();
     $removed = array_flip(yvo_get_removed_template_ids());
     $names = array(
-        'default' => 'ДКП обычный',
+        'default' => 'ДКП вариант 2',
+        'dkp-sale-standard' => 'ДКП стандартный',
         'dkp-kvartira-ipoteka' => 'ДКП + ипотека + аккредитив',
         'dkp-nalichnye-akkreditiv-podpisi' => 'ДКП наличные + аккредитив (подписи, DOCX)',
         'preliminary' => 'Предварительный договор купли-продажи',
@@ -4051,7 +4052,7 @@ function yvo_get_available_templates() {
     }
     $list = array_diff_key($list, $removed);
     $order = array(
-        'default' => 1, 'dkp-kvartira-ipoteka' => 4,
+        'default' => 1, 'dkp-sale-standard' => 2, 'dkp-kvartira-ipoteka' => 4,
         'dkp-nalichnye-akkreditiv-podpisi' => 5,
         'preliminary' => 10,
         'deposit-agreement' => 20, 'deposit-receipt' => 21, 'advance-agreement' => 22, 'advance-receipt' => 23,
@@ -4063,7 +4064,7 @@ function yvo_get_available_templates() {
         return strcasecmp($a, $b);
     });
     if (empty($list)) {
-        $list = array('default' => 'ДКП обычный');
+        $list = array('default' => 'ДКП вариант 2');
     }
     return $list;
 }
@@ -4076,6 +4077,8 @@ function yvo_get_template_categories() {
     $list = yvo_get_available_templates();
     $builtin = array(
         'default' => 'sale',
+        'dkp-sale-standard' => 'sale',
+        'contract-variant2' => 'sale',
         'dkp-kvartira-ipoteka' => 'sale_mortgage',
         'dkp-nalichnye-akkreditiv-podpisi' => 'sale',
         'preliminary' => 'preliminary',
@@ -7142,7 +7145,10 @@ function yvo_dkp_uses_modern_fill_engine($template_id) {
     if ($template_id === '') {
         return true;
     }
-    if (in_array($template_id, array('default', 'dkp-kvartira-ipoteka', 'dkp-nalichnye-akkreditiv-podpisi'), true)) {
+    if (in_array($template_id, array('default', 'contract-variant2', 'dkp-sale-standard', 'dkp-kvartira-ipoteka', 'dkp-nalichnye-akkreditiv-podpisi'), true)) {
+        return true;
+    }
+    if (function_exists('yvo_dkp_uses_classic_style') && yvo_dkp_uses_classic_style($template_id)) {
         return true;
     }
     if (yvo_dkp_uses_standard_base_template($template_id)) {
@@ -7157,6 +7163,18 @@ function yvo_dkp_uses_modern_fill_engine($template_id) {
 }
 
 function yvo_resolve_dkp_sale_txt_path_effective($template_id) {
+    if ($template_id === 'default' && function_exists('yvo_resolve_dkp_default_txt_path')) {
+        $v2 = yvo_resolve_dkp_default_txt_path();
+        if ($v2) {
+            return $v2;
+        }
+    }
+    if ($template_id === 'dkp-sale-standard') {
+        $std = YVO_PLUGIN_DIR . 'templates/dkp-sale-standard.txt';
+        if (file_exists($std)) {
+            return $std;
+        }
+    }
     if (!yvo_dkp_uses_standard_base_template($template_id)) {
         if ($template_id === 'default' || $template_id === 'dkp-kvartira-ipoteka') {
             return yvo_resolve_dkp_ipoteka_txt_path_effective($template_id);
@@ -8979,6 +8997,11 @@ function yvo_get_dkp_ipoteka_placeholder_map($sellers, $buyers, $property_data, 
     if ($contract_type === 'share_allocation') {
         $map = array_merge($map, yvo_build_alloc_template_placeholders($sellers, $buyers, $property_data, $options));
     }
+    $tpl_id = isset($options['dkp_template_id']) ? (string) $options['dkp_template_id'] : '';
+    $map['dkp_template_id'] = $tpl_id;
+    if (function_exists('yvo_build_classic_dkp_placeholder_extras')) {
+        $map = array_merge($map, yvo_build_classic_dkp_placeholder_extras($tpl_id, $sellers, $buyers, $property_data, $options, $contract_type));
+    }
     return array_merge($map, yvo_build_gift_dolya_clause_placeholders($contract_type, $sellers, $buyers, $s1, $property_data));
 }
 
@@ -9104,6 +9127,10 @@ function yvo_fill_dkp_ipoteka_template($sellers, $buyers, $property_data, $optio
         $path = yvo_resolve_share_allocation_template_txt_path($template_id);
     } elseif ($ct === 'gift') {
         $path = yvo_resolve_gift_template_txt_path($template_id, $property_data);
+    } elseif ($template_id === 'default' && function_exists('yvo_resolve_dkp_default_txt_path')) {
+        $path = yvo_resolve_dkp_default_txt_path();
+    } elseif ($template_id === 'dkp-sale-standard' && file_exists($standard_base)) {
+        $path = $standard_base;
     } elseif (yvo_dkp_uses_standard_base_template($template_id) && file_exists($standard_base)) {
         $path = $standard_base;
     } else {
@@ -9193,6 +9220,12 @@ function yvo_generate_act_styled_html($act_content_raw, $replacements) {
 
 /** Какой txt-шаблон фактически будет использован для ДКП ипотека (с fallback на bundled). */
 function yvo_resolve_dkp_ipoteka_txt_path_effective($template_id) {
+    if ($template_id === 'default' && function_exists('yvo_resolve_dkp_default_txt_path')) {
+        $v2 = yvo_resolve_dkp_default_txt_path();
+        if ($v2) {
+            return $v2;
+        }
+    }
     $path = yvo_resolve_template_path($template_id);
     $bundled_dkp = YVO_PLUGIN_DIR . 'templates/dkp-kvartira-ipoteka.txt';
     if (!$path || !file_exists($path)) {
@@ -12277,6 +12310,13 @@ function yvo_dkp_red_header_html($doc_type_line, $main_title_html, $city, $day, 
  * @param array<string, scalar> $replacements
  */
 function yvo_generate_dkp_ipoteka_full_styled_html($contract_content_raw, $replacements, $contract_type = '') {
+    $tpl_id = isset($replacements['dkp_template_id']) ? (string) $replacements['dkp_template_id'] : '';
+    if ($tpl_id === '' && isset($replacements['DKP_TEMPLATE_ID'])) {
+        $tpl_id = (string) $replacements['DKP_TEMPLATE_ID'];
+    }
+    if (function_exists('yvo_dkp_uses_classic_style') && yvo_dkp_uses_classic_style($tpl_id)) {
+        return yvo_generate_dkp_classic_styled_html($contract_content_raw, $replacements, $contract_type);
+    }
     $city = isset($replacements['CONTRACT_CITY']) ? (string) $replacements['CONTRACT_CITY'] : '________________';
     $day = isset($replacements['DATE_DAY']) ? (string) $replacements['DATE_DAY'] : '__';
     $month = isset($replacements['DATE_MONTH']) ? (string) $replacements['DATE_MONTH'] : '__';
