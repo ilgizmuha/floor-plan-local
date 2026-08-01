@@ -1,0 +1,15 @@
+[Unit]
+Description=Read-only hybrid trading brain
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/trading-brain
+ExecStart=/usr/bin/npm run brain:loop
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

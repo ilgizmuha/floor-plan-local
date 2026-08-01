@@ -1,0 +1,11 @@
+{
+    "name": "yandex-vision-ocr/ocr-free",
+    "description": "Зависимости плагина Яндекс Vision OCR — извлечение текста из PDF",
+    "require": {
+        "php": ">=7.1",
+        "smalot/pdfparser": "^2.10"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

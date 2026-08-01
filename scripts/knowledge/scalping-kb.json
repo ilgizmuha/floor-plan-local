@@ -1,0 +1,136 @@
+{
+  "version": 2,
+  "title": "Scalping knowledge base",
+  "primaryMethod": "shiryaev_conservative",
+  "books": [
+    {
+      "id": "shiryaev",
+      "title": "Консервативный скальпинг intraday",
+      "author": "Ширяев Н. А.",
+      "primary": true,
+      "focus": [
+        "отбой от EMA/конверта",
+        "Stochastics + MACD",
+        "фильтр старшего ТФ",
+        "сессия 06–20 GMT",
+        "консервативный R:R и money management"
+      ],
+      "system": {
+        "workingTimeframe": "5m",
+        "workingTimeframeNote": "Book uses 10m; Bybit klines have no 10m — adapted to 5m",
+        "higherTimeframe": "4h",
+        "sessionGmt": { "startHour": 6, "endHour": 20 },
+        "maxTradesPerDay": 0,
+        "indicators": {
+          "ema": [34, 72, 144],
+          "envelopePct": 0.21,
+          "stochastics": { "k": 13, "smooth": 5, "d": 3, "os": [10, 20], "ob": [80, 90] },
+          "macd": { "fast": 21, "slow": 34, "signal": 5 }
+        },
+        "minRewardRisk": 1.5,
+        "entryStyle": "bounce_only"
+      },
+      "rules": [
+        {
+          "id": "session_window",
+          "summary": "Торговать только в окне европейской/американской сессии 06:00–20:00 GMT; вне окна — WAIT; принудительный выход к 20:00 GMT",
+          "code": "session_window"
+        },
+        {
+          "id": "higher_tf_trend",
+          "summary": "Старший ТФ (H4 / Ишимоку Tenkan-Kijun-облако): long только по направлению среднесрочного тренда; против тренда не открывать",
+          "code": "higher_tf_trend"
+        },
+        {
+          "id": "bounce_only",
+          "summary": "Вход только по отбойным сигналам от EMA 34/72/144 или границ конверта EMA34±0.21%; пробои не торгуем",
+          "code": "bounce_only"
+        },
+        {
+          "id": "segment_priority",
+          "summary": "Тренд: приоритет отбоя от EMA; флет: отбой от границ конверта; неоднозначный участок: комбинированные отбои",
+          "code": "segment_priority"
+        },
+        {
+          "id": "stoch_entry",
+          "summary": "После отбоя ждать сигнал Stochastics (13,5,3): пересечение %K/%D, предпочтительно из зон 10–20 / 80–90",
+          "code": "stoch_entry"
+        },
+        {
+          "id": "macd_confirm",
+          "summary": "MACD (21,34,5) — резервное подтверждение завершения коррекции / направления",
+          "code": "macd_confirm"
+        },
+        {
+          "id": "conservative_rr",
+          "summary": "Сразу ставить SL и TP; коэффициент доходности TP/SL ≥ 1.5; не двигать SL против позиции",
+          "code": "conservative_rr"
+        },
+        {
+          "id": "no_auto_reentry",
+          "summary": "После SL — полный повторный анализ; запрет мгновенного реэнтри и пипсовки",
+          "code": "no_auto_reentry"
+        },
+        {
+          "id": "daily_trade_cap",
+          "summary": "Лимит числа скальп-сделок в день опционален (SCALP_MAX_DAILY_OPENS=0 = без лимита по количеству)",
+          "code": "daily_trade_cap"
+        },
+        {
+          "id": "pivot_targets",
+          "summary": "Pivot Points использовать как цели/уровни контекста, не как единственный триггер входа",
+          "code": "pivot_sr"
+        },
+        {
+          "id": "risk_cap",
+          "summary": "Риск на сделку малый (ориентир 1–2%); размер позиции ограничен",
+          "code": "risk_cap"
+        }
+      ]
+    },
+    {
+      "id": "borovkov",
+      "title": "Скальпинг: Искусство микроскопической прибыли. Полное руководство для трейдера",
+      "author": "Боровков А. Д.",
+      "focus": ["дисциплина", "микроструктура рынка"],
+      "rules": [
+        {
+          "id": "microstructure_spread",
+          "summary": "Не входить при широком спреде",
+          "code": "max_spread"
+        },
+        {
+          "id": "session_discipline",
+          "summary": "После серии убытков — пауза",
+          "code": "loss_streak_pause"
+        }
+      ]
+    },
+    {
+      "id": "cscalp",
+      "title": "Профессиональный скальпинг",
+      "author": "Команда терминала CScalp",
+      "focus": ["биржевой стакан"],
+      "rules": [
+        {
+          "id": "orderbook_confirm",
+          "summary": "Стакан подтверждает сторону входа",
+          "code": "orderbook_confirm"
+        },
+        {
+          "id": "wall_block",
+          "summary": "Близкая ask-стена блокирует long",
+          "code": "wall_filter"
+        }
+      ]
+    }
+  ],
+  "legacy": [
+    {
+      "id": "murphy",
+      "title": "Technical Analysis of the Futures Markets",
+      "author": "John J. Murphy",
+      "rules": ["trade_with_higher_tf_trend", "volume_confirm", "support_resistance"]
+    }
+  ]
+}

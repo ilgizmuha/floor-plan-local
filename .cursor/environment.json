@@ -1,0 +1,5 @@
+{
+  "install": "npm install && chmod +x scripts/vps.sh deploy/vps-manage.sh deploy/bootstrap-vps-ssh.sh && bash deploy/bootstrap-vps-ssh.sh || true",
+  "start": "npm start",
+  "terminals": []
+}

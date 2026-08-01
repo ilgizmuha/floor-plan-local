@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+    body {
+        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        background-color: #f4f4f4;
+        padding: 20px;
+        color: #333;
+        line-height: 1.4;
+    }
+    .page {
+        background: white;
+        width: 210mm;
+        min-height: 297mm;
+        padding: 25px 30px;
+        margin: 0 auto;
+        box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        box-sizing: border-box;
+    }
+    .header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #e60012;
+        padding-bottom: 10px;
+    }
+    .doc-type {
+        color: #e60012;
+        font-size: 9px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }
+    .main-title {
+        font-size: 22px;
+        font-weight: 900;
+        color: #000;
+        line-height: 1.1;
+        text-transform: uppercase;
+    }
+    .city-date {
+        display: flex;
+        gap: 20px;
+        margin-top: 5px;
+        font-size: 12px;
+    }
+    .date-box {
+        display: flex;
+        gap: 8px;
+        border: 1.5px solid #e60012;
+        padding: 6px 10px;
+        border-radius: 6px;
+    }
+    .date-item {
+        text-align: center;
+        min-width: 50px;
+    }
+    .date-val {
+        font-size: 14px;
+        font-weight: bold;
+        color: #e60012;
+        display: block;
+        line-height: 1;
+    }
+    .date-label {
+        font-size: 8px;
+        color: #999;
+        text-transform: uppercase;
+    }
+
+    .parties-section {
+        margin-bottom: 20px;
+    }
+    .party-card {
+        background: #fafafa;
+        padding: 12px 15px;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        border-left: 3px solid #e60012;
+    }
+    .party-title {
+        font-size: 11px;
+        font-weight: bold;
+        color: #666;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .data-grid {
+        display: grid;
+        grid-template-columns: 130px 1fr;
+        gap: 4px;
+        font-size: 11px;
+    }
+    .label {
+        color: #999;
+        font-weight: normal;
+    }
+    .value {
+        color: #e60012;
+        font-weight: bold;
+        border-bottom: 1px dotted #ccc;
+    }
+
+    h2 {
+        font-size: 14px;
+        margin-top: 20px;
+        margin-bottom: 12px;
+        color: #000;
+        border-left: 3px solid #e60012;
+        padding-left: 10px;
+        text-transform: uppercase;
+    }
+    h2 span {
+        color: #e60012;
+        margin-right: 8px;
+    }
+    
+    .price-box {
+        background: #fff;
+        border: 1.5px solid #e60012;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 15px 0;
+        text-align: center;
+    }
+    .price-amount {
+        font-size: 24px;
+        font-weight: bold;
+        color: #e60012;
+        margin: 8px 0;
+    }
+
+    .specs-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 11px;
+    }
+    .specs-table td {
+        padding: 6px 8px;
+        border-bottom: 1px solid #eee;
+        vertical-align: top;
+    }
+    .specs-table .key {
+        color: #666;
+        width: 45%;
+        font-weight: 500;
+    }
+    .specs-table .val {
+        color: #e60012;
+        font-weight: bold;
+    }
+    
+    .footer {
+        margin-top: 30px;
+        border-top: 2px solid #e60012;
+        padding-top: 20px;
+        display: flex;
+        justify-content: space-between;
+    }
+    .signature-block {
+        width: 30%;
+    }
+    .signature-label {
+        font-size: 10px;
+        color: #999;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        font-weight: bold;
+    }
+    .signature-line {
+        border-bottom: 1.5px solid #000;
+        height: 30px;
+        margin-bottom: 6px;
+    }
+    .signature-name {
+        font-size: 10px;
+        color: #666;
+    }
+
+    .text-block {
+        margin: 10px 0;
+        font-size: 11px;
+        text-align: justify;
+    }
+    .highlight {
+        color: #e60012;
+        font-weight: bold;
+    }
+    .subsection {
+        margin: 10px 0;
+        font-size: 11px;
+    }
+    .subsection-title {
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 6px;
+    }
+    ul {
+        margin: 6px 0;
+        padding-left: 18px;
+        font-size: 11px;
+    }
+    li {
+        margin: 3px 0;
+    }
+    .two-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+</style>
+</head>
+<body>
+
+<div class="page">
+    <!-- Header -->
+    <div class="header-top">
+        <div>
+            <div class="doc-type">ДОГОВОР КУПЛИ-ПРОДАЖИ</div>
+            <div class="main-title">КВАРТИРЫ<br>В ЛИЧНУЮ СОБСТВЕННОСТЬ</div>
+            <div class="city-date">
+                <div style="color: #666;">
+                    <span style="color: #999;">Город:</span> 
+                    <span class="highlight">[город заключения]</span>
+                </div>
+            </div>
+        </div>
+        <div class="date-box">
+            <div class="date-item">
+                <span class="date-val">[__]</span>
+                <span class="date-label">День</span>
+            </div>
+            <div class="date-item">
+                <span class="date-val">[__]</span>
+                <span class="date-label">Месяц</span>
+            </div>
+            <div class="date-item">
+                <span class="date-val">20__</span>
+                <span class="date-label">Год</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Стороны (динамически из SELLERS_BLOCK / BUYERS_BLOCK) -->
+    <div class="parties-section">
+        {{SELLERS_BLOCK_HTML}}
+        {{SELLERS_JOINT_LINE_HTML}}
+        {{BUYERS_BLOCK_HTML}}
+        <div style="text-align: center; margin: 12px 0; color: #666; font-size: 11px; font-weight: bold;">
+            вместе — <span class="highlight">«Стороны»</span>, заключили Договор о нижеследующем:
+        </div>
+    </div>
+
+    <!-- Section 1 -->
+    <h2><span>1.</span>ПРЕДМЕТ ДОГОВОРА</h2>
+    
+    <div class="text-block">
+        <strong>1.1.</strong> Продавцы продали, а Покупатель купил в личную собственность объект недвижимого имущества:
+    </div>
+
+    <table class="specs-table">
+        <tr><td class="key">Кадастровый номер</td><td class="val">[кадастровый номер]</td></tr>
+        <tr><td class="key">Вид объекта</td><td class="val">Помещение (Квартира)</td></tr>
+        <tr><td class="key">Адрес</td><td class="val">[адрес объекта]</td></tr>
+        <tr><td class="key">Назначение</td><td class="val">Жилое помещение</td></tr>
+        <tr><td class="key">Право собственности</td><td class="val">[данные о праве]</td></tr>
+        <tr><td class="key">Количество комнат</td><td class="val">[количество]</td></tr>
+        <tr><td class="key">Площадь</td><td class="val">[площадь] кв.м</td></tr>
+        <tr><td class="key">Этаж</td><td class="val">[этаж]</td></tr>
+    </table>
+
+    <div class="text-block" style="margin-top: 10px;">
+        (далее – <span class="highlight">Объект</span>).
+    </div>
+
+    <div class="subsection">
+        <strong>1.2.</strong> Объект принадлежит Продавцам на праве общей долевой собственности (доли: <span class="highlight">[размер долей]</span>), что подтверждается записями в ЕГРН от <span class="highlight">[дата]</span>.
+    </div>
+
+    <div class="subsection">
+        <strong>1.3.</strong> На момент подписания договора в Объекте никто не зарегистрирован.
+    </div>
+
+    <div class="subsection">
+        <strong>1.4.</strong> Продавцы гарантируют, что Объект никому другому не продан, не заложен, в споре, под арестом или запрещением не состоит.
+    </div>
+
+    <div class="subsection">
+        <strong>1.5.</strong> Стороны подтверждают, что не лишены дееспособности и не имеют обстоятельств, вынуждающих заключить данный договор на крайне невыгодных условиях.
+    </div>
+
+    <!-- Section 2 -->
+    <h2><span>2.</span>ЦЕНА И ПОРЯДОК РАСЧЁТОВ</h2>
+    
+    <div class="subsection">
+        <strong>2.1.</strong> Стоимость Объекта: <span class="highlight">[общая стоимость цифрами] ([общая стоимость прописью]) рублей</span>.
+    </div>
+
+    <div class="price-box">
+        <div style="color:#999; text-transform:uppercase; font-size:9px; margin-bottom:5px;">ОБЩАЯ СТОИМОСТЬ</div>
+        <div class="price-amount">[общая стоимость цифрами] ₽</div>
+        <div style="color:#666; font-size: 12px;">([общая стоимость прописью] рублей)</div>
+    </div>
+
+    <div class="subsection">
+        <strong>2.2.</strong> Объект приобретается за счёт:
+        <ul>
+            <li>собственных средств: <span class="highlight">[сумма собственных средств цифрами] ([сумма собственных средств прописью]) рублей</span>;</li>
+            <li>кредитных средств: <span class="highlight">[сумма кредита цифрами] ([сумма кредита прописью]) рублей</span> по Кредитному договору № <span class="highlight">[номер]</span> от <span class="highlight">[дата]</span>, заключённому в <span class="highlight">[город]</span> между Покупателем и <span class="highlight">[наименование банка]</span>.</li>
+        </ul>
+    </div>
+
+    <div class="subsection">
+        <strong>2.3.</strong> Сумма <span class="highlight">[сумма, уплаченная до подписания] рублей</span> уплачена до подписания Договора.
+    </div>
+
+    <div class="subsection">
+        <strong>2.4.</strong> Сумма <span class="highlight">[сумма, уплачиваемая в день подписания] рублей</span> уплачивается в день подписания Договора.
+    </div>
+
+    <div class="subsection">
+        <strong>2.5.</strong> Расчёты производятся путём перечисления денежных средств на банковский счёт Продавцов.
+    </div>
+
+    <div class="subsection">
+        <strong>2.6.</strong> Обязательства Покупателя по оплате считаются исполненными с момента поступления денежных средств на счёт Продавцов.
+    </div>
+
+    <div class="subsection">
+        <strong>2.7.</strong> Покупатель обязуется оформить залог (ипотеку) в пользу Банка в соответствии с условиями Кредитного договора.
+    </div>
+
+    <div class="subsection">
+        <strong>2.8.</strong> С момента полной оплаты и подписания Акта приёма-передачи к Покупателю переходит право собственности на Объект.
+    </div>
+
+    <div class="subsection">
+        <strong>2.9.</strong> Расходы по государственной регистрации несёт <span class="highlight">[Покупатель/Продавцы/Стороны поровну]</span>.
+    </div>
+
+    <div class="subsection">
+        <strong>2.10.</strong> Расчёты производятся в рублях РФ.
+    </div>
+
+    <div class="subsection">
+        <strong>2.11.</strong> В случае расторжения Договора Продавцы обязуются вернуть денежные средства в течение <span class="highlight">[количество]</span> рабочих дней.
+    </div>
+
+    <div class="subsection">
+        <strong>2.12.</strong> При просрочке возврата Продавцы уплачивают пени в размере <span class="highlight">[процент]%</span> за каждый день просрочки.
+    </div>
+
+    <!-- Section 3 -->
+    <h2><span>3.</span>ПРАВА И ОБЯЗАННОСТИ СТОРОН</h2>
+    
+    <div class="subsection">
+        <strong>3.1. Продавцы обязаны:</strong>
+        <ul>
+            <li>передать Объект свободным от прав третьих лиц;</li>
+            <li>подписать Акт приёма-передачи;</li>
+            <li>предоставить документы для регистрации;</li>
+            <li>гарантировать юридическую чистоту сделки.</li>
+        </ul>
+    </div>
+
+    <div class="subsection">
+        <strong>3.2. Покупатель обязан:</strong>
+        <ul>
+            <li>своевременно оплатить стоимость Объекта;</li>
+            <li>принять Объект по Акту;</li>
+            <li>зарегистрировать переход права;</li>
+            <li>нести расходы по содержанию с момента подписания Акта.</li>
+        </ul>
+    </div>
+
+    <div class="subsection">
+        <strong>3.3.</strong> Стороны обязуются не разглашать условия Договора третьим лицам.
+    </div>
+
+    <!-- Section 4 -->
+    <h2><span>4.</span>ПЕРЕДАЧА ОБЪЕКТА</h2>
+    
+    <div class="subsection">
+        <strong>4.1.</strong> Передача осуществляется по Акту приёма-передачи.
+    </div>
+
+    <div class="subsection">
+        <strong>4.2.</strong> Объект передаётся в течение <span class="highlight">[количество]</span> рабочих дней с момента полной оплаты и регистрации.
+    </div>
+
+    <div class="subsection">
+        <strong>4.3.</strong> С момента подписания Акта риск гибели переходит к Покупателю.
+    </div>
+
+    <div class="subsection">
+        <strong>4.4.</strong> Объект передаётся в техническом состоянии, позволяющем использование по назначению.
+    </div>
+
+    <!-- Section 5 -->
+    <h2><span>5.</span>ОТВЕТСТВЕННОСТЬ СТОРОН</h2>
+    
+    <div class="subsection">
+        <strong>5.1.</strong> Стороны несут ответственность в соответствии с законодательством РФ.
+    </div>
+
+    <div class="subsection">
+        <strong>5.2.</strong> При расторжении по вине Продавцов они возвращают средства и уплачивают неустойку <span class="highlight">[процент]%</span>.
+    </div>
+
+    <div class="subsection">
+        <strong>5.3.</strong> При расторжении по вине Покупателя средства не возвращаются.
+    </div>
+
+    <div class="subsection">
+        <strong>5.4.</strong> При просрочке передачи Продавцы уплачивают пени <span class="highlight">[процент]%</span> за день.
+    </div>
+
+    <div class="subsection">
+        <strong>5.5.</strong> При просрочке оплаты Покупатель уплачивает пени <span class="highlight">[процент]%</span> за день.
+    </div>
+
+    <!-- Section 6 -->
+    <h2><span>6.</span>ЗАКЛЮЧИТЕЛЬНЫЕ ПОЛОЖЕНИЯ</h2>
+    
+    <div class="subsection">
+        <strong>6.1.</strong> Договор вступает в силу с момента подписания.
+    </div>
+
+    <div class="subsection">
+        <strong>6.2.</strong> Изменения действительны только в письменной форме.
+    </div>
+
+    <div class="subsection">
+        <strong>6.3.</strong> Договор составлен в <span class="highlight">[количество]</span> экземплярах.
+    </div>
+
+    <div class="subsection">
+        <strong>6.4.</strong> Стороны руководствуются законодательством РФ.
+    </div>
+
+    <div class="subsection">
+        <strong>6.5.</strong> Споры разрешаются путём переговоров.
+    </div>
+
+    <div class="subsection">
+        <strong>6.6.</strong> При недостижении согласия спор передаётся в суд.
+    </div>
+
+    <!-- Bank Details -->
+    <h2><span>7.</span>БАНКОВСКИЕ РЕКВИЗИТЫ</h2>
+    
+    <div class="two-columns">
+        <div>
+            <div class="party-title" style="color: #e60012;">ПРОДАВЦЫ</div>
+            <div class="data-grid" style="font-size: 10px;">
+                <span class="label">ФИО:</span> <span class="value">[ФИО]</span>
+                <span class="label">Банк:</span> <span class="value">[банк]</span>
+                <span class="label">БИК:</span> <span class="value">[БИК]</span>
+                <span class="label">Р/с:</span> <span class="value">[номер]</span>
+                <span class="label">К/с:</span> <span class="value">[номер]</span>
+            </div>
+        </div>
+        <div>
+            <div class="party-title" style="color: #333;">ПОКУПАТЕЛЬ</div>
+            <div class="data-grid" style="font-size: 10px;">
+                <span class="label">ФИО:</span> <span class="value">[ФИО]</span>
+                <span class="label">Банк:</span> <span class="value">[банк]</span>
+                <span class="label">БИК:</span> <span class="value">[БИК]</span>
+                <span class="label">Р/с:</span> <span class="value">[номер]</span>
+                <span class="label">К/с:</span> <span class="value">[номер]</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Подписи (динамически из SIGNATURES_BLOCK) -->
+    <div class="footer">
+        {{SIGNATURES_BLOCK_HTML}}
+    </div>
+
+</div>
+
+</body>
+</html>
