@@ -284,7 +284,6 @@ function yvo_classic_dkp_collect_bold_terms(array $replacements, $contract_text)
         'PROPERTY_ADDRESS', 'PROPERTY_CADASTRAL_NUM', 'PROPERTY_PRICE', 'PROPERTY_PRICE_WORDS',
         'LOAN_OWN_AMOUNT', 'LOAN_OWN_AMOUNT_WORDS', 'LOAN_CREDIT_AMOUNT', 'LOAN_CREDIT_AMOUNT_WORDS',
         'LOAN_AGREEMENT_NUMBER', 'LOAN_AGREEMENT_DATE', 'BANK_NAME', 'PAID_BEFORE_SIGNING', 'PAID_AT_SIGNING',
-        'CLASSIC_PARTIES_PREAMBLE',
     );
     foreach ($keys as $k) {
         if (!empty($replacements[$k]) && !yvo_html_is_placeholder_value((string) $replacements[$k])) {
@@ -337,6 +336,9 @@ function yvo_classic_dkp_boldify_html($html, array $terms) {
         }
         $e = htmlspecialchars($term, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         if ($e === '' || strpos($escaped, '<strong>' . $e . '</strong>') !== false) {
+            continue;
+        }
+        if (strpos($escaped, $e) === false) {
             continue;
         }
         $escaped = str_replace($e, '<strong>' . $e . '</strong>', $escaped);
