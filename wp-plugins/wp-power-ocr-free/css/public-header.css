@@ -1,0 +1,215 @@
+/**
+ * Фиксированная панель плагина поверх страницы.
+ */
+body.yvo-plugin-site-header:not(.wp-admin) .yvo-cab-topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100000;
+    margin: 0;
+}
+/* На странице договора шапка в контенте — не фиксировать */
+body.yvo-contract-form-doki-page .yvo-cab-contract-head .yvo-cab-topbar,
+body.yvo-contract-form-page .yvo-cab-contract-head .yvo-cab-topbar,
+body:has(.yvo-doki-contract-page) .yvo-cab-contract-head .yvo-cab-topbar {
+    position: relative !important;
+    top: auto !important;
+}
+body.yvo-plugin-site-header.admin-bar:not(.wp-admin) .yvo-cab-topbar {
+    top: 32px;
+}
+@media screen and (max-width: 782px) {
+    body.yvo-plugin-site-header.admin-bar:not(.wp-admin) .yvo-cab-topbar {
+        top: 46px;
+    }
+}
+
+/**
+ * Скрываем меню темы в шапке (десятки страниц и т.д.).
+ * Ограничиваем header, чтобы не трогать возможное меню в подвале.
+ */
+body.yvo-hide-theme-nav:not(.wp-admin) header .wp-block-navigation,
+body.yvo-hide-theme-nav:not(.wp-admin) header nav.wp-block-navigation,
+body.yvo-hide-theme-nav:not(.wp-admin) .wp-site-blocks > header .wp-block-navigation,
+body.yvo-hide-theme-nav:not(.wp-admin) header .wp-block-navigation__responsive-container-open,
+body.yvo-hide-theme-nav:not(.wp-admin) header .wp-block-page-list,
+body.yvo-hide-theme-nav:not(.wp-admin) header ul.wp-block-page-list {
+    display: none !important;
+}
+
+/* Сам template-part header (когда меню живёт внутри него) */
+body.yvo-hide-theme-nav:not(.wp-admin) .wp-site-blocks > header.wp-block-template-part,
+body.yvo-hide-theme-nav:not(.wp-admin) .wp-site-blocks > header.site-header,
+body.yvo-hide-theme-nav:not(.wp-admin) .wp-site-blocks > header#masthead {
+    display: none !important;
+}
+
+/* Классические темы */
+body.yvo-hide-theme-nav:not(.wp-admin) #site-navigation:not(#yvo-global-header-anchor),
+body.yvo-hide-theme-nav:not(.wp-admin) .main-navigation:not(.yvo-cab-topbar *),
+body.yvo-hide-theme-nav:not(.wp-admin) #primary-menu {
+    display: none !important;
+}
+
+/* HivePress и похожие */
+body.yvo-hide-theme-nav:not(.wp-admin) .hp-header__navbar,
+body.yvo-hide-theme-nav:not(.wp-admin) .hp-menu--site-header,
+body.yvo-hide-theme-nav:not(.wp-admin) .header-menu {
+    display: none !important;
+}
+
+/* Отступ под фиксированную панель плагина — только десктоп */
+body.yvo-plugin-site-header:not(.wp-admin) {
+    padding-top: 52px;
+}
+
+body.yvo-plugin-site-header.admin-bar:not(.wp-admin) {
+    padding-top: 84px;
+}
+
+/* Виртуальный кабинет и страница договора: шапка в потоке, без отступа */
+body.yvo-cabinet-inflow-header.yvo-plugin-site-header:not(.wp-admin),
+body.yvo-contract-form-page.yvo-plugin-site-header:not(.wp-admin),
+body.yvo-contract-form-doki-page.yvo-plugin-site-header:not(.wp-admin) {
+    padding-top: 0 !important;
+}
+
+body.yvo-cabinet-inflow-header.yvo-plugin-site-header.admin-bar:not(.wp-admin),
+body.yvo-contract-form-page.yvo-plugin-site-header.admin-bar:not(.wp-admin),
+body.yvo-contract-form-doki-page.yvo-plugin-site-header.admin-bar:not(.wp-admin) {
+    padding-top: 32px !important;
+}
+
+body.yvo-cabinet-inflow-header .yvo-cabinet-virtual-head .yvo-cab-topbar,
+body.yvo-cabinet-inflow-header .yvo-cab-topbar {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+}
+
+.yvo-cabinet-virtual-head {
+    margin: 0 0 8px;
+}
+
+@media screen and (max-width: 767px) {
+    body.yvo-plugin-site-header:not(.wp-admin) {
+        padding-top: 0 !important;
+    }
+    body.yvo-plugin-site-header.admin-bar:not(.wp-admin):not(.yvo-cabinet-inflow-header):not(.yvo-contract-form-doki-page):not(.yvo-contract-form-page) {
+        padding-top: 0 !important;
+    }
+    body.yvo-plugin-site-header.admin-bar.yvo-cabinet-inflow-header:not(.wp-admin),
+    body.yvo-plugin-site-header.admin-bar.yvo-contract-form-doki-page:not(.wp-admin),
+    body.yvo-plugin-site-header.admin-bar.yvo-contract-form-page:not(.wp-admin) {
+        padding-top: 46px !important;
+    }
+    body.yvo-plugin-site-header:not(.wp-admin) .yvo-cab-topbar {
+        position: sticky !important;
+        top: 0 !important;
+        z-index: 100000;
+        transition: transform 0.22s ease, box-shadow 0.22s ease;
+    }
+    body.yvo-cabinet-inflow-header .yvo-cab-topbar,
+    body.yvo-contract-form-doki-page .yvo-cab-contract-head .yvo-cab-topbar,
+    body.yvo-contract-form-page .yvo-cab-contract-head .yvo-cab-topbar {
+        position: relative !important;
+        top: auto !important;
+        transform: none !important;
+    }
+    .yvo-cab-topbar.yvo-cab-topbar--scroll-hidden {
+        transform: translateY(-110%) !important;
+        box-shadow: none !important;
+    }
+}
+
+@media screen and (max-width: 782px) {
+    body.yvo-plugin-site-header.admin-bar:not(.wp-admin) .yvo-cab-topbar {
+        top: 0 !important;
+    }
+}
+
+/*
+ * Страница [yvo_contract_form]: верхняя панель плагина в контенте — отступ под фикс. шапку не нужен.
+ * Дублирует инлайн-стили в wp_head (yvo_contract_form_print_hide_theme_title_css).
+ */
+body.yvo-contract-form-page.yvo-plugin-site-header:not(.wp-admin),
+body.yvo-contract-form-doki-page.yvo-plugin-site-header:not(.wp-admin) {
+    padding-top: 0 !important;
+}
+
+body.yvo-contract-form-page.yvo-plugin-site-header.admin-bar:not(.wp-admin),
+body.yvo-contract-form-doki-page.yvo-plugin-site-header.admin-bar:not(.wp-admin) {
+    padding-top: 32px !important;
+}
+
+@media screen and (max-width: 782px) {
+body.yvo-contract-form-page.yvo-plugin-site-header.admin-bar:not(.wp-admin),
+body.yvo-contract-form-doki-page.yvo-plugin-site-header.admin-bar:not(.wp-admin) {
+    padding-top: 46px !important;
+    }
+}
+
+/* Dream Home и др.: отступ контейнера страницы (theme #Tab-NaviagtionBX padding-top) */
+body.yvo-contract-form-page:not(.wp-admin) #Tab-NaviagtionBX,
+body.yvo-contract-form-doki-page:not(.wp-admin) #Tab-NaviagtionBX,
+body:has(.yvo-doki-contract-page):not(.wp-admin) #Tab-NaviagtionBX {
+    padding-top: 0 !important;
+}
+
+body.yvo-contract-form-page:not(.wp-admin) .yvo-cab-contract-head,
+body.yvo-contract-form-doki-page:not(.wp-admin) .yvo-cab-contract-head,
+body:has(.yvo-doki-contract-page):not(.wp-admin) .yvo-cab-contract-head {
+    margin-top: 0 !important;
+}
+
+.yvo-cab-topbar--guest .yvo-cab-topbar-nav--guest {
+    margin-left: auto;
+    justify-content: flex-end;
+}
+
+@media (max-width: 767px) {
+    .yvo-cab-topbar--guest .yvo-cab-topbar-nav--guest {
+        margin-left: 0;
+        justify-content: flex-start;
+    }
+
+    body.yvo-cabinet-virtual:not(.wp-admin) {
+        overflow-x: hidden;
+    }
+
+    .yvo-cabinet-virtual-wrap {
+        padding: 0 10px 20px;
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+
+    body.yvo-cabinet-virtual .yvo-cabinet-virtual-head {
+        margin: 0 0 8px;
+    }
+
+    body.yvo-cabinet-route-pricing .yvo-cabinet-virtual-wrap,
+    body.yvo-cabinet-virtual.yvo-cabinet-route-pricing .yvo-cabinet-virtual-wrap {
+        padding: 0 8px 20px;
+    }
+
+    body.yvo-deal-cabinet-page .yvo-cabinet-virtual-wrap {
+        padding: 0 !important;
+    }
+
+    body.yvo-contract-form-doki-page .yvo-cabinet-virtual-wrap {
+        padding: 0 !important;
+    }
+}
+
+.yvo-cab-topbar-link--accent {
+    background: #0ea5e9;
+    color: #fff !important;
+    font-weight: 600;
+}
+
+.yvo-cab-topbar-link--accent:hover {
+    background: #0284c7;
+    color: #fff !important;
+}

@@ -1,0 +1,1 @@
+www-data ALL=(root) NOPASSWD: /usr/local/bin/vps-manage health, /usr/local/bin/vps-manage brain status, /usr/local/bin/vps-manage brain latest, /usr/local/bin/vps-manage brain paper, /usr/local/bin/vps-manage brain quality, /usr/local/bin/vps-manage ocr-status, /usr/local/bin/vps-manage ocr-tmp, /usr/local/bin/vps-manage wp-plugins

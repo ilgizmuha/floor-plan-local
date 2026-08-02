@@ -1,0 +1,1427 @@
+/* Личный кабинет: формы регистрации, входа, восстановления пароля */
+.yvo-cabinet-auth {
+    max-width: 420px;
+    margin: 24px auto;
+    padding: 24px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.yvo-cabinet-auth-title {
+    margin: 0 0 20px;
+    font-size: 1.25rem;
+    color: #1e293b;
+}
+.yvo-cabinet-auth-message {
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+.yvo-cabinet-auth-message.yvo-cabinet-error {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+}
+.yvo-cabinet-auth-message.yvo-cabinet-success {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+}
+.yvo-cabinet-oauth-banner {
+    position: relative;
+    z-index: 100001;
+    max-width: 960px;
+    margin: 12px auto 0;
+    padding: 10px 16px;
+    box-sizing: border-box;
+}
+.yvo-cabinet-form .yvo-cabinet-field {
+    margin-bottom: 16px;
+}
+.yvo-cabinet-form label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #334155;
+}
+.yvo-cabinet-form input[type="text"],
+.yvo-cabinet-form input[type="password"],
+.yvo-cabinet-form select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 15px;
+    box-sizing: border-box;
+}
+.yvo-cabinet-form input:focus,
+.yvo-cabinet-form select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+.yvo-cabinet-submit {
+    margin: 20px 0 16px;
+}
+.yvo-cabinet-btn {
+    display: inline-block;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    cursor: pointer;
+    text-decoration: none;
+}
+.yvo-cabinet-btn-primary {
+    background: #2563eb;
+    color: #fff;
+}
+.yvo-cabinet-btn-primary:hover {
+    background: #1d4ed8;
+}
+.yvo-cabinet-links {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #64748b;
+}
+.yvo-cabinet-link {
+    color: #2563eb;
+    text-decoration: none;
+}
+.yvo-cabinet-link:hover {
+    text-decoration: underline;
+}
+.yvo-cabinet-account .yvo-cabinet-greeting {
+    margin: 0;
+    font-size: 15px;
+    color: #334155;
+}
+
+.yvo-cabinet-account .yvo-cabinet-login-line code {
+    background: #e2e8f0;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+.yvo-cabinet-yandex-hint {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.45;
+}
+.yvo-cabinet-divider {
+    text-align: center;
+    margin: 14px 0 18px;
+    font-size: 13px;
+    color: #94a3b8;
+}
+.yvo-cabinet-oauth-missing {
+    font-size: 13px;
+    color: #64748b;
+    line-height: 1.5;
+    padding: 12px 14px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    margin-bottom: 16px;
+}
+.yvo-cabinet-btn-yandex {
+    background: #fc0;
+    color: #000;
+    font-weight: 600;
+}
+.yvo-cabinet-btn-yandex:hover {
+    background: #e6b800;
+    color: #000;
+}
+
+/* Верхняя панель (как в сервисах объявлений) */
+.yvo-cab-topbar {
+    background: #fff;
+    border-bottom: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    margin: 0 0 20px;
+    width: 100%;
+    box-sizing: border-box;
+}
+.yvo-cab-topbar-inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 12px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-width: 0;
+}
+.yvo-cab-topbar-logo {
+    font-weight: 800;
+    font-size: 1.2rem;
+    letter-spacing: -0.02em;
+    color: #0f172a;
+    text-decoration: none;
+    flex-shrink: 0;
+}
+.yvo-cab-topbar-logo:hover {
+    color: #0ea5e9;
+}
+.yvo-cab-topbar-right {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    margin-left: auto;
+    min-width: 0;
+}
+.yvo-cab-topbar-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 2px;
+    justify-content: flex-end;
+}
+.yvo-cab-topbar-link {
+    font-size: 14px;
+    color: #475569;
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+.yvo-cab-topbar a,
+.yvo-cab-topbar a:visited {
+    text-decoration: none !important;
+}
+.yvo-cab-topbar-link:hover {
+    background: #f1f5f9;
+    color: #0ea5e9;
+}
+.yvo-cab-topbar-link.is-active {
+    background: #e0f2fe;
+    color: #0369a1;
+    font-weight: 600;
+}
+.yvo-cab-topbar-link.yvo-cab-topbar-link--cabinet {
+    background: #e1f5fe;
+    color: #0c4a6e;
+    font-weight: 600;
+}
+.yvo-cab-topbar-link.yvo-cab-topbar-link--cabinet:hover {
+    background: #b3e5fc;
+    color: #0c4a6e;
+}
+.yvo-cab-topbar-link.yvo-cab-topbar-link--cabinet.is-active {
+    background: #bae6fd;
+    color: #0369a1;
+}
+/* Профиль: подменю по наведению / фокусу (как в сервисах объявлений) */
+.yvo-cab-topbar-dropdown {
+    position: relative;
+    display: inline-block;
+    align-self: center;
+}
+.yvo-cab-topbar-dropdown__trigger {
+    cursor: default;
+    user-select: none;
+}
+.yvo-cab-topbar-dropdown__trigger::after {
+    content: "";
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-left: 6px;
+    vertical-align: middle;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid currentColor;
+    opacity: 0.65;
+    transition: transform 0.15s ease;
+}
+.yvo-cab-topbar-dropdown:hover .yvo-cab-topbar-dropdown__trigger::after,
+.yvo-cab-topbar-dropdown:focus-within .yvo-cab-topbar-dropdown__trigger::after {
+    transform: rotate(180deg);
+}
+.yvo-cab-topbar-dropdown__panel {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: auto;
+    padding-top: 6px;
+    margin: 0;
+    display: none;
+    z-index: 300;
+    pointer-events: none;
+}
+.yvo-cab-topbar-dropdown:hover .yvo-cab-topbar-dropdown__panel,
+.yvo-cab-topbar-dropdown:focus-within .yvo-cab-topbar-dropdown__panel {
+    display: block;
+    pointer-events: auto;
+}
+.yvo-cab-topbar-dropdown__panel-inner {
+    min-width: 280px;
+    max-width: min(320px, 92vw);
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.12);
+    overflow: hidden;
+}
+.yvo-cab-topbar-dropdown__stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px 12px 10px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+.yvo-cab-topbar-dropdown__stat {
+    background: #f1f5f9;
+    border-radius: 10px;
+    padding: 10px 10px 8px;
+    min-height: 72px;
+    box-sizing: border-box;
+}
+.yvo-cab-topbar-dropdown__stat-label {
+    display: block;
+    font-size: 11px;
+    color: #64748b;
+    margin-bottom: 4px;
+    line-height: 1.2;
+}
+.yvo-cab-topbar-dropdown__stat-value {
+    display: block;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+}
+.yvo-cab-topbar-dropdown__stat-value--sm {
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+.yvo-cab-topbar-dropdown__stat-sub {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #334155;
+    line-height: 1.3;
+}
+.yvo-cab-topbar-dropdown__menu {
+    margin: 0;
+    padding: 6px 0;
+    list-style: none;
+}
+.yvo-cab-topbar-dropdown__item {
+    display: block;
+    padding: 10px 16px;
+    font-size: 14px;
+    color: #334155;
+    text-decoration: none;
+    white-space: nowrap;
+}
+.yvo-cab-topbar-dropdown__item:hover {
+    background: #f8fafc;
+    color: #0ea5e9;
+}
+.yvo-cab-topbar-dropdown__item.is-active {
+    background: #f0f9ff;
+    color: #0369a1;
+    font-weight: 600;
+}
+.yvo-cab-topbar-dropdown__item--logout {
+    color: #64748b;
+}
+.yvo-cab-topbar-dropdown__item--logout:hover {
+    color: #b91c1c;
+    background: #fef2f2;
+}
+.yvo-cab-topbar-yandex {
+    background: #fc0;
+    color: #111 !important;
+    font-weight: 600;
+}
+.yvo-cab-topbar-yandex:hover {
+    background: #e6b800;
+    color: #111 !important;
+}
+.yvo-cab-topbar-user {
+    display: flex;
+    align-items: center;
+    gap: 8px 12px;
+    flex-wrap: nowrap;
+    padding-left: 8px;
+    border-left: 1px solid #e2e8f0;
+}
+.yvo-cab-topbar-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 15px;
+}
+.yvo-cab-topbar-name {
+    font-size: 14px;
+    color: #94a3b8;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.yvo-cab-topbar-exit {
+    font-size: 14px;
+    color: #64748b;
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 999px;
+}
+.yvo-cab-topbar-exit:hover {
+    color: #b91c1c;
+    background: #fef2f2;
+}
+.yvo-wallet-meta {
+    font-size: 14px;
+    color: #475569;
+    margin: 0 0 8px;
+}
+.yvo-wallet-admin-demo {
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid #e2e8f0;
+}
+.yvo-wallet-admin-title {
+    font-size: 1rem;
+    margin: 0 0 12px;
+    color: #64748b;
+}
+.yvo-pricing {
+    max-width: 1180px;
+}
+/* Шире форм логина: четыре колонки тарифов */
+.yvo-pricing.yvo-cabinet-auth {
+    max-width: 1180px;
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    box-sizing: border-box;
+}
+.yvo-pricing-title {
+    font-size: 1.75rem;
+    margin: 0 0 8px;
+    color: #0f172a;
+}
+.yvo-pricing-lead {
+    color: #64748b;
+    margin: 0 0 24px;
+    line-height: 1.5;
+}
+.yvo-pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+}
+.yvo-pricing-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 22px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.yvo-pricing-card--accent {
+    border-color: #38bdf8;
+    box-shadow: 0 8px 24px rgba(14, 165, 233, 0.15);
+}
+.yvo-pricing-card-title {
+    margin: 0 0 8px;
+    font-size: 1.15rem;
+    color: #0f172a;
+}
+.yvo-pricing-card-price {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #0ea5e9;
+    margin: 0 0 16px;
+}
+.yvo-pricing-card-price-sub {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #64748b;
+}
+.yvo-pricing-footnote {
+    margin: 24px 0 0;
+    font-size: 13px;
+    line-height: 1.55;
+    color: #94a3b8;
+}
+.yvo-pricing-compare-wrap {
+    margin-top: 32px;
+    overflow-x: auto;
+}
+.yvo-pricing-compare-title {
+    font-size: 1.15rem;
+    margin: 0 0 12px;
+    color: #0f172a;
+}
+.yvo-pricing-compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.yvo-pricing-compare th,
+.yvo-pricing-compare td {
+    padding: 10px 14px;
+    border-bottom: 1px solid #f1f5f9;
+    text-align: center;
+}
+.yvo-pricing-compare th:first-child,
+.yvo-pricing-compare td:first-child {
+    text-align: left;
+    color: #334155;
+}
+.yvo-pricing-compare thead th {
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+}
+.yvo-pricing-compare tbody tr:last-child td {
+    border-bottom: none;
+}
+.yvo-pricing-card-list {
+    margin: 0 0 16px;
+    padding-left: 18px;
+    color: #475569;
+    font-size: 14px;
+    line-height: 1.5;
+}
+.yvo-pricing-card-note {
+    font-size: 13px;
+    color: #94a3b8;
+    margin: 0 0 16px;
+}
+.yvo-pricing-card-badge {
+    display: inline-block;
+    padding: 8px 14px;
+    background: #f1f5f9;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #475569;
+}
+.yvo-cab-profile-dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px 16px;
+    font-size: 14px;
+}
+.yvo-cab-profile-dl dt {
+    color: #64748b;
+    margin: 0;
+}
+.yvo-cab-profile-dl dd {
+    margin: 0;
+    color: #1e293b;
+}
+.yvo-wallet-balance {
+    margin: 0 0 16px;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.yvo-wallet-cur {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #64748b;
+}
+.yvo-cab-account-actions {
+    margin-top: 16px;
+}
+
+/* Профиль (стиль «как в сервисах объявлений») */
+.yvo-cabinet-profile-avito {
+    max-width: 440px;
+}
+.yvo-prof-hero {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #e2e8f0;
+}
+.yvo-prof-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0ea5e9, #6366f1);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px #e0f2fe;
+}
+.yvo-prof-hero-text {
+    min-width: 0;
+}
+.yvo-prof-hero-name {
+    margin: 0 0 4px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+.yvo-prof-hero-email {
+    margin: 0;
+    font-size: 14px;
+    color: #64748b;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.yvo-prof-cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.yvo-prof-card {
+    background: #f1f5f9;
+    border-radius: 12px;
+    padding: 12px 14px;
+    min-height: 88px;
+    box-sizing: border-box;
+}
+.yvo-prof-card-label {
+    display: block;
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 6px;
+}
+.yvo-prof-card-value {
+    margin: 0;
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+}
+.yvo-prof-card-value--sm {
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+.yvo-prof-card-sub {
+    margin: 6px 0 0;
+    font-size: 13px;
+    color: #334155;
+    line-height: 1.35;
+}
+.yvo-prof-card .yvo-wallet-cur {
+    font-size: 1.1rem;
+}
+.yvo-prof-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 12px;
+}
+.yvo-prof-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 20px 0 8px;
+}
+.yvo-prof-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #0f172a;
+    text-decoration: none;
+    font-size: 15px;
+    border: 1px solid #e2e8f0;
+    transition: background 0.15s, border-color 0.15s;
+}
+.yvo-prof-nav-item:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+.yvo-prof-nav-item--accent {
+    background: #fff;
+    border-color: #bae6fd;
+}
+.yvo-prof-nav-item--accent:hover {
+    background: #f0f9ff;
+}
+.yvo-prof-nav-item--logout {
+    color: #64748b;
+    border-style: dashed;
+}
+.yvo-prof-nav-item--logout:hover {
+    color: #b91c1c;
+    background: #fef2f2;
+    border-color: #fecaca;
+}
+.yvo-prof-nav-icon {
+    width: 22px;
+    text-align: center;
+    font-size: 16px;
+    opacity: 0.85;
+}
+.yvo-prof-details {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #e2e8f0;
+}
+.yvo-prof-details summary {
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: #475569;
+    list-style: none;
+}
+.yvo-prof-details summary::-webkit-details-marker {
+    display: none;
+}
+.yvo-prof-details[open] summary {
+    margin-bottom: 12px;
+}
+@media (max-width: 380px) {
+    .yvo-prof-cards {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Обёртка: шапка Dokii + тёмная полоса на странице формы договора */
+.yvo-cab-contract-head {
+    width: 100%;
+    margin: 0 0 20px;
+    box-sizing: border-box;
+}
+.yvo-cab-contract-head .yvo-cab-topbar {
+    margin-bottom: 0;
+    border-bottom: 1px solid #e2e8f0;
+    box-shadow: none;
+}
+
+/* Компактная шапка (мобильная тема Dokii) */
+.yvo-cab-topbar--compact .yvo-cab-topbar-inner {
+    min-height: 44px;
+}
+.yvo-cabinet-virtual-head .yvo-cab-topbar {
+    margin-bottom: 0;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+}
+body.yvo-contract-form-doki-page .yvo-cab-contract-head,
+body.yvo-contract-form-page .yvo-cab-contract-head {
+    margin: 0 0 0.65rem;
+}
+body.yvo-contract-form-doki-page .yvo-cab-contract-head .yvo-cab-topbar,
+body.yvo-contract-form-page .yvo-cab-contract-head .yvo-cab-topbar {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    margin: 0;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(20, 30, 50, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
+}
+@media (max-width: 767px) {
+    body.yvo-contract-form-doki-page .yvo-cab-contract-head .yvo-cab-topbar,
+    body.yvo-contract-form-page .yvo-cab-contract-head .yvo-cab-topbar {
+        border-radius: 14px;
+    }
+    body.yvo-contract-form-doki-page .yvo-cab-topbar-sub,
+    body.yvo-contract-form-page .yvo-cab-topbar-sub,
+    body:has(.yvo-doki-contract-page) .yvo-cab-topbar-sub {
+        display: none !important;
+    }
+    body.yvo-contract-form-doki-page.yvo-plugin-site-header:not(.wp-admin),
+    body.yvo-contract-form-page.yvo-plugin-site-header:not(.wp-admin) {
+        padding-top: 0 !important;
+    }
+    body.yvo-contract-form-doki-page.yvo-plugin-site-header.admin-bar:not(.wp-admin),
+    body.yvo-contract-form-page.yvo-plugin-site-header.admin-bar:not(.wp-admin) {
+        padding-top: 32px !important;
+    }
+}
+@media screen and (max-width: 782px) {
+    body.yvo-contract-form-doki-page.yvo-plugin-site-header.admin-bar:not(.wp-admin),
+    body.yvo-contract-form-page.yvo-plugin-site-header.admin-bar:not(.wp-admin) {
+        padding-top: 46px !important;
+    }
+}
+
+.yvo-cab-topbar-sub {
+    background: #2d323e;
+    color: #e2e8f0;
+    width: 100%;
+    box-sizing: border-box;
+}
+.yvo-cab-topbar-sub-inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 10px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px 16px;
+    min-width: 0;
+}
+.yvo-cab-topbar-search {
+    flex: 1 1 220px;
+    min-width: 0;
+    max-width: 520px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-sizing: border-box;
+}
+.yvo-cab-topbar-search__icon {
+    flex-shrink: 0;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+}
+.yvo-cab-topbar-search__input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: #f1f5f9;
+    font-size: 14px;
+    outline: none;
+}
+.yvo-cab-topbar-search__input::placeholder {
+    color: #94a3b8;
+}
+.yvo-cab-topbar-sub-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.yvo-cab-topbar-sub-iconbtn {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #cbd5e1;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.yvo-cab-topbar-sub-iconbtn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+.yvo-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* ——— Брейкпоинты: ≤767 мобильный, ≥768 десктоп ——— */
+
+.yvo-cab-topbar-burger {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    width: 44px;
+    height: 44px;
+    margin: 0 0 0 auto;
+    padding: 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+    color: #0f172a;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.yvo-cab-topbar-burger__bar {
+    display: block;
+    width: 18px;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.yvo-cab-topbar.is-menu-open .yvo-cab-topbar-burger__bar:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+}
+.yvo-cab-topbar.is-menu-open .yvo-cab-topbar-burger__bar:nth-child(2) {
+    opacity: 0;
+}
+.yvo-cab-topbar.is-menu-open .yvo-cab-topbar-burger__bar:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+}
+.yvo-cab-topbar-backdrop {
+    display: none;
+}
+.yvo-cab-topbar-mobile-head {
+    display: none;
+}
+.yvo-cab-topbar-close {
+    display: none;
+}
+
+body.yvo-cab-topbar-open {
+    overflow: hidden;
+}
+
+@media (max-width: 767px) {
+    .yvo-cab-topbar-inner {
+        flex-wrap: nowrap;
+        align-items: center;
+        padding: 8px 12px;
+        gap: 10px;
+    }
+    .yvo-cab-topbar-burger {
+        display: inline-flex;
+    }
+    .yvo-cab-topbar-close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        margin: 0;
+        padding: 0;
+        border: none;
+        border-radius: 10px;
+        background: #f1f5f9;
+        color: #475569;
+        font-size: 1.5rem;
+        line-height: 1;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+    .yvo-cab-topbar-mobile-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 14px 14px 10px;
+        border-bottom: 1px solid #e2e8f0;
+        background: #f8fafc;
+    }
+    .yvo-cab-topbar-mobile-head--guest {
+        padding: 12px 14px;
+    }
+    .yvo-cab-topbar-mobile-head__title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .yvo-cab-topbar-mobile-user {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        flex: 1;
+    }
+    .yvo-cab-topbar-mobile-user__text {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .yvo-cab-topbar-mobile-meta {
+        font-size: 12px;
+        color: #64748b;
+        line-height: 1.3;
+    }
+    .yvo-cab-topbar-right {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(320px, 90vw);
+        margin: 0;
+        padding: 0;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 0;
+        background: #fff;
+        box-shadow: -8px 0 32px rgba(15, 23, 42, 0.14);
+        transform: translateX(105%);
+        transition: transform 0.24s ease;
+        z-index: 100002;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .yvo-cab-topbar.is-menu-open .yvo-cab-topbar-right {
+        transform: translateX(0);
+    }
+    .yvo-cab-topbar-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 100001;
+        background: rgba(15, 23, 42, 0.45);
+    }
+    .yvo-cab-topbar.is-menu-open .yvo-cab-topbar-backdrop {
+        display: block;
+    }
+    .yvo-cab-topbar-nav {
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        gap: 4px;
+        width: 100%;
+        padding: 10px 12px 16px;
+        box-sizing: border-box;
+    }
+    .yvo-cab-topbar-link {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 10px;
+        white-space: normal;
+        padding: 12px 14px;
+        text-align: left;
+    }
+    .yvo-cab-topbar-user--desktop {
+        display: none;
+    }
+    .yvo-cab-topbar-dropdown {
+        display: block;
+        width: 100%;
+    }
+    .yvo-cab-topbar-dropdown__trigger {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    .yvo-cab-topbar-dropdown__panel {
+        position: static;
+        display: none;
+        padding-top: 0;
+        pointer-events: auto;
+    }
+    .yvo-cab-topbar-dropdown:hover .yvo-cab-topbar-dropdown__panel,
+    .yvo-cab-topbar-dropdown:focus-within .yvo-cab-topbar-dropdown__panel {
+        display: none;
+        pointer-events: none;
+    }
+    .yvo-cab-topbar-dropdown.is-open .yvo-cab-topbar-dropdown__panel {
+        display: block;
+        pointer-events: auto;
+    }
+    .yvo-cab-topbar-dropdown__panel-inner {
+        max-width: none;
+        min-width: 0;
+        width: 100%;
+        box-shadow: none;
+        border: none;
+        border-radius: 10px;
+        margin-top: 4px;
+    }
+    .yvo-cab-topbar-dropdown__stats {
+        grid-template-columns: 1fr;
+    }
+    .yvo-cab-topbar-sub-inner {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 10px 12px;
+    }
+    .yvo-cab-topbar-search {
+        max-width: none;
+        width: 100%;
+    }
+
+    /* Тарифы */
+    body.yvo-cabinet-virtual .yvo-pr-page {
+        padding-left: 0;
+        padding-right: 0;
+    }
+    .yvo-cabinet-virtual-wrap .yvo-pr-wrap {
+        max-width: 100%;
+    }
+    .yvo-pricing.yvo-cabinet-auth {
+        max-width: none;
+        margin: 12px;
+        padding: 16px;
+        border-radius: 14px;
+    }
+    .yvo-pricing-grid {
+        grid-template-columns: 1fr;
+        gap: 14px;
+    }
+    .yvo-pricing-card-price {
+        font-size: 1.35rem;
+    }
+    .yvo-pricing-compare-wrap {
+        margin-top: 20px;
+        margin-left: -4px;
+        margin-right: -4px;
+    }
+    .yvo-pricing-compare {
+        font-size: 13px;
+    }
+    .yvo-pricing-compare th,
+    .yvo-pricing-compare td {
+        padding: 8px 10px;
+    }
+
+    /* Личный кабинет / профиль / кошелёк */
+    .yvo-cabinet-auth {
+        max-width: none;
+        margin: 12px;
+        padding: 16px;
+        border-radius: 14px;
+    }
+    .yvo-cabinet-profile-avito .yvo-prof-hero {
+        flex-direction: column;
+        align-items: flex-start;
+        text-align: left;
+    }
+    .yvo-prof-cards {
+        grid-template-columns: 1fr;
+    }
+    .yvo-prof-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+    .yvo-prof-actions .yvo-cabinet-btn {
+        display: block;
+        width: 100%;
+        text-align: center;
+        box-sizing: border-box;
+    }
+    .yvo-prof-nav {
+        grid-template-columns: 1fr;
+    }
+    .yvo-cab-profile-dl {
+        grid-template-columns: 1fr;
+        gap: 4px 0;
+    }
+    .yvo-cab-profile-dl dt {
+        margin-top: 8px;
+    }
+
+    .yvo-cab-login-stage {
+        min-height: auto;
+        padding: 1rem 10px 2rem;
+    }
+
+    .yvo-cabinet-btn,
+    .yvo-cab-login-card .button,
+    .yvo-cab-login-card input[type="submit"] {
+        min-height: 44px;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+    .yvo-pricing-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (min-width: 768px) {
+    .yvo-cab-topbar-burger,
+    .yvo-cab-topbar-close,
+    .yvo-cab-topbar-mobile-head {
+        display: none !important;
+    }
+}
+
+/* ——— Страница входа: 3D-карточка и анимации ——— */
+.yvo-cab-login-stage {
+    perspective: 1200px;
+    perspective-origin: 50% 30%;
+    padding: clamp(1rem, 4vw, 2.5rem) clamp(0.75rem, 3vw, 1.25rem) clamp(2rem, 5vw, 3rem);
+    min-height: min(72vh, 720px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+        radial-gradient(circle at 12% 18%, rgba(74, 91, 255, 0.08) 0%, transparent 42%),
+        radial-gradient(circle at 88% 12%, rgba(255, 126, 61, 0.07) 0%, transparent 38%),
+        linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+}
+
+.yvo-cab-login-stage .yvo-cab-login-card {
+    position: relative;
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+    padding: clamp(1.35rem, 3.5vw, 1.85rem) clamp(1.15rem, 3vw, 1.65rem);
+    border-radius: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.92);
+    background: linear-gradient(165deg, #ffffff 0%, #f4f7fb 100%);
+    box-shadow:
+        0 22px 50px rgba(15, 23, 42, 0.14),
+        0 2px 0 rgba(255, 255, 255, 0.9) inset,
+        0 -10px 28px rgba(15, 23, 42, 0.04) inset;
+    transform-style: preserve-3d;
+    will-change: transform, opacity;
+    animation: yvoCabLoginCardIn 0.75s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.yvo-cab-login-stage .yvo-cab-login-card.card3d::before {
+    content: "";
+    position: absolute;
+    inset: 12px 16px -20px 16px;
+    background: radial-gradient(70% 70% at 50% 30%, rgba(16, 24, 40, 0.16) 0%, rgba(16, 24, 40, 0.02) 55%, rgba(16, 24, 40, 0) 75%);
+    filter: blur(7px);
+    opacity: 0.9;
+    pointer-events: none;
+    transform: translateZ(-22px);
+    border-radius: 24px;
+}
+
+.yvo-cab-login-stage .yvo-cab-login-card.card3d::after {
+    content: "";
+    position: absolute;
+    inset: -6px -8px -10px -8px;
+    background: radial-gradient(60% 60% at 28% 18%, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0) 55%);
+    opacity: 0.45;
+    pointer-events: none;
+    transform: translateZ(1px);
+    border-radius: inherit;
+    mix-blend-mode: soft-light;
+}
+
+.yvo-cab-login-stage .yvo-cab-login-card > * {
+    position: relative;
+    z-index: 2;
+}
+
+@keyframes yvoCabLoginCardIn {
+    from {
+        opacity: 0;
+        transform: translateY(26px) rotateX(10deg) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) rotateX(0deg) scale(1);
+    }
+}
+
+@keyframes yvoCabLoginSheen {
+    0% { transform: translateX(-120%) skewX(-12deg); opacity: 0; }
+    18% { opacity: 0.55; }
+    100% { transform: translateX(220%) skewX(-12deg); opacity: 0; }
+}
+
+.yvo-cab-login-head {
+    margin-bottom: 1.15rem;
+    text-align: center;
+}
+
+.yvo-cab-login-brand {
+    display: inline-block;
+    margin-bottom: 0.55rem;
+    padding: 0.28rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.06);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #0f172a;
+}
+
+.yvo-cab-login-stage .yvo-cabinet-auth-title {
+    margin: 0 0 0.4rem;
+    font-size: clamp(1.25rem, 3vw, 1.45rem);
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.yvo-cab-login-lead {
+    margin: 0;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: #64748b;
+}
+
+.yvo-cab-login-yandex {
+    margin-bottom: 0.35rem;
+}
+
+.yvo-cab-login-yandex-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 48px;
+    padding: 0.7rem 1rem !important;
+    border-radius: 999px !important;
+    font-size: 0.98rem !important;
+    font-weight: 700 !important;
+    text-align: center;
+    box-shadow:
+        0 14px 32px rgba(252, 204, 0, 0.35),
+        inset 0 2px 0 rgba(255, 255, 255, 0.55);
+    transition: transform 0.28s cubic-bezier(0.34, 1.3, 0.64, 1), box-shadow 0.28s ease, filter 0.24s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.yvo-cab-login-yandex-btn::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 42%;
+    height: 100%;
+    background: linear-gradient(100deg, transparent 0%, rgba(255, 255, 255, 0) 35%, rgba(255, 255, 255, 0.45) 50%, rgba(255, 255, 255, 0) 65%, transparent 100%);
+    pointer-events: none;
+    opacity: 0;
+}
+
+@media (hover: hover) {
+    .yvo-cab-login-yandex-btn:hover {
+        transform: translateY(-3px) rotateX(4deg) scale(1.02);
+        filter: brightness(1.03);
+        box-shadow:
+            0 18px 40px rgba(252, 204, 0, 0.42),
+            inset 0 2px 0 rgba(255, 255, 255, 0.65);
+    }
+
+    .yvo-cab-login-yandex-btn:hover::after {
+        animation: yvoCabLoginSheen 1s ease-out 1;
+    }
+
+    .yvo-cab-login-stage .yvo-cab-login-card:hover {
+        transform: translateY(-2px) rotateX(1.5deg);
+    }
+}
+
+.yvo-cab-login-stage .yvo-cabinet-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0 1.1rem;
+    color: #94a3b8;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.yvo-cab-login-stage .yvo-cabinet-divider::before,
+.yvo-cab-login-stage .yvo-cabinet-divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.45), transparent);
+}
+
+.yvo-cab-login-stage .yvo-cabinet-divider span {
+    flex-shrink: 0;
+}
+
+.yvo-cab-login-stage .yvo-cabinet-form input[type="text"],
+.yvo-cab-login-stage .yvo-cabinet-form input[type="password"] {
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 12px;
+    padding: 0.72rem 0.85rem;
+    background: #fff;
+    box-shadow:
+        0 8px 18px rgba(15, 23, 42, 0.05),
+        inset 0 1px 0 rgba(255, 255, 255, 0.95);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.yvo-cab-login-stage .yvo-cabinet-form input:focus {
+    border-color: rgba(37, 99, 235, 0.45);
+    box-shadow:
+        0 10px 22px rgba(37, 99, 235, 0.12),
+        0 0 0 3px rgba(37, 99, 235, 0.14);
+    transform: translateY(-1px);
+}
+
+.yvo-cab-login-submit {
+    width: 100%;
+    min-height: 46px;
+    border-radius: 999px !important;
+    font-weight: 700 !important;
+    box-shadow:
+        0 14px 28px rgba(37, 99, 235, 0.28),
+        inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
+}
+
+@media (hover: hover) {
+    .yvo-cab-login-submit:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 18px 34px rgba(37, 99, 235, 0.32);
+    }
+}
+
+.yvo-cab-login-links-sep {
+    margin: 0 0.35rem;
+    color: #cbd5e1;
+}
+
+.yvo-cab-login-stage .yvo-cabinet-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 0.15rem 0.35rem;
+    margin-top: 0.35rem;
+}
+
+.yvo-cab-login-stage .yvo-cabinet-oauth-missing {
+    font-size: 0.8rem;
+    border-radius: 12px;
+    background: #fffbeb;
+    border: 1px dashed #fcd34d;
+}
+
+.yvo-cab-login-stage .yvo-cabinet-oauth-missing code {
+    display: block;
+    margin-top: 0.35rem;
+    word-break: break-all;
+    font-size: 0.72rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .yvo-cab-login-stage .yvo-cab-login-card,
+    .yvo-cab-login-yandex-btn,
+    .yvo-cab-login-submit,
+    .yvo-cab-login-stage .yvo-cabinet-form input {
+        animation: none !important;
+        transition: none !important;
+        transform: none !important;
+    }
+}

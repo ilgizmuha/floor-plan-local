@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "updatedAt": null,
+  "note": "Auto-tuned thresholds from walk-forward calibration. Run: node trading-brain.js calibrate",
+  "symbols": {}
+}

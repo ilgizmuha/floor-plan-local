@@ -1,0 +1,383 @@
+.yvo-container {
+    display: flex;
+    gap: 20px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.yvo-card {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+    padding: 20px;
+    border-radius: 4px;
+    flex: 1;
+    min-width: 300px;
+}
+
+.yvo-card h2 {
+    margin-top: 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    color: #23282d;
+}
+
+.yvo-pdf-badge {
+    background: #ff6b6b;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    margin-left: 10px;
+}
+
+.yvo-ai-badge {
+    background: #4CAF50;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    margin-left: 10px;
+}
+
+.yvo-regex-badge {
+    background: #FF9800;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    margin-left: 10px;
+}
+
+.yvo-files-container {
+    margin: 20px 0;
+}
+
+.yvo-file-item {
+    margin-bottom: 15px;
+    padding: 15px;
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.yvo-file-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.yvo-file-input {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex: 1;
+    min-width: 300px;
+}
+
+.yvo-file-input input {
+    flex: 1;
+}
+
+.yvo-file-type {
+    min-width: 200px;
+}
+
+.yvo-file-type select {
+    width: 100%;
+}
+
+.yvo-batch-actions {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+}
+
+.yvo-progress {
+    text-align: center;
+    padding: 20px;
+    background: #f8f8f8;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    margin: 20px 0;
+}
+
+.yvo-result {
+    margin-bottom: 20px;
+    padding: 15px;
+    border-radius: 4px;
+}
+
+.yvo-result.success {
+    background: #f0f9f0;
+    border: 1px solid #c3e6c3;
+}
+
+.yvo-result.error {
+    background: #fdf3f2;
+    border: 1px solid #ebccd1;
+}
+
+.yvo-result h4 {
+    margin-top: 0;
+    color: #333;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+}
+
+.yvo-text-result textarea {
+    width: 100%;
+    height: 300px;
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    resize: vertical;
+}
+
+.yvo-actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+.yvo-form-section {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 4px;
+}
+
+.yvo-form-row {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.yvo-form-col {
+    flex: 1;
+    min-width: 200px;
+}
+
+.yvo-form-col label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: #333;
+}
+
+.yvo-form-col input[type="text"],
+.yvo-form-col textarea {
+    width: 100%;
+}
+
+.yvo-form-col .small-text {
+    width: 100px;
+}
+
+.yvo-quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 15px 0;
+}
+
+.yvo-quick-actions .button {
+    text-align: left;
+}
+
+.yvo-contract-actions {
+    margin: 20px 0;
+}
+
+.yvo-data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}
+
+.yvo-data-table td {
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    vertical-align: top;
+}
+
+.yvo-data-table tr:last-child td {
+    border-bottom: none;
+}
+
+.yvo-data-table td:first-child {
+    width: 30%;
+    font-weight: 500;
+    color: #555;
+}
+
+.yvo-info-box {
+    background: #f9f9f9;
+    border: 1px solid #e5e5e5;
+    padding: 15px;
+    border-radius: 4px;
+    margin: 15px 0;
+}
+
+.yvo-info-box ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.yvo-info-box li {
+    margin-bottom: 8px;
+}
+
+.yvo-stats {
+    background: #f0f7ff;
+    border: 1px solid #c3d9ff;
+    padding: 15px;
+    border-radius: 4px;
+    margin-top: 20px;
+}
+
+.yvo-ai-status {
+    margin: 20px 0;
+    padding: 15px;
+    border-radius: 4px;
+}
+
+.notice {
+    margin: 10px 0;
+    padding: 10px 15px;
+    border-radius: 4px;
+}
+
+.notice-success {
+    background: #dff0d8;
+    border: 1px solid #d6e9c6;
+    color: #3c763d;
+}
+
+.notice-error {
+    background: #f2dede;
+    border: 1px solid #ebccd1;
+    color: #a94442;
+}
+
+.notice-warning {
+    background: #fcf8e3;
+    border: 1px solid #faebcc;
+    color: #8a6d3b;
+}
+
+.notice-info {
+    background: #d9edf7;
+    border: 1px solid #bce8f1;
+    color: #31708f;
+}
+
+@media screen and (max-width: 782px) {
+    .yvo-container {
+        flex-direction: column;
+    }
+    
+    .yvo-file-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .yvo-file-input {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .yvo-file-input input {
+        margin-bottom: 10px;
+    }
+    
+    .yvo-batch-actions {
+        flex-direction: column;
+    }
+    
+    .yvo-form-row {
+        flex-direction: column;
+    }
+    
+    .yvo-form-col {
+        min-width: 100%;
+    }
+}
+
+/* Админ-панель: дашборд */
+.yvo-dashboard-wrap {
+    margin-top: 15px;
+}
+.yvo-dashboard-cards {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 25px;
+}
+.yvo-dash-card {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+    padding: 20px 24px;
+    border-radius: 4px;
+    flex: 1;
+    min-width: 260px;
+}
+.yvo-dash-card h2 {
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+    font-size: 1.1em;
+    color: #1d2327;
+}
+.yvo-dash-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.yvo-dash-list li {
+    padding: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.yvo-dash-list li .dashicons {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+}
+.yvo-dash-list li.ok .dashicons { color: #00a32a; }
+.yvo-dash-list li.warn .dashicons { color: #dba617; }
+.yvo-dash-list li.muted .dashicons { color: #a7aaad; }
+.yvo-dash-num {
+    font-size: 1.5em;
+    font-weight: 600;
+    color: #1d2327;
+    margin-right: 8px;
+}
+.yvo-dash-label {
+    color: #50575e;
+}
+.yvo-dash-actions {
+    width: 100%;
+    max-width: 100%;
+}
+.yvo-dash-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.yvo-dash-buttons .button-hero {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.yvo-dashboard-wrap .notice.inline {
+    margin-top: 15px;
+}
