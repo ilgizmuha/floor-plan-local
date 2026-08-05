@@ -2,10 +2,21 @@
   "name": "floor-plan-local",
   "version": "1.0.0",
   "description": "Локальная страница векторной копии плана (Vectorizer.AI)",
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "bybit:health": "node scripts/bybit-trader.js health",
+    "bybit:balance": "node scripts/bybit-trader.js balance",
+    "bybit:order": "node scripts/bybit-trader.js order",
+    "brain:once": "node scripts/trading-brain.js once",
+    "brain:status": "node scripts/trading-brain.js status",
+    "brain:backtest": "node scripts/trading-brain.js backtest",
+    "brain:calibrate": "node scripts/trading-brain.js calibrate"
   },
   "dependencies": {
+    "@cursor/sdk": "^1.0.24",
     "formidable": "^3.5.1"
   }
 }

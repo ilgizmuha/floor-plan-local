@@ -27,6 +27,94 @@
 - **Node.js:** скопируйте `config.json.example` в `config.json` и укажите `vectorizer_username` и `vectorizer_password` (ключи с [vectorizer.ai](https://vectorizer.ai)).
 - **PHP:** скопируйте `config.php.example` в `config.php` или `config.local.php` и укажите те же переменные.
 
+## Bybit API трейдинг
+
+Скрипт `scripts/bybit-trader.js` позволяет проверить доступ к Bybit API, посмотреть баланс и создать ордер. По умолчанию реальные ордера не отправляются: включен `BYBIT_DRY_RUN=true`.
+
+1. На VPS скопируйте пример настроек:
+   ```bash
+   cp .env.example .env
+   ```
+2. В `.env` укажите `BYBIT_API_KEY` и `BYBIT_API_SECRET`. Для ключа на Bybit включайте только `read` и `trade`, выключайте `withdrawal`, добавляйте IP whitelist VPS.
+3. Проверьте публичный API:
+   ```bash
+   npm run bybit:health
+   ```
+4. Проверьте приватный API и баланс:
+   ```bash
+   npm run bybit:balance
+   ```
+5. Сформируйте ордер без отправки:
+   ```bash
+   npm run bybit:order -- --symbol BTCUSDT --side Buy --order-type Limit --qty 0.0001 --price 50000
+   ```
+6. Реальный ордер отправится только при двух условиях:
+   ```bash
+   BYBIT_DRY_RUN=false npm run bybit:order -- --symbol BTCUSDT --side Buy --order-type Limit --qty 0.0001 --price 50000 --confirm-live-order
+   ```
+
+## Гибридный торговый мозг
+
+`scripts/trading-brain.js` — read-only анализатор для VPS. Он не отправляет ордера: собирает рынок Bybit, считает индикаторы, читает публичные RSS-новости, прогоняет сигнал через risk manager и пишет решения в JSONL.
+
+Технический анализ использует SMA20/SMA50, EMA12/EMA26, RSI14, MACD, Bollinger Bands, momentum, volatility, volume ratio, support/resistance, стакан, деривативы и Fear & Greed. Помимо крипты поддерживаются TradFi-инструменты Bybit: металлы (`XAUUSDT`, `XAGUSDT`, `XAUTUSDT`), нефть (`CLUSDT`), акции (`TSLAUSDT`, `NVDAUSDT` и др.) через `BRAIN_LINEAR_SYMBOLS`. Класс актива (`crypto` / `metal` / `commodity` / `stock` / `forex`) виден в WordPress-панели.
+
+**Валюты:** классический `EURUSD`/`GBPUSD` на Bybit доступен только через MT5 TradFi (не V5 market API). В мозг добавлены spot-прокси: `USDTEUR` (доллар/евро), `BTCEUR`, `ETHEUR`. Класс `forex`.
+
+**База знаний скальпинга** (`scripts/knowledge/scalping-kb.json`): Боровков (микроструктура/дисциплина), CScalp (стакан/стены), Ширяев (Pivot Points), Young/Benner (ожидание сетапа) + Murphy/Solabuto. Правила применяются в `analyzeScalpStrategy`.
+
+**Finam Trade API** (`FINAM_*`): котировки и счета МосБиржи / NASDAQ через `api.finam.ru`. Символы `TICKER@MIC` (SBER@MISX, AAPL@XNGS, USD000UTSTOM@MISX). Счета: `791750REXQ4` — длинные/свинг, `791750RM43P` — дневной тариф/intraday. Скальп по fee gate запрещён на акциях/металлах/FX-споте — только свинг/long на REXQ4. Живые заявки: `FINAM_TRADING_ENABLED=true` (лимитки, лимит позиции, min confidence). Команды: `node trading-brain.js finam`, `node trading-brain.js stats`.
+
+**Fee gate** (`scripts/knowledge/fee-policy.json`): короткие сделки (scalp) только по `BTC/ETH/SOL`. Металлы, нефть, акции, forex-прокси — **только длинный/свинг** горизонт: комиссия на круг съедает микро-прибыль.
+
+Опциональные AI-аналитики подключаются через DeepSeek/OpenAI-compatible API (`AI_ANALYST_*`) и Cursor SDK (`CURSOR_ANALYST_*`). Сейчас VPS настроен на DeepSeek (`AI_ANALYST_BASE_URL=https://api.deepseek.com`, `AI_ANALYST_MODEL=deepseek-chat`). Для Cursor Analyst нужен `CURSOR_API_KEY` из Cursor Dashboard. Базовые правила дают первый сигнал, DeepSeek и Cursor подтверждают/отклоняют его, затем risk manager принимает финальное разрешение.
+
+WordPress используется только как будущая панель управления и просмотра. Bybit-ключи, анализатор и торговая логика должны оставаться вне WordPress/OCR-плагина.
+
+Для Cursor SDK нужен Node.js `>=22.13`; VPS обновлён до Node.js 22.
+
+Paper-trading включается настройками `PAPER_*`. Это виртуальная торговля: мозг открывает/закрывает позиции только в файлах `/opt/trading-brain/data/paper-state.json` и `/opt/trading-brain/data/paper-trades.jsonl`. По умолчанию paper работает и на крипте, и на TradFi (`XAUUSDT`, `XAGUSDT`, `TSLAUSDT`, `NVDAUSDT`, `CLUSDT`, `XAUTUSDT`) через `PAPER_SYMBOLS`. Качество сигналов по горизонтам 15м/1ч/4ч пишется в `/opt/trading-brain/data/quality.json` и отображается в WordPress-панели.
+
+**Regime gate** (`REGIME_GATE_*`) определяет режим рынка по ADX и волатильности: `trend_up`, `trend_down`, `range`, `volatile`, `transition`. В downtrend/volatile swing BUY блокируется, в range — mean-reversion логика.
+
+**Ensemble scoring** (`ENSEMBLE_*`) взвешивает 4 канала: technical, microstructure (стакан), derivatives (funding/OI), sentiment (новости + Fear & Greed).
+
+**Quality feedback** (`QUALITY_FEEDBACK_*`) автоматически повышает/понижает порог confidence для символов с плохим/хорошим hit-rate на 15m.
+
+**Стратегии** (`scripts/knowledge/strategy-profiles.json`):  
+- Bybit: `scalp`, `swing_crypto`, `swing_tradfi`  
+- Finam: `long_finam` (REXQ4 акции/металлы), `day_finam` (RM43P FX/фьючи), `scalp_finam` (вторичный скальп на RM43P)  
+
+Исполнение Finam раздельно: свои `minConfidence`, лимит позиции и max open positions на long/day/scalp.
+
+**Калибровка** (`npm run brain:calibrate`): walk-forward подбор `minConfidence` / `sellThreshold` → `data/calibration.json`.
+
+**Бэктест** (`npm run brain:backtest`):  
+- `rules` — история свечей Bybit без AI  
+- `ai` — переигровка `decisions.jsonl` с разбивкой rules / DeepSeek / Cursor  
+- `all` — оба режима  
+- `--walk-forward` — out-of-sample folds  
+
+Пример: `node scripts/trading-brain.js calibrate --symbols BTCUSDT,ETHUSDT` и `node scripts/trading-brain.js backtest --mode all --walk-forward`.
+
+Новостной слой читает RSS (`BRAIN_NEWS_SOURCES`) и HTML-источники (`BRAIN_HTML_NEWS_SOURCES`). Сейчас подключены Cointelegraph, CoinDesk, Google News, ForkLog и публичная Telegram-лента ForkLog. Также используется Crypto Fear & Greed Index (`FEAR_GREED_ENABLED`, API alternative.me, без ключа). X, Feedly, CryptoPanic и приватные Telegram-каналы стоит подключать отдельными API-токенами, чтобы не зависеть от нестабильного scraping.
+
+Команды:
+
+```bash
+npm run brain:once
+npm run brain:status
+npm run brain:backtest
+```
+
+На VPS рекомендуемая папка: `/opt/trading-brain`. Журнал решений: `/opt/trading-brain/data/decisions.jsonl`.
+
+## WordPress-панель Trading Brain
+
+Отдельный плагин находится в `wp-plugins/trading-brain-panel`. Он добавляет админ-страницу **Trading Brain** и показывает статус сервиса, последние сигналы, новости и кнопки включить/выключить/перезапустить анализатор.
+
+Плагин не хранит Bybit-ключи и не содержит торговую логику. На VPS он работает через ограниченный helper `deploy/trading-brain-panel-helper.sh`, установленный как `/usr/local/bin/trading-brain-panel`.
+
 ## Подключение к GitHub
 
 1. Создайте новый репозиторий на [github.com](https://github.com/new) (без README и .gitignore).
