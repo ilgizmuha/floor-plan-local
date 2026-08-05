@@ -73,7 +73,7 @@
   "profiles": {
     "swing_crypto": { "minConfidence": 75, "style": "swing", "longBias": true },
     "swing_tradfi": { "minConfidence": 75, "style": "swing", "longOnly": false, "linearShorts": true },
-    "long_finam": { "minConfidence": 75, "style": "position/swing", "longOnly": true },
+    "long_finam": { "minConfidence": 65, "style": "position/swing", "longOnly": false, "shortsWhenShortable": true },
     "day_finam": { "minConfidence": 65, "style": "intraday/day hold" },
     "scalp_finam": { "minConfidence": 75, "style": "shiryaev conservative scalp" }
   },

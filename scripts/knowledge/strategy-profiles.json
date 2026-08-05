@@ -60,14 +60,14 @@
       "aiMode": "confirm_only"
     },
     "long_finam": {
-      "label": "Finam long / swing (REXQ4)",
+      "label": "Finam swing (REXQ4) long+short",
       "strategyType": "long",
       "timeframe": "15m",
       "providers": ["finam"],
       "accountRole": "long",
       "assetClasses": ["stock", "metal", "other"],
-      "minConfidence": 75,
-      "sellThreshold": 36,
+      "minConfidence": 65,
+      "sellThreshold": 38,
       "ensembleWeights": {
         "technical": 0.60,
         "microstructure": 0.08,
@@ -75,18 +75,20 @@
         "sentiment": 0.30
       },
       "sentimentMode": "veto_only",
-      "longOnly": true,
+      "longOnly": false,
       "regimeProfile": "long",
       "aiMode": "confirm_only",
       "trading": {
-        "minConfidence": 75,
-        "minSellConfidence": 55,
-        "maxPositionRub": 500,
-        "maxOpenPositions": 3,
+        "minConfidence": 65,
+        "minSellConfidence": 48,
+        "maxPositionRub": 900,
+        "maxOpenPositions": 6,
         "orderType": "LIMIT",
         "timeInForce": "TIME_IN_FORCE_DAY",
         "allowSellToClose": true,
-        "allowOpenShort": false
+        "allowOpenShort": true,
+        "leverage": 3,
+        "positionRiskPct": 18
       }
     },
     "day_finam": {
@@ -96,8 +98,8 @@
       "providers": ["finam"],
       "accountRole": "day",
       "assetClasses": ["forex", "futures", "other"],
-      "minConfidence": 65,
-      "sellThreshold": 34,
+      "minConfidence": 60,
+      "sellThreshold": 36,
       "ensembleWeights": {
         "technical": 0.42,
         "microstructure": 0.30,
@@ -109,14 +111,16 @@
       "regimeProfile": "swing",
       "aiMode": "confirm_only",
       "trading": {
-        "minConfidence": 65,
-        "minSellConfidence": 48,
-        "maxPositionRub": 400,
-        "maxOpenPositions": 2,
+        "minConfidence": 60,
+        "minSellConfidence": 45,
+        "maxPositionRub": 700,
+        "maxOpenPositions": 3,
         "orderType": "LIMIT",
         "timeInForce": "TIME_IN_FORCE_DAY",
         "allowSellToClose": true,
-        "allowOpenShort": false
+        "allowOpenShort": true,
+        "leverage": 3,
+        "positionRiskPct": 20
       }
     },
     "scalp_finam": {
@@ -126,7 +130,7 @@
       "providers": ["finam"],
       "accountRole": "day",
       "assetClasses": ["futures", "forex"],
-      "minConfidence": 75,
+      "minConfidence": 70,
       "sellThreshold": 40,
       "ensembleWeights": {
         "technical": 0.25,
@@ -139,14 +143,16 @@
       "regimeProfile": "scalp",
       "aiMode": "confirm_only",
       "trading": {
-        "minConfidence": 75,
-        "minSellConfidence": 55,
-        "maxPositionRub": 250,
-        "maxOpenPositions": 1,
+        "minConfidence": 70,
+        "minSellConfidence": 50,
+        "maxPositionRub": 400,
+        "maxOpenPositions": 2,
         "orderType": "LIMIT",
         "timeInForce": "TIME_IN_FORCE_DAY",
         "allowSellToClose": true,
-        "allowOpenShort": false,
+        "allowOpenShort": true,
+        "leverage": 2,
+        "positionRiskPct": 15,
         "takeProfitPct": 0.35,
         "stopLossPct": 0.22
       }
