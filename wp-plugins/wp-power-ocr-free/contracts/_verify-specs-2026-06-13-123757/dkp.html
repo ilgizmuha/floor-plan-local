@@ -1,0 +1,237 @@
+<!DOCTYPE html><html lang="ru"><head><meta charset="UTF-8"><title>Договор купли-продажи</title><style>
+    body {
+        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        background-color: #f4f4f4;
+        padding: 20px;
+        color: #333;
+        line-height: 1.4;
+    }
+    .page {
+        background: white;
+        width: 210mm;
+        min-height: 297mm;
+        padding: 25px 30px;
+        margin: 0 auto;
+        box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        box-sizing: border-box;
+    }
+    .header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #e60012;
+        padding-bottom: 10px;
+    }
+    .doc-type {
+        color: #e60012;
+        font-size: 9px;
+        font-weight: bold;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+    }
+    .main-title {
+        font-size: 22px;
+        font-weight: 900;
+        color: #000;
+        line-height: 1.1;
+        text-transform: uppercase;
+    }
+    .city-date {
+        display: flex;
+        gap: 20px;
+        margin-top: 5px;
+        font-size: 12px;
+    }
+    .date-box {
+        display: flex;
+        gap: 8px;
+        border: 1.5px solid #e60012;
+        padding: 6px 10px;
+        border-radius: 6px;
+    }
+    .date-item {
+        text-align: center;
+        min-width: 50px;
+    }
+    .date-val {
+        font-size: 14px;
+        font-weight: bold;
+        color: #e60012;
+        display: block;
+        line-height: 1;
+    }
+    .date-label {
+        font-size: 8px;
+        color: #999;
+        text-transform: uppercase;
+    }
+
+    .parties-section {
+        margin-bottom: 20px;
+    }
+    .party-card {
+        background: #fafafa;
+        padding: 12px 15px;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        border-left: 3px solid #e60012;
+    }
+    .party-title {
+        font-size: 11px;
+        font-weight: bold;
+        color: #666;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .data-grid {
+        display: grid;
+        grid-template-columns: 130px 1fr;
+        gap: 4px;
+        font-size: 11px;
+    }
+    .label {
+        color: #999;
+        font-weight: normal;
+    }
+    .value {
+        color: #e60012;
+        font-weight: bold;
+        border-bottom: 1px dotted #ccc;
+    }
+
+    h2 {
+        font-size: 14px;
+        margin-top: 20px;
+        margin-bottom: 12px;
+        color: #000;
+        border-left: 3px solid #e60012;
+        padding-left: 10px;
+        text-transform: uppercase;
+    }
+    h2 span {
+        color: #e60012;
+        margin-right: 8px;
+    }
+    
+    .price-box {
+        background: #fff;
+        border: 1.5px solid #e60012;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 15px 0;
+        text-align: center;
+    }
+    .price-amount {
+        font-size: 24px;
+        font-weight: bold;
+        color: #e60012;
+        margin: 8px 0;
+    }
+
+    .specs-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+        font-size: 11px;
+    }
+    .specs-table td {
+        padding: 6px 8px;
+        border-bottom: 1px solid #eee;
+        vertical-align: top;
+    }
+    .specs-table .key {
+        color: #666;
+        width: 45%;
+        font-weight: 500;
+    }
+    .specs-table .val {
+        color: #e60012;
+        font-weight: bold;
+    }
+    
+    .footer {
+        margin-top: 30px;
+        border-top: 2px solid #e60012;
+        padding-top: 20px;
+        display: flex;
+        justify-content: space-between;
+    }
+    .signature-block {
+        width: 30%;
+    }
+    .signature-label {
+        font-size: 10px;
+        color: #999;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        font-weight: bold;
+    }
+    .signature-line {
+        border-bottom: 1.5px solid #000;
+        height: 30px;
+        margin-bottom: 6px;
+    }
+    .signature-name {
+        font-size: 10px;
+        color: #666;
+    }
+
+    .text-block {
+        margin: 10px 0;
+        font-size: 11px;
+        text-align: justify;
+    }
+    .highlight {
+        color: #e60012;
+        font-weight: bold;
+    }
+    .subsection {
+        margin: 10px 0;
+        font-size: 11px;
+    }
+    .subsection-title {
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 6px;
+    }
+    ul {
+        margin: 6px 0;
+        padding-left: 18px;
+        font-size: 11px;
+    }
+    li {
+        margin: 3px 0;
+    }
+    .two-columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+    }
+
+body,.page{color:#000 !important;text-decoration:none !important;}
+.doc-type,.main-title{color:#000 !important;text-decoration:none !important;}
+.header-top{border-bottom:1px solid #000;}
+.header-meta{display:flex;justify-content:space-between;align-items:baseline;margin:6px 0 18px;font-size:12px;}
+.contract-city,.contract-date{color:#000;text-decoration:none !important;}
+.value{color:#000 !important;font-weight:normal !important;border-bottom:none !important;text-decoration:none !important;}
+.value-missing{color:#c0392b !important;font-weight:bold !important;text-decoration:none !important;border-bottom:none !important;}
+.highlight{color:#000 !important;text-decoration:none !important;}
+.party-card{background:#f7f7f7;border-left:2px solid #666;text-decoration:none !important;}
+.party-title{color:#000;text-decoration:none !important;}
+.label{color:#666;text-decoration:none !important;}
+.signatures-stack{width:100%;text-decoration:none !important;}
+.signatures-stack .signature-block{width:100%;text-decoration:none !important;}
+.signatures-footer{display:block;border-top:1px solid #000;padding-top:10px;margin-top:16px;text-decoration:none !important;}
+.signatures-footer h2{font-size:13px;margin:0 0 12px;color:#000;text-transform:uppercase;text-decoration:none !important;}
+.contract-body-html .text-block{margin:8px 0;font-size:11px;text-align:justify;line-height:1.45;color:#000;text-decoration:none !important;}
+.contract-body-html .text-block *{text-decoration:none !important;}
+.contract-body-html h2{margin:18px 0 10px;font-size:13px;color:#000 !important;text-transform:uppercase;border-left:2px solid #666;padding-left:8px;text-decoration:none !important;}
+.contract-body-html h2 span{margin-right:6px;color:#000 !important;text-decoration:none !important;}
+.contract-body-html .specs-table{width:100%;border-collapse:collapse;margin:4px 0;font-size:11px;line-height:1.1;}
+.contract-body-html .specs-table td{border:none;border-bottom:1px solid #eee;padding:1px 4px 2px;vertical-align:top;text-decoration:none !important;line-height:1.1;}
+.contract-body-html .specs-table td.key{background:transparent;width:42%;color:#666;text-decoration:none !important;}
+.contract-body-html .specs-table td.val,.specs-table .val{color:#000 !important;font-weight:normal !important;border-bottom:none !important;text-decoration:none !important;}
+.date-box{display:none !important;}</style></head><body spellcheck="false"><div class="page"><div class="header-top"><div class="doc-type">ДОГОВОР КУПЛИ-ПРОДАЖИ КВАРТИРЫ</div></div><div class="header-meta"><div class="contract-city">г. <span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">г. Уфа</span></div><div class="contract-date"><span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">13.06.2026</span></div></div><div class="parties-section"><div class="party-card" style="border-left-color:#666666;"><div class="party-title">Продавец</div><div class="data-grid"><span class="label">ФИО:</span> <span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">Алимбаева Ильгина Рашитовна</span><span class="label">дата рождения:</span> <span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">01.01.1980, место рождения: г. Уфа,</span><span class="label">паспорт РФ:</span> <span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">серия 80 10 номер 123456, выдан ОУФМС России,</span><span class="label">код подразделения 020-001, зарегистрированная по адресу:</span> <span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">г. Уфа, ул. Ленина, 1,</span></div></div><div class="party-card" style="border-left-color:#666666;"><div class="party-title">Покупатель</div><div class="data-grid"><span class="label">дата рождения:</span> <span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">02.02.1985, место рождения: г. Уфа,</span><span class="label">паспорт РФ:</span> <span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">серия 80 11 номер 654321, выдан ОУФМС России,</span><span class="label">код подразделения 020-002, зарегистрированный по адресу:</span> <span class="value" style="color:#000;font-weight:normal;text-decoration:none;border-bottom:none;">г. Уфа, ул. Мира, 2,</span></div></div><div style="text-align:center;margin:12px 0;color:#666;font-size:11px;font-weight:bold;">вместе — «Стороны», заключили Договор о нижеследующем:</div></div><div class="contract-body-html"><h2><span>1.</span>ПРЕДМЕТ ДОГОВОРА</h2><div class="text-block">1.1. Продавцы продали, а Покупатель купил в личную собственность объект недвижимого имущества, имеющий следующие технические характеристики (описание) согласно актуальным данным Единого государственного реестра недвижимости:</div><table class="specs-table" style="width:100%;border-collapse:collapse;margin:4px 0;font-size:11px;line-height:1.1;"><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Кадастровый номер объекта недвижимости</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">02:55:020535:3860</td></tr><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Вид объекта недвижимости</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">Помещение</td></tr><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Адрес (местоположение)</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">Российская Федерация, Республика Башкортостан, г.о. город Уфа, г Уфа, ул Комсомольская, д. 69/3, кв. 35</td></tr><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Назначение</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">Жилое помещение</td></tr><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Наименование</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">Квартира</td></tr><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Сведения о праве на отчуждаемый объект недвижимости</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">Номер и дата государственной регистрации, вид права: 02:55:020535:3860-02/373/2020-4 от 16.11.2020, собственность</td></tr><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Количество комнат в квартире</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">1</td></tr><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Площадь по внутреннему обмеру без учета лоджий, балконов и веранд</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">19.7 кв.м</td></tr><tr><td class="key" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#666;">Этаж(и), на котором(ых) расположено помещение</td><td class="val" style="padding:1px 4px 2px;line-height:1.1;vertical-align:top;border:none;border-bottom:1px solid #eee;color:#000;">2</td></tr></table><div class="text-block">(далее по тексту – Объект).</div><div class="text-block">1.2. Объект принадлежит Продавцу на праве собственности, что подтверждается записями в ЕГРН от <span class="value value-missing" style="color:#c0392b;font-weight:bold;text-decoration:none;border-bottom:none;">[дата регистрации права]</span>.</div><div class="text-block">1.3. На момент подписания договора в Объекте никто не зарегистрирован, лица, сохраняющие право пользования, отсутствуют.</div><h2><span>2.</span>ЦЕНА И ПОРЯДОК РАСЧЁТОВ</h2><div class="text-block">2.1. Объект продаётся по согласованной Сторонами цене в размере 2 500 000,00 (два миллиона пятьсот тысяч) рублей.</div><div class="text-block">2.2. Оплата стоимости Объекта производится Покупателем за счёт собственных средств в полном объёме.</div><div class="text-block">2.3. Сумма в размере 2 500 000,00 рублей уплачивается Покупателем посредством открытия в ПАО Сбербанк в течение 1 (Одного) рабочего дня с даты заключения настоящего Договора безотзывного, безакцептного, покрытого аккредитива на имя Продавца на следующих условиях:</div><div class="text-block">Банк-эмитент: ПАО Сбербанк. Исполняющий банк: ПАО Сбербанк. Сумма аккредитива: 2 500 000,00 рублей. Срок открытия аккредитива: 60 календарных дней. Плательщик: Покупатель. Получатель: Продавца. Назначение платежа: перечисление денежных средств по Договору купли-продажи от 13.06.2026. Банковские реквизиты Получателя: <span class="value value-missing" style="color:#c0392b;font-weight:bold;text-decoration:none;border-bottom:none;">________________</span>. Валюта: Российский рубль. Условие платежа: без акцепта.</div><div class="text-block">Перечень документов для раскрытия аккредитива: оригинал или нотариально заверенная копия настоящего Договора; выписка из ЕГРН, подтверждающая регистрацию перехода права собственности к Покупателю.</div><div class="text-block">2.4. Оплата Объекта Покупателем Продавцам производится в течение 1 (Одного) рабочего дня с момента государственной регистрации перехода права собственности на Объект к Покупателю в ЕГРН.</div><div class="text-block">2.5. Стороны договорились, что в соответствии с п. 5 ст. 488 Гражданского кодекса РФ право залога у Продавцов на указанный Объект не возникает.</div><div class="text-block">2.6. Полный и окончательный расчёт за Объект оформляется расписками Продавцов, подтверждающими получение ими денежных средств в соответствии с условиями настоящего Договора.</div><h2><span>3.</span>ПЕРЕДАЧА ОБЪЕКТА</h2><div class="text-block">3.1. В соответствии со статьёй 556 ГК РФ передача Объекта Продавцами и принятие его Покупателем осуществляется по подписываемому Сторонами Акту приёма-передачи в срок не позднее 14 дней с даты полной оплаты по договору.</div><div class="text-block">3.2. Продавцы обязуются передать Объект в пригодном для проживания состоянии, свободным от прав и претензий третьих лиц, укомплектованным исправным сантехническим, электротехническим и иным оборудованием, не обременённым задолженностями по квартплате и коммунальным платежам.</div><div class="text-block">3.3. Риск случайной гибели или повреждения Объекта до подписания Акта приёма-передачи несёт Продавцы.</div><div class="text-block">3.4. Покупатель осмотрел Объект и претензий по его качеству не имеет.</div><h2><span>4.</span>ГАРАНТИИ И ЗАВЕРЕНИЯ СТОРОН</h2><div class="text-block">4.1. Продавцы гарантируют, что до заключения настоящего Договора Объект никому не продан, не подарен, не заложен, в споре, под арестом или запрещением не состоит, рентой, арендой, наймом или иными обязательствами не обременён, лиц, временно отсутствующих, но сохраняющих право пользования, нет.</div><div class="text-block">4.2. Продавцы гарантируют, что они заключают настоящий Договор не вследствие стечения тяжёлых обстоятельств и он не является для них кабальной сделкой.</div><div class="text-block">4.3. В случае расторжения/прекращения (по любым основаниям, кроме надлежащего исполнения)/признания незаключённой/недействительной сделкой настоящего Договора, Покупатель поручает Продавцам в течение 20 рабочих дней со дня расторжения/вступления в силу решения суда перечислить денежные средства, полученные ими от Покупателя в оплату цены Объекта, на указанные Покупателем платёжные реквизиты.</div><div class="text-block">4.4. Продавцы гарантируют, что отсутствуют лица, имеющие имущественные или финансовые претензии по поводу приобретения ими права собственности на Объект, в том числе лица, обладающие правом обязательной доли, и что Объект приобретался ими как добросовестными приобретателями. В случае предъявления прав и претензий третьих лиц в отношении Объекта Продавцы обязуются урегулировать их самостоятельно и за свой счёт, не привлекая Покупателя.</div><div class="text-block">4.5. Стороны заверяют, что не имеют долгов и неисполненных обязательств, которые могут повлечь их банкротство, в отношении них не начата процедура банкротства, и они не планируют обращаться в суд с заявлением о банкротстве.</div><div class="text-block">4.6. Все гарантии и заверения, данные Сторонами в настоящем договоре, являются достоверными и имеют значение для заключения договора. В соответствии с п.1 ст. 431.2 ГК РФ сторона, давшая недостоверные заверения, обязана возместить другой стороне убытки.</div><h2><span>5.</span>ЗАКЛЮЧИТЕЛЬНЫЕ ПОЛОЖЕНИЯ</h2><div class="text-block">5.1. Настоящий Договор содержит весь объём соглашений между Сторонами в отношении предмета договора и отменяет все другие обязательства или представления, которые могли быть приняты или сделаны Сторонами в устной или письменной форме до его заключения.</div><div class="text-block">5.2. Содержание и последствия настоящего Договора, права и обязанности сторон, порядок его заключения, изменения и расторжения, а также содержание статей Гражданского кодекса РФ, регулирующих куплю-продажу недвижимости, Сторонам разъяснены и понятны.</div><div class="text-block">5.3. Право собственности на Объект переходит к Покупателю с момента государственной регистрации перехода права собственности в ЕГРН.</div><div class="text-block">5.4. Настоящий Договор составлен в трёх экземплярах, имеющих одинаковую юридическую силу: по одному для каждой из Сторон и один для органа регистрации прав.</div></div><div class="footer signatures-footer"><h2 style="color:#000;text-decoration:none;margin:0 0 12px;font-size:13px;text-transform:uppercase;"><span style="color:#000;">6.</span> ПОДПИСИ СТОРОН</h2><div class="signatures-stack"><div class="signature-block" style="width:100%;margin:0 0 10px 0;text-decoration:none;"><div style="font-size:10px;font-weight:bold;color:#000;margin-bottom:6px;text-transform:uppercase;text-decoration:none;">Продавец</div><p class="signature-line" style="margin:0 0 2px 0;padding:0;border-bottom:1px solid #000;width:100%;line-height:14px;height:14px;text-decoration:none;">&nbsp;</p><div style="font-size:10px;text-align:center;color:#000;font-weight:normal;text-decoration:none;">/ Алимбаева Ильгина Рашитовна /</div></div><div class="signature-block" style="width:100%;margin:0 0 10px 0;text-decoration:none;"><div style="font-size:10px;font-weight:bold;color:#000;margin-bottom:6px;text-transform:uppercase;text-decoration:none;">Покупатель</div><p class="signature-line" style="margin:0 0 2px 0;padding:0;border-bottom:1px solid #000;width:100%;line-height:14px;height:14px;text-decoration:none;">&nbsp;</p><div style="font-size:10px;text-align:center;color:#000;font-weight:normal;text-decoration:none;">/ Петров Пётр Петрович /</div></div></div></div></div></body></html>

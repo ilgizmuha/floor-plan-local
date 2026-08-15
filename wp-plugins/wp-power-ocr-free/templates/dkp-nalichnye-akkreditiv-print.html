@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<style>
+    body {
+        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        background-color: #f4f4f4;
+        padding: 20px;
+        color: #333;
+        line-height: 1.4;
+    }
+    .page {
+        background: white;
+        width: 210mm;
+        min-height: 297mm;
+        padding: 25px 30px;
+        margin: 0 auto;
+        box-shadow: 0 0 15px rgba(0,0,0,0.1);
+        box-sizing: border-box;
+    }
+    .header-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #e60012;
+        padding-bottom: 10px;
+    }
+    .doc-type { color: #e60012; font-size: 9px; font-weight: bold; letter-spacing: 1px;
+        text-transform: uppercase; margin-bottom: 5px; }
+    .main-title { font-size: 22px; font-weight: 900; color: #000; line-height: 1.1; text-transform: uppercase; }
+    .city-date { display: flex; flex-direction: column; gap: 4px; margin-top: 5px; font-size: 12px; }
+    .date-box { display: flex; gap: 8px; border: 1.5px solid #e60012; padding: 6px 10px; border-radius: 6px; }
+    .date-item { text-align: center; min-width: 50px; }
+    .date-val { font-size: 14px; font-weight: bold; color: #e60012; display: block; line-height: 1; }
+    .date-label { font-size: 8px; color: #999; text-transform: uppercase; }
+    .parties-section { margin-bottom: 20px; }
+    .party-card { background: #fafafa; padding: 12px 15px; border-radius: 6px; margin-bottom: 10px;
+        border-left: 3px solid #e60012; }
+    .party-title { font-size: 11px; font-weight: bold; color: #666; margin-bottom: 8px;
+        text-transform: uppercase; letter-spacing: 0.5px; }
+    .data-grid { display: grid; grid-template-columns: 130px 1fr; gap: 4px; font-size: 11px; }
+    .label { color: #999; font-weight: normal; }
+    .value { color: #e60012; font-weight: bold; border-bottom: 1px dotted #ccc; }
+    h2 { font-size: 14px; margin-top: 20px; margin-bottom: 12px; color: #000;
+        border-left: 3px solid #e60012; padding-left: 10px; text-transform: uppercase; }
+    h2 span { color: #e60012; margin-right: 8px; }
+    .specs-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 11px; }
+    .specs-table td { padding: 6px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+    .specs-table .key { color: #666; width: 45%; font-weight: 500; }
+    .specs-table .val { color: #e60012; font-weight: bold; }
+    .text-block { margin: 10px 0; font-size: 11px; text-align: justify; }
+    .highlight { color: #e60012; font-weight: bold; }
+    .subsection { margin: 10px 0; font-size: 11px; }
+    .footer { margin-top: 30px; border-top: 2px solid #e60012; padding-top: 20px;
+        display: flex; justify-content: space-between; }
+    .signature-block { width: 30%; }
+    .signature-label { font-size: 10px; color: #999; margin-bottom: 6px; text-transform: uppercase; font-weight: bold; }
+    .signature-line { border-bottom: 1.5px solid #000; height: 30px; margin-bottom: 6px; }
+    .signature-name { font-size: 10px; color: #666; }
+    /* Подписи: не разрывать между страницами */
+    h2.signatures-section { page-break-before: always; break-before: page; }
+    .signatures { page-break-inside: avoid; break-inside: avoid; margin-top: 6px; }
+    .sig-party { page-break-inside: avoid; break-inside: avoid; margin-bottom: 22px; }
+    .sig-label { font-weight: bold; margin-bottom: 2px !important; }
+    .sig-line { margin-top: 4px !important; margin-bottom: 0 !important; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="header-top">
+  <div>
+    <div class="doc-type">ДКП — тема 1: наличные + аккредитив</div>
+    <div class="main-title">ДОГОВОР КУПЛИ-ПРОДАЖИ КВАРТИРЫ</div>
+    <div class="city-date">
+      <div style="color:#666;">г. [город заключения]</div>
+      <div style="color:#666;"><span style="color:#999;">Дата:</span> <span class="highlight">[дата]</span></div>
+    </div>
+  </div>
+  <div class="date-box">
+    <div class="date-item"><span class="date-val">[__]</span><span class="date-label">День</span></div>
+    <div class="date-item"><span class="date-val">[__]</span><span class="date-label">Месяц</span></div>
+    <div class="date-item"><span class="date-val">20__</span><span class="date-label">Год</span></div>
+  </div>
+</div>
+
+
+<div class="parties-section">
+  <div class="party-card">
+    <div class="party-title">Стороны</div>
+    <div class="text-block" style="margin:0;">Мы, ___________________________________________________________________________,<br>
+дата рождения: ____________, место рождения: ____________________,<br>
+паспорт РФ: серия _____ номер __________, выдан _______________________________,<br>
+код подразделения _______, зарегистрированный(-ая) по адресу: __________________,<br>
+именуемый(-ая) в дальнейшем «Продавец», с одной стороны,<br>
+и ___________________________________________________________________________,<br>
+дата рождения: ____________, место рождения: ____________________,<br>
+паспорт РФ: серия _____ номер __________, выдан _______________________________,<br>
+код подразделения _______, зарегистрированный(-ая) по адресу: __________________,<br>
+именуемый(-ая) в дальнейшем «Покупатель», с другой стороны,<br>
+вместе именуемые «Стороны», действуя добровольно, заключили настоящий Договор о нижеследующем:</div>
+  </div>
+</div>
+
+<h2><span>1.</span>ПРЕДМЕТ ДОГОВОРА</h2>
+<div class="subsection"><strong>1.1. </strong>Продавец продал, а Покупатель купил в личную собственность объект недвижимого имущества, имеющий следующие характеристики согласно данным Единого государственного реестра недвижимости:</div>
+<table class="specs-table"><tr><td class="key">Кадастровый номер</td><td class="val">[кадастровый номер]</td></tr><tr><td class="key">Вид объекта недвижимости</td><td class="val">Помещение</td></tr><tr><td class="key">Адрес (местоположение)</td><td class="val">[адрес объекта]</td></tr><tr><td class="key">Назначение</td><td class="val">Жилое помещение</td></tr><tr><td class="key">Наименование</td><td class="val">Квартира</td></tr><tr><td class="key">Сведения о праве собственности</td><td class="val">[номер и дата регистрации, вид права]</td></tr><tr><td class="key">Количество комнат</td><td class="val">[количество комнат]</td></tr><tr><td class="key">Площадь (кв.м)</td><td class="val">[площадь]</td></tr><tr><td class="key">Этаж(и)</td><td class="val">[этаж]</td></tr></table>
+<div class="text-block">(далее по тексту – Объект).</div>
+<div class="subsection"><strong>1.2. </strong>Объект принадлежит Продавцу на праве собственности, что подтверждается записью в ЕГРН от [дата регистрации права].</div>
+<div class="subsection"><strong>1.3. </strong>На момент подписания договора в Объекте никто не зарегистрирован, лица, сохраняющие право пользования, отсутствуют.</div>
+<h2><span>2.</span>ЦЕНА И ПОРЯДОК РАСЧЁТОВ</h2>
+<div class="subsection"><strong>2.1. </strong>Объект продаётся по согласованной Сторонами цене в размере [общая стоимость цифрами] ([общая стоимость прописью]) рублей.</div>
+<div class="subsection"><strong>2.2. </strong>Оплата стоимости Объекта производится Покупателем за счёт собственных средств в полном объёме.</div>
+<div class="subsection"><strong>2.3. </strong>Сумма в размере [сумма] рублей уплачивается Покупателем посредством открытия в [наименование банка] в течение 1 (Одного) рабочего дня с даты заключения настоящего Договора безотзывного, безакцептного, покрытого аккредитива на имя Продавца на следующих условиях:</div>
+<div class="text-block">Банк-эмитент: [наименование банка]. Исполняющий банк: [наименование банка]. Сумма аккредитива: [сумма] рублей. Срок открытия аккредитива: [срок] календарных дней. Плательщик: Покупатель. Получатель: Продавец. Назначение платежа: перечисление денежных средств по Договору купли-продажи от [дата]. Банковские реквизиты Получателя: [банковские реквизиты Продавца]. Валюта: Российский рубль. Условие платежа: без акцепта.</div>
+<div class="text-block">Перечень документов для раскрытия аккредитива: оригинал или нотариально заверенная копия настоящего Договора; выписка из ЕГРН, подтверждающая регистрацию перехода права собственности к Покупателю.</div>
+<div class="subsection"><strong>2.4. </strong>Оплата Объекта Покупателем Продавцу производится в течение 1 (Одного) рабочего дня с момента государственной регистрации перехода права собственности на Объект к Покупателю в ЕГРН.</div>
+<div class="subsection"><strong>2.5. </strong>Стороны договорились, что в соответствии с п. 5 ст. 488 Гражданского кодекса РФ право залога у Продавца на указанный Объект не возникает.</div>
+<div class="subsection"><strong>2.6. </strong>Полный и окончательный расчёт за Объект оформляется распиской Продавца, подтверждающей получение им денежных средств в соответствии с условиями настоящего Договора.</div>
+<h2><span>3.</span>ПЕРЕДАЧА ОБЪЕКТА</h2>
+<div class="subsection"><strong>3.1. </strong>В соответствии со статьёй 556 ГК РФ передача Объекта Продавцом и принятие его Покупателем осуществляется по подписываемому Сторонами Акту приёма-передачи в срок не позднее [количество] дней с даты полной оплаты по договору.</div>
+<div class="subsection"><strong>3.2. </strong>Продавец обязуется передать Объект в пригодном для проживания состоянии, свободным от прав и претензий третьих лиц, укомплектованным исправным сантехническим, электротехническим и иным оборудованием, не обременённым задолженностями по квартплате и коммунальным платежам.</div>
+<div class="subsection"><strong>3.3. </strong>Риск случайной гибели или повреждения Объекта до подписания Акта приёма-передачи несёт Продавец.</div>
+<div class="subsection"><strong>3.4. </strong>Покупатель осмотрел Объект и претензий по его качеству не имеет.</div>
+<h2><span>4.</span>ГАРАНТИИ И ЗАВЕРЕНИЯ СТОРОН</h2>
+<div class="subsection"><strong>4.1. </strong>Продавец гарантирует, что до заключения настоящего Договора Объект никому не продан, не подарен, не заложен, в споре, под арестом или запрещением не состоит, рентой, арендой, наймом или иными обязательствами не обременён, лиц, временно отсутствующих, но сохраняющих право пользования, нет.</div>
+<div class="subsection"><strong>4.2. </strong>Продавец гарантирует, что он заключает настоящий Договор не вследствие стечения тяжёлых обстоятельств и он не является для него кабальной сделкой.</div>
+<div class="subsection"><strong>4.3. </strong>Продавец гарантирует, что отсутствуют лица, имеющие имущественные или финансовые претензии по поводу приобретения им права собственности на Объект, в том числе лица, обладающие правом обязательной доли, и что Объект приобретался им как добросовестным приобретателем. В случае предъявления прав и претензий третьих лиц в отношении Объекта Продавец обязуется урегулировать их самостоятельно и за свой счёт, не привлекая Покупателя.</div>
+<div class="subsection"><strong>4.4. </strong>Стороны заверяют, что не имеют долгов и неисполненных обязательств, которые могут повлечь их банкротство, в отношении них не начата процедура банкротства, и они не планируют обращаться в суд с заявлением о банкротстве.</div>
+<div class="subsection"><strong>4.5. </strong>Все гарантии и заверения, данные Сторонами в настоящем договоре, являются достоверными и имеют значение для заключения договора. В соответствии с п. 1 ст. 431.2 ГК РФ сторона, давшая недостоверные заверения, обязана возместить другой стороне убытки.</div>
+<h2><span>5.</span>ЗАКЛЮЧИТЕЛЬНЫЕ ПОЛОЖЕНИЯ</h2>
+<div class="subsection"><strong>5.1. </strong>Настоящий Договор содержит весь объём соглашений между Сторонами в отношении предмета договора и отменяет все другие обязательства или представления, которые могли быть приняты или сделаны Сторонами в устной или письменной форме до его заключения.</div>
+<div class="subsection"><strong>5.2. </strong>Содержание и последствия настоящего Договора, права и обязанности сторон, порядок его заключения, изменения и расторжения, а также содержание статей Гражданского кодекса РФ, регулирующих куплю-продажу недвижимости, Сторонам разъяснены и понятны.</div>
+<div class="subsection"><strong>5.3. </strong>Право собственности на Объект переходит к Покупателю с момента государственной регистрации перехода права собственности в ЕГРН.</div>
+<div class="subsection"><strong>5.4. </strong>Настоящий Договор составлен в трёх экземплярах, имеющих одинаковую юридическую силу: по одному для каждой из Сторон и один для органа регистрации прав.</div>
+<h2 class="signatures-section"><span>6.</span>ПОДПИСИ СТОРОН</h2>
+<div class="signatures">
+  <div class="sig-party">
+    <div class="text-block sig-label">ПРОДАВЕЦ</div>
+    <div class="text-block sig-line">____________________________________________________________ / [Ф.И.О.]</div>
+  </div>
+  <div class="sig-party">
+    <div class="text-block sig-label">ПОКУПАТЕЛЬ</div>
+    <div class="text-block sig-line">____________________________________________________________ / [Ф.И.О.]</div>
+  </div>
+</div>
+</div>
+</body>
+</html>

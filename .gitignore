@@ -1,6 +1,14 @@
 node_modules/
+.env
+.env.*
+!.env.example
 config.json
 config.php
 config.local.php
 *.log
 .DS_Store
+data/*.json
+data/*.jsonl
+!data/knowledge/
+wp-plugins/wp-power-ocr-free/vendor/
+wp-plugins/wp-power-ocr-free/tmp/
