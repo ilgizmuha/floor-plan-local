@@ -9729,6 +9729,17 @@ function yvo_print_doki_contract_type_picker_footer_css() {
 add_action('wp_footer', 'yvo_print_doki_contract_type_picker_footer_css', 99999);
 
 /**
+ * Резерв: мобильный одноэкранник в footer (после темы), если отдельный CSS не подхватился.
+ */
+function yvo_print_doki_mobile_one_screen_footer_css() {
+    if (is_admin() || !wp_style_is('yvo-doki-form-skin-css', 'enqueued')) {
+        return;
+    }
+    echo '<style id="yvo-doki-mobile-one-screen-last">@media(max-width:768px){html.yvo-mos-active,body.yvo-mos-active{overflow:hidden!important;height:100%;max-height:100dvh}.yvo-doki-contract-page .doki-hero{display:none!important}.yvo-doki-contract-page:not(.yvo-doki-mos-type-open) #yvo-doki-contract-type-picker{display:none!important;height:0!important;overflow:hidden!important;margin:0!important;padding:0!important}.yvo-doki-contract-page .yvo-doki-mos-compact-bar{display:flex!important}.yvo-doki-contract-page .yvo-doki-mos-scroll>.yvo-fp-upload--compact,.yvo-doki-contract-page .yvo-doki-mos-scroll>.yvo-fp-header.section-caption,.yvo-doki-contract-page .yvo-doki-forms-intro{display:none!important}.yvo-doki-contract-page .yvo-doki-form-skin>.yvo-doki-step-footer{position:fixed;left:0;right:0;bottom:0;z-index:200;padding:.5rem .55rem calc(.55rem + env(safe-area-inset-bottom,0));background:#fff;border-top:1px solid rgba(20,30,50,.12);box-shadow:0 -8px 24px rgba(16,24,40,.1)}.yvo-doki-contract-page .yvo-doki-form-skin{padding-bottom:calc(64px + env(safe-area-inset-bottom,0))}}</style>' . "\n";
+}
+add_action('wp_footer', 'yvo_print_doki_mobile_one_screen_footer_css', 99999);
+
+/**
  * Декодирует JSON из $_POST через wp_unslash (корректно для WordPress).
  *
  * @param string $post_key

@@ -1,15 +1,19 @@
 /**
  * Мобильный одноэкранный режим раздела «Договоры» (≤768px).
- * Фиксированная шапка шагов + прокрутка только внутри формы, без длинной страницы.
  */
 @media (max-width: 768px) {
+    html.yvo-mos-active,
+    body.yvo-mos-active,
     html:has(.yvo-doki-contract-page),
     body:has(.yvo-doki-contract-page) {
-        overflow: hidden;
+        overflow: hidden !important;
         height: 100%;
         max-height: 100dvh;
     }
 
+    body.yvo-mos-active .site-footer,
+    body.yvo-mos-active footer.wp-block-template-part,
+    body.yvo-mos-active #colophon,
     body:has(.yvo-doki-contract-page) .site-footer,
     body:has(.yvo-doki-contract-page) footer.wp-block-template-part,
     body:has(.yvo-doki-contract-page) #colophon {
@@ -23,9 +27,7 @@
         max-height: 100dvh;
         overflow: hidden;
         box-sizing: border-box;
-        padding-left: 0.5rem;
-        padding-right: 0.5rem;
-        padding-bottom: env(safe-area-inset-bottom, 0);
+        padding: 0 0.45rem env(safe-area-inset-bottom, 0);
     }
 
     .yvo-doki-contract-page .doki-hero {
@@ -34,11 +36,12 @@
 
     .yvo-doki-contract-page .yvo-cab-contract-head {
         flex-shrink: 0;
-        margin: 0 0 0.35rem !important;
+        margin: 0 0 0.25rem !important;
     }
 
     .yvo-doki-contract-page .yvo-cab-contract-head .yvo-cab-topbar {
         border-radius: 12px !important;
+        margin-bottom: 0 !important;
     }
 
     .yvo-doki-contract-page .yvo-doki-form-skin {
@@ -55,47 +58,35 @@
     }
 
     .yvo-doki-contract-page .yvo-doki-mos-compact-bar {
-        display: flex;
+        display: flex !important;
         align-items: center;
         justify-content: space-between;
         gap: 8px;
         flex-shrink: 0;
-        padding: 0.15rem 0.25rem 0.35rem;
+        padding: 0.1rem 0.15rem 0.3rem;
     }
 
     .yvo-doki-contract-page .yvo-doki-mos-compact-bar__title {
-        font-size: 0.95rem;
+        font-size: 1rem;
         font-weight: 800;
         color: var(--ink, #1b2330);
-        letter-spacing: -0.02em;
     }
 
     .yvo-doki-contract-page .yvo-doki-mos-type-toggle {
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        max-width: 58%;
-        padding: 0.35rem 0.65rem;
-        border: 1px solid rgba(44, 102, 197, 0.28);
+        max-width: 62%;
+        padding: 0.4rem 0.7rem;
+        border: 1px solid rgba(44, 102, 197, 0.35);
         border-radius: 999px;
-        background: linear-gradient(180deg, #f7f9fc 0%, #e9eef5 100%);
-        color: #1e3a5f;
-        font-size: 0.72rem;
+        background: #2c66c5;
+        color: #fff;
+        font-size: 0.74rem;
         font-weight: 700;
         line-height: 1.2;
         cursor: pointer;
-        box-shadow: 2px 2px 6px rgba(163, 177, 198, 0.35);
-    }
-
-    .yvo-doki-contract-page .yvo-doki-mos-type-toggle[aria-expanded="true"] {
-        background: #2c66c5;
-        color: #fff;
-        border-color: #2c66c5;
-    }
-
-    .yvo-doki-contract-page .yvo-doki-mos-type-toggle__caret {
-        font-size: 0.65rem;
-        opacity: 0.85;
+        box-shadow: 2px 2px 8px rgba(44, 102, 197, 0.35);
     }
 
     .yvo-doki-contract-page .yvo-doki-mos-scroll {
@@ -105,10 +96,10 @@
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
-        padding-bottom: 0.35rem;
+        padding-bottom: 0.25rem;
     }
 
-    /* Скрыть дублирующие блоки — загрузка на каждом шаге через autofill */
+    /* Скрыть всё, что раздувает страницу */
     .yvo-doki-contract-page .yvo-doki-mos-scroll > .yvo-fp-upload--compact,
     .yvo-doki-contract-page .yvo-doki-mos-scroll > .yvo-fp-header.section-caption,
     .yvo-doki-contract-page .yvo-doki-mos-scroll > #yvo-fp-quick-actions,
@@ -119,19 +110,29 @@
         display: none !important;
     }
 
-    /* Тип сделки — раскрывается по кнопке в compact-bar */
-    .yvo-doki-contract-page #yvo-doki-contract-type-picker {
-        display: none;
-        margin: 0 0 0.5rem;
-        padding: 0.45rem;
-        border-radius: 14px;
-        background: rgba(255, 255, 255, 0.96);
-        border: 1px solid rgba(20, 30, 50, 0.08);
-        box-shadow: 0 8px 24px rgba(16, 24, 40, 0.1);
+    /* Тип сделки — только по кнопке «Купля-продажа ▾» */
+    .yvo-doki-contract-page:not(.yvo-doki-mos-type-open) #yvo-doki-contract-type-picker {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
     }
 
     .yvo-doki-contract-page.yvo-doki-mos-type-open #yvo-doki-contract-type-picker {
         display: block !important;
+        visibility: visible !important;
+        height: auto !important;
+        max-height: none !important;
+        margin: 0 0 0.45rem !important;
+        padding: 0.45rem !important;
+        border-radius: 14px;
+        background: #fff;
+        border: 1px solid rgba(20, 30, 50, 0.1);
+        box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12);
     }
 
     .yvo-doki-contract-page #yvo-doki-contract-type-picker .top-buttons {
@@ -141,8 +142,8 @@
 
     .yvo-doki-contract-page #yvo-doki-contract-type-picker .pbtn3d.type-option,
     .yvo-doki-contract-page #yvo-doki-contract-type-picker .pbtn3d.type-more-btn {
-        min-height: 44px !important;
-        font-size: 0.82rem !important;
+        min-height: 42px !important;
+        font-size: 0.8rem !important;
     }
 
     .yvo-doki-contract-page .main-panel.doki-wp-main-panel,
@@ -158,111 +159,149 @@
     .yvo-doki-contract-page #yvo-fp-forms-section {
         margin: 0;
         padding: 0;
-        display: flex;
-        flex-direction: column;
-        min-height: 0;
     }
 
     .yvo-doki-contract-page .yvo-doki-steps-toolbar {
-        flex-shrink: 0;
-        margin: 0 0 0.4rem;
-        padding: 0;
         position: sticky;
         top: 0;
-        z-index: 8;
-        background: rgba(255, 255, 255, 0.96);
-        padding-bottom: 0.25rem;
+        z-index: 9;
+        margin: 0 0 0.35rem;
+        padding: 0.15rem 0 0.25rem;
+        background: rgba(255, 255, 255, 0.97);
     }
 
     .yvo-doki-contract-page .yvo-doki-steps .step-pill {
-        min-height: 40px;
-        padding: 0.35rem 0.25rem;
-        font-size: 0.68rem;
+        min-height: 36px;
+        padding: 0.3rem 0.2rem;
+        font-size: 0.66rem;
     }
 
     .yvo-doki-contract-page .yvo-doki-steps .step-pill-icon {
-        width: 18px;
-        height: 18px;
-    }
-
-    .yvo-doki-contract-page .yvo-fp-tabs-wrap {
-        min-height: 0;
+        width: 16px;
+        height: 16px;
     }
 
     .yvo-doki-contract-page .yvo-doki-participant-card {
-        margin-bottom: 0.35rem;
+        margin-bottom: 0.25rem;
+        border-radius: 12px;
     }
 
     .yvo-doki-contract-page .yvo-doki-participant-card__head {
-        padding: 6px 8px 6px;
-        gap: 6px;
+        padding: 4px 6px;
+        gap: 4px;
     }
 
     .yvo-doki-contract-page .yvo-doki-participant-card__title {
-        font-size: 0.88rem;
+        font-size: 0.85rem;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-participant-card__toolbar {
+        gap: 4px !important;
     }
 
     .yvo-doki-contract-page .yvo-doki-participant-icon-btn {
-        min-height: 48px !important;
+        min-height: 40px !important;
+        padding: 4px 2px !important;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-participant-icon-btn__label {
+        font-size: 8px !important;
     }
 
     .yvo-doki-contract-page .autofill-hint-text {
-        display: none;
+        display: none !important;
     }
 
     .yvo-doki-contract-page .yvo-doki-autofill .autofill-hint {
-        margin-bottom: 0.35rem;
+        margin: 0 0 0.35rem;
         padding: 0;
+        background: transparent;
+        border: none;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-autofill-btn {
+        width: 100%;
+        min-height: 36px;
+        font-size: 0.76rem;
+        padding: 0.4rem 0.65rem;
     }
 
     .yvo-doki-contract-page .yvo-doki-participant-foot {
         display: none !important;
     }
 
+    /* Поля в 2 колонки — меньше прокрутки */
+    .yvo-doki-contract-page #yvo-fp-panel-seller > .yvo-fp-grid,
+    .yvo-doki-contract-page #yvo-fp-panel-buyer > .yvo-fp-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 0.25rem 0.45rem !important;
+    }
+
+    .yvo-doki-contract-page #yvo-fp-panel-seller .yvo-fp-field-full,
+    .yvo-doki-contract-page #yvo-fp-panel-buyer .yvo-fp-field-full,
+    .yvo-doki-contract-page #yvo-fp-panel-seller .yvo-fp-field-issued-by,
+    .yvo-doki-contract-page #yvo-fp-panel-buyer .yvo-fp-field-issued-by {
+        grid-column: 1 / -1;
+    }
+
+    .yvo-doki-contract-page .yvo-fp-tab-panels .yvo-fp-field > label {
+        font-size: 0.58rem;
+        margin-bottom: 0.1rem;
+    }
+
     .yvo-doki-contract-page .yvo-fp-tab-panels .yvo-fp-field input:not([type="checkbox"]):not([type="radio"]),
     .yvo-doki-contract-page .yvo-fp-tab-panels .yvo-fp-field textarea,
     .yvo-doki-contract-page .yvo-fp-tab-panels .yvo-fp-field select {
         font-size: 16px;
-        padding: 0.45rem 0.55rem;
+        padding: 0.38rem 0.5rem;
+        min-height: 34px;
     }
 
-    .yvo-doki-contract-page .yvo-fp-tab-panels .yvo-fp-field > label {
-        font-size: 0.62rem;
-    }
-
-    .yvo-doki-contract-page #yvo-fp-panel-property .yvo-fp-collapse-header {
-        padding: 0.45rem 0.5rem;
+    .yvo-doki-contract-page .yvo-fp-tab-panels .yvo-fp-field textarea {
+        min-height: 2rem;
     }
 
     .yvo-doki-contract-page .yvo-fp-section.yvo-fp-generate {
         margin: 0;
-        padding: 0.25rem 0 0.5rem;
-    }
-
-    .yvo-doki-contract-page .yvo-fp-section.yvo-fp-generate .yvo-fp-section-title {
-        font-size: 1rem;
-        margin-bottom: 0.45rem;
-    }
-
-    .yvo-doki-contract-page .yvo-fp-generate-options .yvo-fp-option-row {
-        margin-bottom: 0.45rem;
+        padding: 0.2rem 0 0.5rem;
     }
 
     .yvo-doki-contract-page .yvo-fp-related-contracts__hint {
         display: none;
     }
 
+  /* Нижняя навигация — всегда на экране */
     .yvo-doki-contract-page .yvo-doki-form-skin > .yvo-doki-step-footer {
-        flex-shrink: 0;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 200;
         display: flex;
         align-items: center;
         gap: 8px;
         margin: 0;
-        padding: 0.55rem 0.35rem calc(0.55rem + env(safe-area-inset-bottom, 0));
-        background: rgba(255, 255, 255, 0.97);
-        border-top: 1px solid rgba(20, 30, 50, 0.1);
-        box-shadow: 0 -6px 20px rgba(16, 24, 40, 0.08);
-        z-index: 20;
+        padding: 0.5rem 0.55rem calc(0.55rem + env(safe-area-inset-bottom, 0));
+        background: rgba(255, 255, 255, 0.98);
+        border-top: 1px solid rgba(20, 30, 50, 0.12);
+        box-shadow: 0 -8px 24px rgba(16, 24, 40, 0.1);
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin {
+        padding-bottom: calc(64px + env(safe-area-inset-bottom, 0));
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin > .yvo-doki-step-footer .yvo-doki-step-label {
+        font-size: 0.68rem;
+        max-width: 32%;
+        text-align: center;
+    }
+
+    .yvo-doki-contract-page .yvo-doki-form-skin > .yvo-doki-step-footer .yvo-doki-step-btn {
+        flex: 1 1 0;
+        min-height: 44px;
+        font-size: 0.9rem;
+        font-weight: 700;
     }
 
     .yvo-doki-contract-page .yvo-doki-form-skin[data-yvo-doki-step="3"] > .yvo-doki-step-footer .yvo-doki-step-next {
@@ -273,13 +312,6 @@
 
 @media (min-width: 769px) {
     .yvo-doki-contract-page .yvo-doki-mos-compact-bar {
-        display: none;
-    }
-
-    .yvo-doki-contract-page .yvo-doki-mos-scroll {
-        display: block;
-        overflow: visible;
-        flex: none;
-        min-height: auto;
+        display: none !important;
     }
 }

@@ -26,6 +26,19 @@ $yvo_fp_diag_slug = (defined('YVO_PLUGIN_DIR') && is_string(YVO_PLUGIN_DIR)) ? b
         echo $use_doki_shell ? ' data-yvo-doki-step="0"' : '';
         echo ' data-yvo-fp-js-mtime="' . esc_attr((string) $yvo_fp_diag_mtime) . '" data-yvo-fp-plugin="' . esc_attr($yvo_fp_diag_slug) . '"';
     ?>>
+        <?php if ($use_doki_shell) : ?>
+        <script>
+        (function () {
+            function yvoMosApply() {
+                var on = window.matchMedia('(max-width: 768px)').matches;
+                document.documentElement.classList.toggle('yvo-mos-active', on);
+                document.body.classList.toggle('yvo-mos-active', on);
+            }
+            yvoMosApply();
+            window.addEventListener('resize', yvoMosApply);
+        })();
+        </script>
+        <?php endif; ?>
         <!-- input вне скрытой секции .yvo-fp-upload — иначе в ДОКИ programmatic .click() не открывает диалог -->
         <div id="yvo-fp-file-host" class="yvo-fp-file-host" aria-hidden="true">
             <input type="file" id="yvo-fp-file" name="file" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.pdf" class="yvo-fp-file-input" tabindex="-1">
