@@ -5,12 +5,60 @@
 jQuery(function($) {
     'use strict';
 
+    function yvoDokiIsMobileOneScreen() {
+        return window.matchMedia('(max-width: 768px)').matches;
+    }
+
     function yvoDokiScroll(sel) {
+        if (yvoDokiIsMobileOneScreen()) {
+            var scrollRoot = document.getElementById('yvoDokiMosScroll');
+            var el = document.querySelector(sel);
+            if (scrollRoot && el && scrollRoot.contains(el)) {
+                var top = el.getBoundingClientRect().top - scrollRoot.getBoundingClientRect().top + scrollRoot.scrollTop;
+                scrollRoot.scrollTo({ top: Math.max(0, top - 8), behavior: 'smooth' });
+                return;
+            }
+            if (scrollRoot) {
+                scrollRoot.scrollTo({ top: 0, behavior: 'smooth' });
+                return;
+            }
+        }
         var el = document.querySelector(sel);
         if (el) {
             el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
     }
+
+    function yvoDokiSyncMobileTypeLabel() {
+        var $badge = $('#yvoDokiFormTypeBadge');
+        var $toggleLabel = $('#yvoDokiMosTypeToggleLabel');
+        if ($badge.length && $toggleLabel.length) {
+            $toggleLabel.text($.trim($badge.text()) || $toggleLabel.text());
+        }
+    }
+
+    $(document).on('click', '#yvoDokiMosTypeToggle', function(e) {
+        e.preventDefault();
+        if (!yvoDokiIsMobileOneScreen()) {
+            return;
+        }
+        var $page = $('.yvo-doki-contract-page').first();
+        var open = $page.hasClass('yvo-doki-mos-type-open');
+        $page.toggleClass('yvo-doki-mos-type-open', !open);
+        $(this).attr('aria-expanded', !open ? 'true' : 'false');
+        if (!open) {
+            yvoDokiScroll('#yvo-doki-contract-type-picker');
+        }
+    });
+
+    $(document).on('click', '#yvo-doki-contract-type-picker .pbtn3d.type-option, #yvo-doki-contract-type-picker .yvo-doki-type-extra .pbtn3d', function() {
+        if (!yvoDokiIsMobileOneScreen()) {
+            return;
+        }
+        $('.yvo-doki-contract-page').removeClass('yvo-doki-mos-type-open');
+        $('#yvoDokiMosTypeToggle').attr('aria-expanded', 'false');
+        setTimeout(yvoDokiSyncMobileTypeLabel, 0);
+    });
 
     $(document).on('click', '#yvo-doki-scroll-generate', function(e) {
         e.preventDefault();
@@ -451,6 +499,7 @@ jQuery(function($) {
         yvoDokiFilterParticipantTabsForStep(yvoDokiGetCurrentStepIndex());
         yvoDokiSyncContributorAddButtonVisibility();
         yvoDokiRefreshAutofillUploadLabels();
+        yvoDokiSyncMobileTypeLabel();
     }, 0);
 
     $(document).on('yvo-doki-participant-added', function() {
@@ -468,4 +517,5 @@ jQuery(function($) {
     window.yvoDokiFilterParticipantTabsForStep = yvoDokiFilterParticipantTabsForStep;
     window.yvoDokiSyncStepChrome = yvoDokiSyncStepChrome;
     window.yvoDokiFirstTabIdForStep = yvoDokiFirstTabIdForStep;
+    window.yvoDokiSyncMobileTypeLabel = yvoDokiSyncMobileTypeLabel;
 });

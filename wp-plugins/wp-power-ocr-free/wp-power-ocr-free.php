@@ -9695,6 +9695,15 @@ function yvo_enqueue_doki_shell_form_assets($frontend_ver) {
             'yvo-doki-form-skin-css',
             '@media (max-width:1024px){#yvo-doki-contract-type-picker{box-sizing:border-box;width:100%!important;max-width:100%!important}#yvo-doki-contract-type-picker .contract-types-inline .top-buttons{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;align-items:stretch!important;width:100%!important;max-width:100%!important;gap:12px!important}#yvo-doki-contract-type-picker .pbtn3d.type-option,#yvo-doki-contract-type-picker .pbtn3d.type-more-btn,#yvo-doki-contract-type-picker .yvo-doki-type-extra{width:100%!important;max-width:none!important;min-height:50px!important;box-sizing:border-box!important}}'
         );
+        $mos_path = $dir . 'css/doki-mobile-one-screen.css';
+        if (is_file($mos_path)) {
+            wp_enqueue_style(
+                'yvo-doki-mobile-one-screen-css',
+                $url . 'css/doki-mobile-one-screen.css',
+                array('yvo-doki-form-skin-css'),
+                $frontend_ver . '.' . filemtime($mos_path)
+            );
+        }
         $panels_js = $dir . 'js/doki-form-panels.js';
         if (is_file($panels_js)) {
             wp_enqueue_script(

@@ -30,6 +30,16 @@ $yvo_fp_diag_slug = (defined('YVO_PLUGIN_DIR') && is_string(YVO_PLUGIN_DIR)) ? b
         <div id="yvo-fp-file-host" class="yvo-fp-file-host" aria-hidden="true">
             <input type="file" id="yvo-fp-file" name="file" accept=".jpg,.jpeg,.png,.gif,.bmp,.webp,.pdf" class="yvo-fp-file-input" tabindex="-1">
         </div>
+        <?php if ($use_doki_shell) : ?>
+        <div class="yvo-doki-mos-compact-bar" aria-label="<?php esc_attr_e('Раздел договоры', 'yandex-vision-ocr-pro'); ?>">
+            <span class="yvo-doki-mos-compact-bar__title"><?php esc_html_e('Договоры', 'yandex-vision-ocr-pro'); ?></span>
+            <button type="button" class="yvo-doki-mos-type-toggle" id="yvoDokiMosTypeToggle" aria-expanded="false" aria-controls="yvo-doki-contract-type-picker">
+                <span id="yvoDokiMosTypeToggleLabel"><?php esc_html_e('Купля-продажа', 'yandex-vision-ocr-pro'); ?></span>
+                <span class="yvo-doki-mos-type-toggle__caret" aria-hidden="true">▾</span>
+            </button>
+        </div>
+        <div class="yvo-doki-mos-scroll" id="yvoDokiMosScroll">
+        <?php endif; ?>
         <!-- Загрузка + согласие выше «Параметры сторон», чтобы после типа сделки сразу шли участники -->
         <section class="yvo-fp-section yvo-fp-upload<?php echo $use_doki_shell ? ' yvo-fp-upload--compact' : ''; ?>">
             <h2 class="yvo-fp-section-title"><?php echo $use_doki_shell ? esc_html__('Загрузите документ', 'yandex-vision-ocr-pro') : '1. Загрузите документ'; ?></h2>
@@ -608,14 +618,6 @@ $yvo_fp_diag_slug = (defined('YVO_PLUGIN_DIR') && is_string(YVO_PLUGIN_DIR)) ? b
 
     <div id="yvo-fp-draft-slot" class="yvo-fp-draft-slot" aria-live="polite"></div>
 
-    <?php if ($use_doki_shell) : ?>
-    <div class="yvo-doki-step-footer" role="navigation" aria-label="<?php esc_attr_e('Переход между шагами', 'yandex-vision-ocr-pro'); ?>">
-        <button type="button" class="yvo-doki-step-btn yvo-doki-step-prev" id="yvoDokiStepPrev" aria-label="<?php esc_attr_e('Назад к предыдущему шагу', 'yandex-vision-ocr-pro'); ?>"><?php esc_html_e('Назад', 'yandex-vision-ocr-pro'); ?></button>
-        <span class="yvo-doki-step-label" id="yvoDokiStepFooterLabel"><?php esc_html_e('Шаг 1 из 4 · продавец', 'yandex-vision-ocr-pro'); ?></span>
-        <button type="button" class="yvo-doki-step-btn yvo-doki-step-next" id="yvoDokiStepNext" aria-label="<?php esc_attr_e('Далее к следующему шагу', 'yandex-vision-ocr-pro'); ?>"><?php esc_html_e('Далее', 'yandex-vision-ocr-pro'); ?></button>
-    </div>
-    <?php endif; ?>
-
     <!-- Генерация договора -->
     <section class="yvo-fp-section yvo-fp-generate" id="yvo-fp-section-generate">
         <h2 class="yvo-fp-section-title"><?php echo $use_doki_shell ? esc_html__('Генерация договора', 'yandex-vision-ocr-pro') : '4. Сгенерировать договор'; ?></h2>
@@ -711,6 +713,15 @@ $yvo_fp_diag_slug = (defined('YVO_PLUGIN_DIR') && is_string(YVO_PLUGIN_DIR)) ? b
             </div>
         </div>
     </section>
+
+    <?php if ($use_doki_shell) : ?>
+    </div><!-- .yvo-doki-mos-scroll -->
+    <div class="yvo-doki-step-footer" role="navigation" aria-label="<?php esc_attr_e('Переход между шагами', 'yandex-vision-ocr-pro'); ?>">
+        <button type="button" class="yvo-doki-step-btn yvo-doki-step-prev" id="yvoDokiStepPrev" aria-label="<?php esc_attr_e('Назад к предыдущему шагу', 'yandex-vision-ocr-pro'); ?>"><?php esc_html_e('Назад', 'yandex-vision-ocr-pro'); ?></button>
+        <span class="yvo-doki-step-label" id="yvoDokiStepFooterLabel"><?php esc_html_e('Шаг 1 из 4 · продавец', 'yandex-vision-ocr-pro'); ?></span>
+        <button type="button" class="yvo-doki-step-btn yvo-doki-step-next" id="yvoDokiStepNext" aria-label="<?php esc_attr_e('Далее к следующему шагу', 'yandex-vision-ocr-pro'); ?>"><?php esc_html_e('Далее', 'yandex-vision-ocr-pro'); ?></button>
+    </div>
+    <?php endif; ?>
 
     <!-- Встроенный «Личный кабинет» убран: используем отдельную страницу кабинета в верхней шапке. -->
 

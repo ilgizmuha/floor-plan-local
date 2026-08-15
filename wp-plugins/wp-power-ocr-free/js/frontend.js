@@ -2023,6 +2023,9 @@
         var short = dokiBadgeLabels[type] || (contractTypeLabels[type] ? String(contractTypeLabels[type]).replace(/^\d+\.\s*/, '') : type);
         var $badge = $('#yvoDokiFormTypeBadge');
         if ($badge.length) $badge.text(short);
+        if (typeof window.yvoDokiSyncMobileTypeLabel === 'function') {
+            window.yvoDokiSyncMobileTypeLabel();
+        }
         yvoDokiSetExtrasVisible(false);
     }
 
