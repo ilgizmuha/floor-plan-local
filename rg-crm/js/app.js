@@ -55,6 +55,7 @@ let isAdmin = sessionStorage.getItem(ADMIN_KEY) === "1";
 
 const els = {
   nav: document.getElementById("monthNav"),
+  mobMonthBar: document.getElementById("mobMonthBar"),
   agentNav: document.getElementById("agentNav"),
   source: document.getElementById("sourceMeta"),
   roleLabel: document.getElementById("roleLabel"),
@@ -351,13 +352,33 @@ function setAdminUI() {
 }
 
 function renderNav() {
-  els.nav.innerHTML = DATA.months
+  const monthButtons = DATA.months
     .map(
       (m) =>
         `<button type="button" data-id="${m.id}" class="${m.id === selectedMonthId ? "is-active" : ""}">${m.label} 2026</button>`
     )
     .join("");
+  const monthPills = DATA.months
+    .map(
+      (m) =>
+        `<button type="button" data-id="${m.id}" class="${m.id === selectedMonthId ? "is-active" : ""}">${m.label}</button>`
+    )
+    .join("");
+  els.nav.innerHTML = monthButtons;
+  if (els.mobMonthBar) els.mobMonthBar.innerHTML = monthPills;
   syncMobPeriodLabel();
+}
+
+function onMonthPick(btn) {
+  if (!btn) return;
+  selectedMonthId = btn.dataset.id;
+  if (route.view === "agent") {
+    els.agentMonth.value = selectedMonthId;
+    renderAgentCabinet();
+  } else {
+    renderGroup();
+  }
+  closeSidebar();
 }
 
 function renderAgentNav() {
@@ -1063,6 +1084,7 @@ function applyViews() {
   const isAgent = route.view === "agent";
   els.viewGroup.classList.toggle("is-hidden", isAgent);
   els.viewAgent.classList.toggle("is-hidden", !isAgent);
+  if (els.mobMonthBar) els.mobMonthBar.classList.toggle("is-hidden", isAgent);
   if (isAgent) {
     if (!els.agentMonth.value) els.agentMonth.value = selectedMonthId;
     renderAgentCabinet();
@@ -1077,14 +1099,13 @@ function bind() {
   els.nav.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-id]");
     if (!btn) return;
-    selectedMonthId = btn.dataset.id;
-    if (route.view === "agent") {
-      els.agentMonth.value = selectedMonthId;
-      renderAgentCabinet();
-    } else {
-      renderGroup();
-    }
-    closeSidebar();
+    onMonthPick(btn);
+  });
+
+  els.mobMonthBar?.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-id]");
+    if (!btn) return;
+    onMonthPick(btn);
   });
 
   els.agentNav?.addEventListener("click", (e) => {
@@ -1191,6 +1212,7 @@ function bind() {
 async function boot() {
   DATA = await (await fetch("data/metrics.json")).json();
   selectedMonthId = DATA.months.at(-1)?.id;
+  if (isMobileLayout()) detailsOpen = false;
   fillFilters();
   bind();
   applyViews();

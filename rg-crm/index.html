@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css?v=2" />
 </head>
 <body>
   <header class="mob-topbar" id="mobTopbar">
@@ -61,14 +61,16 @@
     </aside>
 
     <main class="main">
+      <nav class="mob-month-bar" id="mobMonthBar" aria-label="Период"></nav>
+
       <div id="viewGroup">
-        <header class="page-head">
-          <div>
+        <header class="page-head page-head--group">
+          <div class="page-head-main">
             <p class="eyebrow" id="pageEyebrow">Отчётный период</p>
             <h1 id="pageTitle">Август 2026</h1>
             <p class="agent-sub" id="groupHint"></p>
           </div>
-          <div class="filters">
+          <div class="filters filters--compact">
             <select id="filterAgent"><option value="">Все агенты</option></select>
             <input id="filterSearch" type="search" placeholder="Поиск агента…" />
             <select id="filterSort">
@@ -261,15 +263,15 @@
 
   <nav class="mob-bottom" id="mobBottom" aria-label="Быстрая навигация">
     <button type="button" class="mob-bottom-btn is-active" data-mob-nav="group">
-      <span class="mob-bottom-icon">📊</span>
+      <svg class="mob-bottom-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-6M22 20H2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       <span>Группа</span>
     </button>
     <button type="button" class="mob-bottom-btn" data-mob-nav="agents">
-      <span class="mob-bottom-icon">👤</span>
+      <svg class="mob-bottom-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm11 10v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       <span>Агенты</span>
     </button>
     <button type="button" class="mob-bottom-btn" data-mob-nav="login" id="mobBottomLogin">
-      <span class="mob-bottom-icon">🔐</span>
+      <svg class="mob-bottom-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 1 1 8 0v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
       <span id="mobBottomLoginLabel">Вход</span>
     </button>
   </nav>
@@ -287,6 +289,6 @@
     </form>
   </dialog>
 
-  <script src="js/app.js" type="module"></script>
+  <script src="js/app.js?v=2" type="module"></script>
 </body>
 </html>
