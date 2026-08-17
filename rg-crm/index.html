@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f6b57" />
+  <title>РГ CRM</title>
+  <base href="./" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="mob-topbar" id="mobTopbar">
+    <button type="button" class="mob-icon-btn" id="mobMenuBtn" aria-label="Открыть меню">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
+    <div class="mob-topbar-center">
+      <span class="mob-topbar-title">РГ CRM</span>
+      <span class="mob-topbar-sub" id="mobPeriodLabel">—</span>
+    </div>
+    <button type="button" class="mob-icon-btn mob-rg-btn" id="mobLoginBtn" aria-label="Вход РГ">РГ</button>
+  </header>
+
+  <div class="sidebar-backdrop" id="sidebarBackdrop" hidden></div>
+
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <a class="logo" href="#/" id="logoHome">
+          <span class="logo-mark">РГ</span>
+          <div>
+            <strong>РГ CRM</strong>
+            <small id="roleLabel">Режим агента</small>
+          </div>
+        </a>
+        <button type="button" class="mob-close-btn" id="mobCloseBtn" aria-label="Закрыть меню">×</button>
+      </div>
+
+      <div class="side-block">
+        <p class="side-label">Период</p>
+        <nav class="side-nav side-nav--months" id="monthNav"></nav>
+      </div>
+
+      <div class="side-block grow">
+        <p class="side-label">Личные кабинеты</p>
+        <input type="search" class="agent-search" id="agentSearch" placeholder="Найти агента…" autocomplete="off" />
+        <nav class="agent-nav" id="agentNav"></nav>
+      </div>
+
+      <div class="side-actions">
+        <button type="button" class="ghost" id="loginBtn">Вход РГ</button>
+        <button type="button" class="ghost is-hidden" id="logoutBtn">Выйти из РГ</button>
+        <a class="ghost" id="sideDlExcel" href="source/" title="Скачать Excel с сервера">Скачать Excel…</a>
+      </div>
+
+      <div class="side-meta" id="sourceMeta"></div>
+    </aside>
+
+    <main class="main">
+      <div id="viewGroup">
+        <header class="page-head">
+          <div>
+            <p class="eyebrow" id="pageEyebrow">Отчётный период</p>
+            <h1 id="pageTitle">Август 2026</h1>
+            <p class="agent-sub" id="groupHint"></p>
+          </div>
+          <div class="filters">
+            <select id="filterAgent"><option value="">Все агенты</option></select>
+            <input id="filterSearch" type="search" placeholder="Поиск агента…" />
+            <select id="filterSort">
+              <option value="meetings-desc">Встречи ↓</option>
+              <option value="deals-desc">Сделки ↓</option>
+              <option value="ad-desc">А.Д ↓</option>
+              <option value="touches-desc">Касания ↓</option>
+              <option value="name-asc">Имя А–Я</option>
+              <option value="prihod-desc" class="admin-only-opt">Приход ↓</option>
+            </select>
+          </div>
+        </header>
+
+        <section class="kpi-row" id="kpiRow"></section>
+
+        <section class="split">
+          <article class="card">
+            <div class="card-head">
+              <h2>Воронка месяца</h2>
+              <p>бронь → первичка · задаток → вторичка</p>
+            </div>
+            <div class="funnel" id="funnel"></div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>Leaderboard</h2>
+              <p id="boardsHint">сделки с разбивкой · брони месяца</p>
+            </div>
+            <div class="boards" id="boards"></div>
+          </article>
+        </section>
+
+        <section class="card">
+          <div class="card-head row">
+            <div>
+              <h2>Рейтинг месяца</h2>
+              <p id="monthRankHint">текущий выбранный период</p>
+            </div>
+            <div class="chip-row" id="monthChips" role="tablist"></div>
+          </div>
+          <div class="year-single" id="monthGrid"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-head row">
+            <div>
+              <h2>Агенты · детали и планы</h2>
+              <p id="tableHint">факт / план · клик по имени → ЛК</p>
+            </div>
+            <button type="button" class="ghost" id="toggleDetails">Свернуть таблицу</button>
+          </div>
+          <div class="table-wrap" id="detailsWrap">
+            <table id="agentsTable">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Агент</th>
+                  <th class="num admin-col">Приход</th>
+                  <th class="num">Сд. перв.</th>
+                  <th class="num">Сд. втор.</th>
+                  <th class="num">Встречи</th>
+                  <th class="num">А.Д</th>
+                  <th class="num">Расклейка</th>
+                  <th class="num">Рассылка</th>
+                  <th class="num">Показы</th>
+                  <th class="num">Бронь</th>
+                  <th class="num">Касания</th>
+                  <th class="num admin-col">Аттест.</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card admin-only" id="attestCard">
+          <div class="card-head">
+            <h2>Аттестация · выручка по месяцам</h2>
+            <p>только для РГ · тысячи ₽</p>
+          </div>
+          <div class="table-wrap">
+            <table id="attestTable">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="card-head row">
+            <div>
+              <h2>Рейтинг года 2026</h2>
+              <p>без приходов · без исключённых агентов</p>
+            </div>
+            <div class="chip-row" id="yearChips" role="tablist"></div>
+          </div>
+          <div class="year-single" id="yearGrid"></div>
+        </section>
+      </div>
+
+      <div id="viewAgent" class="is-hidden">
+        <header class="page-head">
+          <div>
+            <p class="eyebrow"><a class="back-link" href="#/">← К группе</a></p>
+            <h1 id="agentTitle">Агент</h1>
+            <p class="agent-sub" id="agentSub"></p>
+          </div>
+          <div class="filters">
+            <select id="agentMonthSelect"></select>
+            <button type="button" class="ghost primary-btn" id="downloadAgentCsv">Скачать таблицу</button>
+          </div>
+        </header>
+
+        <section class="card download-card" id="excelDownloadCard">
+          <div class="card-head row">
+            <div>
+              <h2>Исходные Excel</h2>
+              <p>скачать рабочие таблицы с сервера (логин/пароль как у /crm/source/)</p>
+            </div>
+            <div class="download-links">
+              <a class="ghost primary-btn" id="dlReportXlsx" href="source/отчеты%202026.xlsx" download>отчеты 2026.xlsx</a>
+              <a class="ghost" id="dlAttestXlsx" href="source/%D0%90%D1%82%D1%82%D0%B5%D1%81%D1%82%D0%B0%D1%86%D0%B8%D1%8F%202026%20%D0%98%D0%98%20%E2%80%94%20%D0%BA%D0%BE%D0%BF%D0%B8%D1%8F.xlsx" download>Аттестация.xlsx</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="kpi-row" id="agentKpi"></section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>План месяца</h2>
+            <p id="planHint">факт к плану</p>
+          </div>
+          <div class="plan-grid" id="agentPlans"></div>
+        </section>
+
+        <section class="split">
+          <article class="card">
+            <div class="card-head">
+              <h2>Воронка агента</h2>
+              <p>месяц из селектора справа</p>
+            </div>
+            <div class="funnel" id="agentFunnel"></div>
+          </article>
+
+          <article class="card">
+            <div class="card-head">
+              <h2>Конверсии</h2>
+              <p>ключевые переходы</p>
+            </div>
+            <div class="conv-list" id="agentConv"></div>
+          </article>
+        </section>
+
+        <section class="card">
+          <div class="card-head">
+            <h2>Динамика по месяцам</h2>
+            <p>личный кабинет · приход виден агенту</p>
+          </div>
+          <div class="table-wrap">
+            <table id="agentHistory">
+              <thead>
+                <tr>
+                  <th>Месяц</th>
+                  <th class="num">Приход</th>
+                  <th class="num">Сд. перв.</th>
+                  <th class="num">Сд. втор.</th>
+                  <th class="num">Встречи</th>
+                  <th class="num">А.Д</th>
+                  <th class="num">Расклейка</th>
+                  <th class="num">Рассылка</th>
+                  <th class="num">Показы</th>
+                  <th class="num">Бронь</th>
+                  <th class="num">Касания</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <footer class="foot">
+        <span id="rowCount"></span>
+        <span class="foot-note">Приходы группы — только РГ · агенту виден свой приход</span>
+      </footer>
+    </main>
+  </div>
+
+  <nav class="mob-bottom" id="mobBottom" aria-label="Быстрая навигация">
+    <button type="button" class="mob-bottom-btn is-active" data-mob-nav="group">
+      <span class="mob-bottom-icon">📊</span>
+      <span>Группа</span>
+    </button>
+    <button type="button" class="mob-bottom-btn" data-mob-nav="agents">
+      <span class="mob-bottom-icon">👤</span>
+      <span>Агенты</span>
+    </button>
+    <button type="button" class="mob-bottom-btn" data-mob-nav="login" id="mobBottomLogin">
+      <span class="mob-bottom-icon">🔐</span>
+      <span id="mobBottomLoginLabel">Вход</span>
+    </button>
+  </nav>
+
+  <dialog id="loginDialog" class="login-dialog">
+    <form id="loginForm" class="login-card">
+      <h2>Вход РГ / админ</h2>
+      <p>PIN открывает общие приходы и аттестацию. Агентам свой ЛК доступен без PIN.</p>
+      <input id="pinInput" type="password" inputmode="numeric" autocomplete="current-password" placeholder="PIN" required />
+      <p class="login-error is-hidden" id="loginError">Неверный PIN</p>
+      <div class="login-actions">
+        <button type="button" class="ghost" id="loginCancel">Отмена</button>
+        <button type="submit" class="ghost primary-btn">Войти</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/app.js" type="module"></script>
+</body>
+</html>
