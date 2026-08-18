@@ -27,7 +27,7 @@ html, body {
     radial-gradient(900px 420px at 0% 0%, #d9e8e1 0%, transparent 55%),
     radial-gradient(700px 380px at 100% 10%, #efe2d0 0%, transparent 50%),
     var(--bg);
-  overflow-x: hidden;
+  overflow-x: clip;
   max-width: 100%;
 }
 
@@ -809,10 +809,51 @@ tbody tr:hover { background: #f5f1e8; }
   }
 
   .shell {
-    grid-template-columns: 1fr;
+    display: block;
+    width: 100%;
+    max-width: 100%;
     padding-top: calc(3.25rem + env(safe-area-inset-top, 0px));
     padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    overflow-x: clip;
+  }
+
+  .main {
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
+    padding: 0.75rem 0.75rem 1rem;
+    box-sizing: border-box;
+    overflow-x: clip;
+  }
+
+  .main > * {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .card,
+  .kpi-row,
+  .split,
+  .funnel,
+  .boards,
+  .plan-grid,
+  .year-single,
+  .conv-list,
+  .page-head,
+  .filters {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .kpi,
+  .board,
+  .plan-card,
+  .funnel-step,
+  .conv-item {
+    min-width: 0;
+    max-width: 100%;
   }
 
   .sidebar {
@@ -854,8 +895,11 @@ tbody tr:hover { background: #f5f1e8; }
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-    margin: -0.15rem 0 0.75rem;
+    margin: 0 0 0.75rem;
     padding: 0.15rem 0 0.35rem;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
     position: sticky;
     top: calc(3.25rem + env(safe-area-inset-top, 0px));
     z-index: 100;
@@ -899,8 +943,17 @@ tbody tr:hover { background: #f5f1e8; }
   }
 
   .filters--compact {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 0.45rem;
+    width: 100%;
+  }
+
+  .filters select,
+  .filters input,
+  .filters button,
+  .filters .ghost {
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .filters--compact #filterSearch {
@@ -1023,11 +1076,6 @@ tbody tr:hover { background: #f5f1e8; }
     padding: 0.7rem;
   }
 
-  .main {
-    padding: 0.85rem 0.85rem 1rem;
-    max-width: none;
-  }
-
   .page-head {
     margin-bottom: 0.85rem;
     gap: 0.75rem;
@@ -1106,8 +1154,14 @@ tbody tr:hover { background: #f5f1e8; }
   }
 
   .funnel-step {
-    grid-template-columns: 5.5rem 1fr;
-    gap: 0.35rem 0.55rem;
+    grid-template-columns: minmax(0, 4.8rem) minmax(0, 1fr);
+    gap: 0.35rem 0.45rem;
+  }
+
+  .funnel-step .name {
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .funnel-meta {
@@ -1117,6 +1171,19 @@ tbody tr:hover { background: #f5f1e8; }
     gap: 0.5rem;
     align-items: baseline;
     min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  .board li {
+    grid-template-columns: 1.4rem minmax(0, 1fr) auto;
+  }
+
+  .board .val {
+    max-width: 5.5rem;
+    font-size: 0.78rem;
+    word-break: break-word;
+    white-space: normal;
+    text-align: right;
   }
 
   .funnel-bar { height: 1.65rem; }
@@ -1209,13 +1276,19 @@ tbody tr:hover { background: #f5f1e8; }
     width: 100%;
   }
 
-  .board .val {
-    max-width: 6.5rem;
-    font-size: 0.82rem;
-  }
-
   .year-col li {
     font-size: 0.8rem;
+    gap: 0.25rem;
+  }
+
+  .year-col .who {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .year-col .val {
+    flex-shrink: 0;
   }
 
   .conv-item {
@@ -1233,11 +1306,15 @@ tbody tr:hover { background: #f5f1e8; }
     width: min(22rem, calc(100vw - 2rem));
   }
 
-  table { min-width: 720px; font-size: 0.8rem; }
+  table { min-width: 640px; font-size: 0.78rem; }
 
   .table-wrap {
-    margin: 0 -0.15rem;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
     border-radius: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   #toggleDetails {
