@@ -736,10 +736,7 @@ const RANK_METRICS = [
 
 function renderMonthRank() {
   const month = currentMonth();
-  els.monthRankHint.textContent =
-    monthMetric === "objects"
-      ? `${month.id} · объекты пока без данных в отчёте`
-      : `${month.id} · без исключённых`;
+  els.monthRankHint.textContent = `${month.id} · без исключённых`;
   if (!RANK_METRICS.some(([k]) => k === monthMetric)) monthMetric = "dealsTotal";
 
   els.monthChips.innerHTML = RANK_METRICS.map(
@@ -748,14 +745,7 @@ function renderMonthRank() {
   ).join("");
 
   const label = RANK_METRICS.find(([k]) => k === monthMetric)?.[1] || "Сделки";
-  const list =
-    monthMetric === "objects"
-      ? []
-      : rankedMonthAgents(month.id, monthMetric);
-  const emptyHint =
-    monthMetric === "objects"
-      ? `<li><span class="who">пока нет данных по объектам</span></li>`
-      : `<li><span class="who">нет данных</span></li>`;
+  const list = rankedMonthAgents(month.id, monthMetric);
   els.monthGrid.innerHTML = `<div class="year-col is-focus">
     <h3>${label} · ${month.label}</h3>
     <ol>
@@ -766,7 +756,7 @@ function renderMonthRank() {
             (r, i) =>
               `<li><a class="who linkish" href="${agentHref(r.key || "")}">${i + 1}. ${r.name}</a><span class="val">${formatRankValue(r, monthMetric)}</span></li>`
           )
-          .join("") || emptyHint
+          .join("") || `<li><span class="who">нет данных</span></li>`
       }
     </ol>
   </div>`;

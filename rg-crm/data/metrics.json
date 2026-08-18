@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-18T04:05:31",
+  "generatedAt": "2026-08-18T04:39:44",
   "source": {
     "report": "отчеты 2026.xlsx",
     "attestation": "Аттестация 2026 ИИ — копия.xlsx"
@@ -1092,7 +1092,8 @@
         "deals": 1.0,
         "deals_secondary": 2.0,
         "prihod": 0,
-        "touches": 106.0
+        "touches": 106.0,
+        "objects": 23
       },
       "conversions": {
         "meet_to_ad": 8.2,
@@ -1160,7 +1161,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 9.0
+            "touches": 9.0,
+            "objects": 1
           },
           "conversions": {
             "meet_to_ad": 0.0,
@@ -1228,7 +1230,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 0
+            "touches": 0,
+            "objects": 1
           },
           "conversions": {
             "meet_to_ad": null,
@@ -1276,6 +1279,32 @@
           }
         },
         {
+          "name": "Даян",
+          "key": "даян",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 0,
+            "meetings": 0,
+            "ad": 0,
+            "showings": 0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 0,
+            "bron": 0,
+            "deals": 0,
+            "deals_secondary": 0,
+            "prihod": 0,
+            "touches": 0,
+            "objects": 1
+          },
+          "conversions": {}
+        },
+        {
           "name": "Земфира Стажёр",
           "key": "стажёр земфира",
           "metrics": {
@@ -1296,7 +1325,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 12.0
+            "touches": 12.0,
+            "objects": 1
           },
           "conversions": {
             "meet_to_ad": 0.0,
@@ -1330,7 +1360,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 10.0
+            "touches": 10.0,
+            "objects": 2
           },
           "conversions": {
             "meet_to_ad": 0.0,
@@ -1432,7 +1463,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 5.0
+            "touches": 5.0,
+            "objects": 1
           },
           "conversions": {
             "meet_to_ad": 25.0,
@@ -1500,7 +1532,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 10.0
+            "touches": 10.0,
+            "objects": 7
           },
           "conversions": {
             "meet_to_ad": 0.0,
@@ -1534,7 +1567,8 @@
             "deals": 1.0,
             "deals_secondary": 1.0,
             "prihod": 0,
-            "touches": 11.0
+            "touches": 11.0,
+            "objects": 2
           },
           "conversions": {
             "meet_to_ad": 25.0,
@@ -1568,7 +1602,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 3.0
+            "touches": 3.0,
+            "objects": 3
           },
           "conversions": {
             "meet_to_ad": 0.0,
@@ -1602,7 +1637,8 @@
             "deals": 0,
             "deals_secondary": 1.0,
             "prihod": 0,
-            "touches": 12.0
+            "touches": 12.0,
+            "objects": 1
           },
           "conversions": {
             "meet_to_ad": 25.0,
@@ -1636,7 +1672,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 0
+            "touches": 0,
+            "objects": 1
           },
           "conversions": {
             "meet_to_ad": null,
@@ -1738,7 +1775,8 @@
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 6.0
+            "touches": 6.0,
+            "objects": 2
           },
           "conversions": {
             "meet_to_ad": 100.0,
@@ -2750,7 +2788,8 @@
     "analogs": "Аналоги",
     "lifts": "Подъёмы",
     "crm": "CRM выгрузка",
-    "incoming": "Вх. звонки"
+    "incoming": "Вх. звонки",
+    "objects": "Объекты"
   },
   "conversionLabels": {
     "meet_to_ad": "Встреча → А.Д",
