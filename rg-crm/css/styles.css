@@ -307,6 +307,24 @@ body:not(.is-admin) .admin-col { display: none !important; }
   color: #f4fffa;
 }
 
+.side-nav--reports { gap: 0.25rem; }
+
+.side-report-link {
+  display: block;
+  text-decoration: none;
+  color: var(--ink);
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.side-report-link:hover { background: rgba(15, 107, 87, 0.08); }
+.side-report-link.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 .side-meta {
   margin-top: auto;
   padding: 0.85rem;
@@ -588,6 +606,12 @@ h1 {
   cursor: pointer;
 }
 
+a.chip {
+  text-decoration: none;
+  color: inherit;
+  display: inline-block;
+}
+
 .chip.is-active {
   background: var(--accent);
   border-color: var(--accent);
@@ -682,6 +706,19 @@ tbody tr:hover { background: #f5f1e8; }
   border: 1px solid var(--line);
   border-radius: 6px;
   font-size: 0.74rem;
+  color: var(--muted);
+}
+
+.daily-table { min-width: 1180px; }
+.daily-table tfoot td {
+  background: #efe9de;
+  font-weight: 700;
+  border-top: 2px solid var(--line);
+}
+.daily-table td.has-val { color: var(--accent); font-weight: 600; }
+.daily-empty {
+  padding: 2rem 1rem;
+  text-align: center;
   color: var(--muted);
 }
 

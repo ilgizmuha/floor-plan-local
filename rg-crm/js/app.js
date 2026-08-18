@@ -45,7 +45,33 @@ const PLAN_AGENT = {
   rassylka: 1000,
 };
 
+const DAILY_METRICS = [
+  ["hz", "ХЗ"],
+  ["incoming", "Вх. звонки"],
+  ["rastleyka", "Расклейка"],
+  ["rassylka", "Рассылка"],
+  ["crm", "CRM"],
+  ["meetings", "Встречи"],
+  ["showings", "Показы"],
+  ["podbor", "Подбор"],
+  ["consults", "Консультации"],
+  ["bron", "Бронь"],
+  ["zadatok", "Задаток"],
+  ["deals", "Сд. перв."],
+  ["deals_secondary", "Сд. втор."],
+  ["ad", "А.Д"],
+  ["touches", "Касания"],
+];
+
+const RU_MONTHS_GEN = [
+  "января", "февраля", "марта", "апреля", "мая", "июня",
+  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+];
+
 let DATA = null;
+let dailyIndex = null;
+let dailyReport = null;
+let selectedDailyDate = null;
 let selectedMonthId = null;
 let yearMetric = "dealsTotal";
 let monthMetric = "dealsTotal";
@@ -83,7 +109,20 @@ const els = {
   attestBody: document.querySelector("#attestTable tbody"),
   count: document.getElementById("rowCount"),
   viewGroup: document.getElementById("viewGroup"),
+  viewDaily: document.getElementById("viewDaily"),
   viewAgent: document.getElementById("viewAgent"),
+  sideDailyLink: document.getElementById("sideDailyLink"),
+  dailyTitle: document.getElementById("dailyTitle"),
+  dailySub: document.getElementById("dailySub"),
+  dailySearch: document.getElementById("dailySearch"),
+  dailySort: document.getElementById("dailySort"),
+  dailyDateHint: document.getElementById("dailyDateHint"),
+  dailyDateChips: document.getElementById("dailyDateChips"),
+  dailyKpi: document.getElementById("dailyKpi"),
+  dailyTableHint: document.getElementById("dailyTableHint"),
+  dailyTableHead: document.getElementById("dailyTableHead"),
+  dailyTableBody: document.getElementById("dailyTableBody"),
+  dailyTableFoot: document.getElementById("dailyTableFoot"),
   agentTitle: document.getElementById("agentTitle"),
   agentSub: document.getElementById("agentSub"),
   agentMonth: document.getElementById("agentMonthSelect"),
@@ -131,6 +170,10 @@ function closeSidebar() {
 
 function syncMobPeriodLabel() {
   if (!els.mobPeriodLabel) return;
+  if (route.view === "daily" && selectedDailyDate) {
+    els.mobPeriodLabel.textContent = formatDailyDate(selectedDailyDate);
+    return;
+  }
   const month = currentMonth();
   els.mobPeriodLabel.textContent = month?.id || "—";
 }
@@ -138,9 +181,13 @@ function syncMobPeriodLabel() {
 function syncMobBottomNav() {
   if (!els.mobBottom) return;
   const isAgent = route.view === "agent";
+  const isDaily = route.view === "daily";
   els.mobBottom.querySelectorAll("[data-mob-nav]").forEach((btn) => {
     const kind = btn.dataset.mobNav;
-    btn.classList.toggle("is-active", kind === "group" ? !isAgent : kind === "agents" ? isAgent : false);
+    btn.classList.toggle(
+      "is-active",
+      kind === "group" ? !isAgent && !isDaily : kind === "daily" ? isDaily : kind === "agents" ? isAgent : false
+    );
   });
   if (els.mobBottomLoginLabel) {
     els.mobBottomLoginLabel.textContent = isAdmin ? "Выйти" : "Вход";
@@ -239,9 +286,245 @@ function parseRoute() {
   const raw = (location.hash || "#/").replace(/^#/, "");
   const parts = raw.split("/").filter(Boolean);
   if (parts[0] === "agent" && parts[1]) {
-    return { view: "agent", agentKey: decodeURIComponent(parts.slice(1).join("/")) };
+    return { view: "agent", agentKey: decodeURIComponent(parts.slice(1).join("/")), dailyDate: null };
   }
-  return { view: "group", agentKey: null };
+  if (parts[0] === "daily") {
+    return {
+      view: "daily",
+      agentKey: null,
+      dailyDate: parts[1] ? decodeURIComponent(parts[1]) : null,
+    };
+  }
+  return { view: "group", agentKey: null, dailyDate: null };
+}
+
+function formatDailyDate(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return `${d} ${RU_MONTHS_GEN[m - 1]} ${y}`;
+}
+
+function dailyHref(date) {
+  return date ? `#/daily/${encodeURIComponent(date)}` : "#/daily";
+}
+
+async function loadDailyIndex() {
+  if (!dailyIndex) {
+    const res = await fetch("data/daily/index.json");
+    if (!res.ok) throw new Error("daily index");
+    dailyIndex = await res.json();
+  }
+  return dailyIndex;
+}
+
+async function loadDailyReport(date) {
+  if (dailyReport?.date === date && selectedDailyDate === date) return dailyReport;
+  const res = await fetch(`data/daily/${date}.json`);
+  if (!res.ok) throw new Error(`daily ${date}`);
+  dailyReport = await res.json();
+  selectedDailyDate = date;
+  return dailyReport;
+}
+
+function dailyTouches(metrics = {}) {
+  return (
+    (metrics.meetings || 0) +
+    (metrics.showings || 0) +
+    (metrics.podbor || 0) +
+    (metrics.consults || 0)
+  );
+}
+
+function normalizeDailyMetrics(raw = {}) {
+  const m = { ...raw };
+  m.touches = dailyTouches(m);
+  return m;
+}
+
+function dailyActivityScore(metrics = {}) {
+  return DAILY_METRICS.reduce((s, [key]) => {
+    if (key === "touches") return s;
+    return s + (metrics[key] || 0);
+  }, 0);
+}
+
+function buildDailyRows(report) {
+  const month = DATA.months.find((m) => m.id === report.monthId);
+  const byKey = new Map();
+
+  for (const ag of enrich(month || { agents: [] })) {
+    if (excludedFromRank(ag)) continue;
+    byKey.set(ag.key, {
+      name: ag.name,
+      key: ag.key,
+      intern: ag.intern,
+      metrics: normalizeDailyMetrics(),
+    });
+  }
+
+  for (const [key, raw] of Object.entries(report.agents || {})) {
+    const metrics = normalizeDailyMetrics(raw);
+    if (byKey.has(key)) {
+      const row = byKey.get(key);
+      row.metrics = metrics;
+      if (raw?.name) row.name = raw.name;
+    } else if (!excludedFromRank({ key, name: raw?.name || key })) {
+      byKey.set(key, {
+        name: raw?.name || key,
+        key,
+        intern: isIntern(raw?.name || ""),
+        metrics,
+      });
+    }
+  }
+
+  return [...byKey.values()];
+}
+
+function filterDailyRows(rows) {
+  const q = els.dailySearch?.value.trim().toLowerCase() || "";
+  if (!q) return rows;
+  return rows.filter((r) => r.name.toLowerCase().includes(q));
+}
+
+function sortDailyRows(rows) {
+  const mode = els.dailySort?.value || "activity-desc";
+  return [...rows].sort((a, b) => {
+    if (mode === "name-asc") return a.name.localeCompare(b.name, "ru");
+    if (mode === "meetings-desc") return (b.metrics.meetings || 0) - (a.metrics.meetings || 0);
+    if (mode === "touches-desc") return (b.metrics.touches || 0) - (a.metrics.touches || 0);
+    return dailyActivityScore(b.metrics) - dailyActivityScore(a.metrics);
+  });
+}
+
+function sumDaily(rows, key) {
+  if (key === "touches") return rows.reduce((s, r) => s + dailyTouches(r.metrics), 0);
+  return rows.reduce((s, r) => s + (r.metrics?.[key] || 0), 0);
+}
+
+function renderDailyKpis(rows) {
+  const items = [
+    { label: "Встречи", value: int(sumDaily(rows, "meetings")), sub: `А.Д ${int(sumDaily(rows, "ad"))}` },
+    { label: "Показы", value: int(sumDaily(rows, "showings")), sub: `задаток ${int(sumDaily(rows, "zadatok"))}` },
+    {
+      label: "Сделки",
+      value: int(sumDaily(rows, "deals") + sumDaily(rows, "deals_secondary")),
+      sub: `${int(sumDaily(rows, "deals"))} перв. + ${int(sumDaily(rows, "deals_secondary"))} втор.`,
+    },
+    { label: "Касания", value: int(sumDaily(rows, "touches")), sub: "встр+показ+подбор+конс" },
+    { label: "Расклейка", value: int(sumDaily(rows, "rastleyka")), sub: `рассылка ${int(sumDaily(rows, "rassylka"))}` },
+    { label: "Вх. звонки", value: int(sumDaily(rows, "incoming")), sub: `ХЗ ${int(sumDaily(rows, "hz"))} · CRM ${int(sumDaily(rows, "crm"))}` },
+  ];
+
+  els.dailyKpi.innerHTML = items
+    .map(
+      (item) => `<article class="kpi">
+        <p class="kpi-label">${item.label}</p>
+        <p class="kpi-value">${item.value}</p>
+        <p class="kpi-delta flat">${item.sub}</p>
+      </article>`
+    )
+    .join("");
+}
+
+function renderDailyTable(rows) {
+  els.dailyTableHead.innerHTML = `<tr>
+    <th>#</th>
+    <th>Агент</th>
+    ${DAILY_METRICS.map(([, label]) => `<th class="num">${label}</th>`).join("")}
+  </tr>`;
+
+  if (!rows.length) {
+    els.dailyTableBody.innerHTML = `<tr><td colspan="${DAILY_METRICS.length + 2}" class="daily-empty">Нет агентов для отображения</td></tr>`;
+    els.dailyTableFoot.innerHTML = "";
+    return;
+  }
+
+  els.dailyTableBody.innerHTML = rows
+    .map((r, idx) => {
+      const active = dailyActivityScore(r.metrics) > 0;
+      return `<tr class="${active ? "" : "is-muted"}">
+        <td>${idx + 1}</td>
+        <td class="agent-name"><a class="linkish" href="${agentHref(r.key)}">${r.name}${r.intern ? " · стажёр" : ""}</a></td>
+        ${DAILY_METRICS.map(([key]) => {
+          const val = key === "touches" ? r.metrics.touches : r.metrics[key] || 0;
+          return `<td class="num ${val ? "has-val" : ""}">${int(val)}</td>`;
+        }).join("")}
+      </tr>`;
+    })
+    .join("");
+
+  els.dailyTableFoot.innerHTML = `<tr>
+    <td colspan="2">Итого за день</td>
+    ${DAILY_METRICS.map(([key]) => `<td class="num">${int(sumDaily(rows, key))}</td>`).join("")}
+  </tr>`;
+}
+
+async function renderDaily() {
+  document.title = "Ежедневный отчёт · РГ CRM";
+  els.sideDailyLink?.classList.add("is-active");
+
+  let index;
+  try {
+    index = await loadDailyIndex();
+  } catch {
+    els.dailySub.textContent = "Не удалось загрузить список дат";
+    els.dailyDateChips.innerHTML = "";
+    els.dailyKpi.innerHTML = "";
+    els.dailyTableBody.innerHTML = `<tr><td colspan="${DAILY_METRICS.length + 2}" class="daily-empty">Нет файла data/daily/index.json</td></tr>`;
+    return;
+  }
+
+  const dates = index.dates || [];
+  if (!dates.length) {
+    els.dailySub.textContent = "Пока нет загруженных дневных отчётов";
+    els.dailyDateChips.innerHTML = "";
+    els.dailyKpi.innerHTML = "";
+    els.dailyTableBody.innerHTML = `<tr><td colspan="${DAILY_METRICS.length + 2}" class="daily-empty">Добавьте файл в data/daily/</td></tr>`;
+    return;
+  }
+
+  const date = route.dailyDate || selectedDailyDate || index.latest || dates[0];
+  if (!dates.includes(date)) {
+    location.hash = dailyHref(index.latest || dates[0]);
+    return;
+  }
+
+  if (!dailyReport || dailyReport.date !== date) {
+    try {
+      await loadDailyReport(date);
+    } catch {
+      els.dailySub.textContent = `Не найден отчёт за ${formatDailyDate(date)}`;
+      return;
+    }
+  }
+
+  const rows = sortDailyRows(filterDailyRows(buildDailyRows(dailyReport)));
+  const activeCount = rows.filter((r) => dailyActivityScore(r.metrics) > 0).length;
+
+  els.dailyTitle.textContent = `Ежедневный отчёт · ${formatDailyDate(date)}`;
+  els.dailySub.textContent = `${dailyReport.monthId} · ${activeCount} агентов с активностью из ${rows.length}`;
+  els.dailyDateHint.textContent = reportDatesHint(dates, date);
+  els.dailyTableHint.textContent = `Показатели за ${formatDailyDate(date)} · серые строки без активности за день`;
+
+  els.dailyDateChips.innerHTML = dates
+    .map(
+      (d) =>
+        `<a class="chip ${d === date ? "is-active" : ""}" href="${dailyHref(d)}">${formatDailyDate(d)}</a>`
+    )
+    .join("");
+
+  renderDailyKpis(rows);
+  renderDailyTable(rows);
+  els.count.textContent = `День · ${formatDailyDate(date)} · ${rows.length} агентов`;
+  syncMobPeriodLabel();
+}
+
+function reportDatesHint(dates, current) {
+  const idx = dates.indexOf(current);
+  if (idx === -1) return `${dates.length} дн. в архиве`;
+  return `${idx + 1} из ${dates.length} · новее ${idx > 0 ? formatDailyDate(dates[idx - 1]) : "—"}`;
 }
 
 function currentMonth() {
@@ -389,6 +672,7 @@ function renderAgentNav() {
       return `<a class="${active}" href="${agentHref(a.key)}">${agentNavLabel(a.name)}</a>`;
     })
     .join("");
+  els.sideDailyLink?.classList.toggle("is-active", route.view === "daily");
   filterAgentNav();
 }
 
@@ -1072,15 +1356,23 @@ function applyViews() {
   route = parseRoute();
   setAdminUI();
   const isAgent = route.view === "agent";
-  els.viewGroup.classList.toggle("is-hidden", isAgent);
+  const isDaily = route.view === "daily";
+  els.viewGroup.classList.toggle("is-hidden", isAgent || isDaily);
+  els.viewDaily.classList.toggle("is-hidden", !isDaily);
   els.viewAgent.classList.toggle("is-hidden", !isAgent);
-  if (els.mobMonthBar) els.mobMonthBar.classList.toggle("is-hidden", isAgent);
+  if (els.mobMonthBar) els.mobMonthBar.classList.toggle("is-hidden", isAgent || isDaily);
   if (isAgent) {
     if (!els.agentMonth.value) els.agentMonth.value = selectedMonthId;
     renderAgentCabinet();
+  } else if (isDaily) {
+    renderDaily().catch((err) => {
+      console.error(err);
+      els.dailySub.textContent = "Ошибка загрузки дневного отчёта";
+    });
   } else {
     renderGroup();
   }
+  renderAgentNav();
   syncMobBottomNav();
   closeSidebar();
 }
@@ -1130,6 +1422,12 @@ function bind() {
     detailsOpen = !detailsOpen;
     renderGroup();
   });
+  els.dailySearch?.addEventListener("input", () => {
+    if (route.view === "daily") renderDaily();
+  });
+  els.dailySort?.addEventListener("change", () => {
+    if (route.view === "daily") renderDaily();
+  });
   els.agentMonth.addEventListener("change", () => {
     selectedMonthId = els.agentMonth.value;
     renderAgentCabinet();
@@ -1168,6 +1466,10 @@ function bind() {
     const kind = btn.dataset.mobNav;
     if (kind === "group") {
       location.hash = "#/";
+      return;
+    }
+    if (kind === "daily") {
+      location.hash = "#/daily";
       return;
     }
     if (kind === "agents") {

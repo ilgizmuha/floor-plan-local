@@ -291,6 +291,18 @@ def add_metrics(base: dict, delta: dict) -> dict:
     return out
 
 
+def update_daily_index() -> None:
+    dates = sorted(
+        (p.stem for p in DAILY_DIR.glob("*.json") if p.name != "index.json"),
+        reverse=True,
+    )
+    index = {"dates": dates, "latest": dates[0] if dates else None}
+    (DAILY_DIR / "index.json").write_text(
+        json.dumps(index, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def main() -> None:
     data = json.loads(METRICS_PATH.read_text(encoding="utf-8"))
     month = next(m for m in data["months"] if m["id"] == MONTH_ID)
@@ -335,6 +347,7 @@ def main() -> None:
     data["lastDailyReport"] = {"date": REPORT_DATE, "agents": len(DAILY_AGENTS)}
 
     METRICS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    update_daily_index()
     print(f"Applied daily report {REPORT_DATE} to {MONTH_ID}")
     print("Updated:", ", ".join(updated))
 
