@@ -311,7 +311,7 @@ function dailyHref(date) {
 
 async function loadDailyIndex() {
   if (!dailyIndex) {
-    const res = await fetch("data/daily/index.json");
+    const res = await fetch(`data/daily/index.json?_=${Date.now()}`);
     if (!res.ok) throw new Error("daily index");
     dailyIndex = await res.json();
   }
@@ -320,7 +320,7 @@ async function loadDailyIndex() {
 
 async function loadDailyReport(date) {
   if (dailyReport?.date === date && selectedDailyDate === date) return dailyReport;
-  const res = await fetch(`data/daily/${date}.json`);
+  const res = await fetch(`data/daily/${date}.json?_=${Date.now()}`);
   if (!res.ok) throw new Error(`daily ${date}`);
   dailyReport = await res.json();
   selectedDailyDate = date;
@@ -1502,7 +1502,8 @@ function bind() {
 }
 
 async function boot() {
-  DATA = await (await fetch("data/metrics.json")).json();
+  const cacheBust = Date.now();
+  DATA = await (await fetch(`data/metrics.json?_=${cacheBust}`)).json();
   selectedMonthId = DATA.months.at(-1)?.id;
   if (isMobileLayout()) detailsOpen = false;
   fillFilters();
