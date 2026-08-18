@@ -51,7 +51,7 @@ DAILY_AGENTS: dict[str, dict] = {
         "ad": 0,
     },
     "стажёр константин": {
-        "name": "Константин Стажёр",
+        "name": "Максимов Константин",
         "hz": 0,
         "incoming": 0,
         "rastleyka": 50,
@@ -85,7 +85,7 @@ DAILY_AGENTS: dict[str, dict] = {
         "ad": 0,
     },
     "стажёр земфира": {
-        "name": "Земфира Стажёр",
+        "name": "Гареева Земфира",
         "hz": 0,
         "incoming": 2,
         "rastleyka": 20,
@@ -136,7 +136,7 @@ DAILY_AGENTS: dict[str, dict] = {
         "ad": 0,
     },
     "стажёр луиза": {
-        "name": "Луиза Стажёр",
+        "name": "Жданова Луиза",
         "hz": 0,
         "incoming": 2,
         "rastleyka": 0,
@@ -153,7 +153,7 @@ DAILY_AGENTS: dict[str, dict] = {
         "ad": 0,
     },
     "стажёр илья": {
-        "name": "Илья Стажёр",
+        "name": "Кузнецов Илья",
         "hz": 13,
         "incoming": 0,
         "rastleyka": 0,

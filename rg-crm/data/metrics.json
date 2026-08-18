@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-18T04:39:44",
+  "generatedAt": "2026-08-18T09:36:21",
   "source": {
     "report": "отчеты 2026.xlsx",
     "attestation": "Аттестация 2026 ИИ — копия.xlsx"
@@ -41,171 +41,6 @@
       },
       "agents": [
         {
-          "name": "Артур Гареев",
-          "key": "гареев артур",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 1353.0,
-            "meetings": 2.0,
-            "ad": 0,
-            "showings": 2.0,
-            "analogs": 0,
-            "podbor": 0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 2.0,
-            "bron": 1.0,
-            "deals": 1.0,
-            "prihod": 27200.0,
-            "touches": 6.0
-          },
-          "conversions": {
-            "meet_to_ad": 0.0,
-            "show_to_zad": 0.0,
-            "consult_to_bron": 50.0,
-            "bron_to_deal": 100.0,
-            "consult_to_deal": 50.0,
-            "hz_to_meet": null,
-            "meet_to_deal": 50.0,
-            "touch_to_deal": 16.7
-          }
-        },
-        {
-          "name": "Мария Князева",
-          "key": "князева мария",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 0,
-            "meetings": 1.0,
-            "ad": 0,
-            "showings": 1.0,
-            "analogs": 0,
-            "podbor": 0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 300.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 1.0,
-            "bron": 0,
-            "deals": 0,
-            "prihod": 13600.0,
-            "touches": 3.0
-          },
-          "conversions": {
-            "meet_to_ad": 0.0,
-            "show_to_zad": 0.0,
-            "consult_to_bron": 0.0,
-            "bron_to_deal": null,
-            "consult_to_deal": 0.0,
-            "hz_to_meet": null,
-            "meet_to_deal": 0.0,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Ляйсян Гафурзянова",
-          "key": "гафурзянова ляйсян",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 0,
-            "meetings": 4.0,
-            "ad": 2.0,
-            "showings": 5.0,
-            "analogs": 0,
-            "podbor": 1.0,
-            "zadatok": 1.0,
-            "lifts": 0,
-            "rassylka": 600.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 8.0,
-            "bron": 6.0,
-            "deals": 5.0,
-            "prihod": 0,
-            "touches": 18.0
-          },
-          "conversions": {
-            "meet_to_ad": 50.0,
-            "show_to_zad": 20.0,
-            "consult_to_bron": 75.0,
-            "bron_to_deal": 83.3,
-            "consult_to_deal": 62.5,
-            "hz_to_meet": null,
-            "meet_to_deal": 125.0,
-            "touch_to_deal": 27.8
-          }
-        },
-        {
-          "name": "Ляля Редникова",
-          "key": "редникова ляля",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 0,
-            "meetings": 4.0,
-            "ad": 1.0,
-            "showings": 3.0,
-            "analogs": 0,
-            "podbor": 0,
-            "zadatok": 1.0,
-            "lifts": 0,
-            "rassylka": 600.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 5.0,
-            "bron": 4.0,
-            "deals": 3.0,
-            "prihod": 302342.92,
-            "touches": 12.0
-          },
-          "conversions": {
-            "meet_to_ad": 25.0,
-            "show_to_zad": 33.3,
-            "consult_to_bron": 80.0,
-            "bron_to_deal": 75.0,
-            "consult_to_deal": 60.0,
-            "hz_to_meet": null,
-            "meet_to_deal": 75.0,
-            "touch_to_deal": 25.0
-          }
-        },
-        {
-          "name": "Гульнара Гаймелетдинова",
-          "key": "гаймалетдинова гульнара",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 0,
-            "meetings": 2.0,
-            "ad": 1.0,
-            "showings": 2.0,
-            "analogs": 0,
-            "podbor": 0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 600.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 4.0,
-            "bron": 2.0,
-            "deals": 2.0,
-            "prihod": 0,
-            "touches": 8.0
-          },
-          "conversions": {
-            "meet_to_ad": 50.0,
-            "show_to_zad": 0.0,
-            "consult_to_bron": 50.0,
-            "bron_to_deal": 100.0,
-            "consult_to_deal": 50.0,
-            "hz_to_meet": null,
-            "meet_to_deal": 100.0,
-            "touch_to_deal": 25.0
-          }
-        },
-        {
           "name": "Алия Гараева",
           "key": "гараева алия",
           "metrics": {
@@ -234,39 +69,6 @@
             "bron_to_deal": null,
             "consult_to_deal": 0.0,
             "hz_to_meet": null,
-            "meet_to_deal": 0.0,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Рузиля Идрисова",
-          "key": "идрисова рузиля",
-          "metrics": {
-            "hz": 12.0,
-            "rastleyka": 611.0,
-            "meetings": 1.0,
-            "ad": 0,
-            "showings": 1.0,
-            "analogs": 0,
-            "podbor": 0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 900.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 1.0,
-            "bron": 0,
-            "deals": 0,
-            "prihod": 681450.0,
-            "touches": 3.0
-          },
-          "conversions": {
-            "meet_to_ad": 0.0,
-            "show_to_zad": 0.0,
-            "consult_to_bron": 0.0,
-            "bron_to_deal": null,
-            "consult_to_deal": 0.0,
-            "hz_to_meet": 8.3,
             "meet_to_deal": 0.0,
             "touch_to_deal": 0.0
           }
@@ -305,36 +107,102 @@
           }
         },
         {
-          "name": "Наталья Мустафина",
-          "key": "мустафина наталья",
+          "name": "Артур Гареев",
+          "key": "гареев артур",
           "metrics": {
-            "hz": 22.0,
-            "rastleyka": 2277.0,
+            "hz": 0,
+            "rastleyka": 1353.0,
+            "meetings": 2.0,
+            "ad": 0,
+            "showings": 2.0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 2.0,
+            "bron": 1.0,
+            "deals": 1.0,
+            "prihod": 27200.0,
+            "touches": 6.0
+          },
+          "conversions": {
+            "meet_to_ad": 0.0,
+            "show_to_zad": 0.0,
+            "consult_to_bron": 50.0,
+            "bron_to_deal": 100.0,
+            "consult_to_deal": 50.0,
+            "hz_to_meet": null,
+            "meet_to_deal": 50.0,
+            "touch_to_deal": 16.7
+          }
+        },
+        {
+          "name": "Гульнара Гаймелетдинова",
+          "key": "гаймалетдинова гульнара",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 0,
             "meetings": 2.0,
             "ad": 1.0,
             "showings": 2.0,
             "analogs": 0,
             "podbor": 0,
-            "zadatok": 1.0,
+            "zadatok": 0,
             "lifts": 0,
-            "rassylka": 100.0,
+            "rassylka": 600.0,
             "crm": 0,
             "incoming": 0,
             "consults": 4.0,
             "bron": 2.0,
             "deals": 2.0,
-            "prihod": 150000.0,
+            "prihod": 0,
             "touches": 8.0
           },
           "conversions": {
             "meet_to_ad": 50.0,
-            "show_to_zad": 50.0,
+            "show_to_zad": 0.0,
             "consult_to_bron": 50.0,
             "bron_to_deal": 100.0,
             "consult_to_deal": 50.0,
-            "hz_to_meet": 9.1,
+            "hz_to_meet": null,
             "meet_to_deal": 100.0,
             "touch_to_deal": 25.0
+          }
+        },
+        {
+          "name": "Данис Гиндуллин",
+          "key": "гиндуллин данис",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 356.0,
+            "meetings": 4.0,
+            "ad": 0,
+            "showings": 4.0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 3500.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 7.0,
+            "bron": 4.0,
+            "deals": 4.0,
+            "prihod": 309912.02,
+            "touches": 15.0
+          },
+          "conversions": {
+            "meet_to_ad": 0.0,
+            "show_to_zad": 0.0,
+            "consult_to_bron": 57.1,
+            "bron_to_deal": 100.0,
+            "consult_to_deal": 57.1,
+            "hz_to_meet": null,
+            "meet_to_deal": 100.0,
+            "touch_to_deal": 26.7
           }
         },
         {
@@ -404,69 +272,135 @@
           }
         },
         {
-          "name": "Татьяна Михлюкова",
-          "key": "михлюкова татьяна",
-          "metrics": {
-            "hz": 33.0,
-            "rastleyka": 606.0,
-            "meetings": 0,
-            "ad": 0,
-            "showings": 0,
-            "analogs": 0,
-            "podbor": 1.0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 300.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 0,
-            "bron": 1.0,
-            "deals": 0,
-            "prihod": 0,
-            "touches": 1.0
-          },
-          "conversions": {
-            "meet_to_ad": null,
-            "show_to_zad": null,
-            "consult_to_bron": null,
-            "bron_to_deal": 0.0,
-            "consult_to_deal": null,
-            "hz_to_meet": 0.0,
-            "meet_to_deal": null,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Ришат Валиануров",
-          "key": "валиануров ришат",
+          "name": "Ляйсян Гафурзянова",
+          "key": "гафурзянова ляйсян",
           "metrics": {
             "hz": 0,
             "rastleyka": 0,
-            "meetings": 0,
+            "meetings": 4.0,
+            "ad": 2.0,
+            "showings": 5.0,
+            "analogs": 0,
+            "podbor": 1.0,
+            "zadatok": 1.0,
+            "lifts": 0,
+            "rassylka": 600.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 8.0,
+            "bron": 6.0,
+            "deals": 5.0,
+            "prihod": 0,
+            "touches": 18.0
+          },
+          "conversions": {
+            "meet_to_ad": 50.0,
+            "show_to_zad": 20.0,
+            "consult_to_bron": 75.0,
+            "bron_to_deal": 83.3,
+            "consult_to_deal": 62.5,
+            "hz_to_meet": null,
+            "meet_to_deal": 125.0,
+            "touch_to_deal": 27.8
+          }
+        },
+        {
+          "name": "Ляля Редникова",
+          "key": "редникова ляля",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 0,
+            "meetings": 4.0,
+            "ad": 1.0,
+            "showings": 3.0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 1.0,
+            "lifts": 0,
+            "rassylka": 600.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 5.0,
+            "bron": 4.0,
+            "deals": 3.0,
+            "prihod": 302342.92,
+            "touches": 12.0
+          },
+          "conversions": {
+            "meet_to_ad": 25.0,
+            "show_to_zad": 33.3,
+            "consult_to_bron": 80.0,
+            "bron_to_deal": 75.0,
+            "consult_to_deal": 60.0,
+            "hz_to_meet": null,
+            "meet_to_deal": 75.0,
+            "touch_to_deal": 25.0
+          }
+        },
+        {
+          "name": "Мария Князева",
+          "key": "князева мария",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 0,
+            "meetings": 1.0,
             "ad": 0,
             "showings": 1.0,
             "analogs": 0,
             "podbor": 0,
             "zadatok": 0,
             "lifts": 0,
-            "rassylka": 0,
+            "rassylka": 300.0,
             "crm": 0,
             "incoming": 0,
             "consults": 1.0,
             "bron": 0,
             "deals": 0,
-            "prihod": 0,
-            "touches": 2.0
+            "prihod": 13600.0,
+            "touches": 3.0
           },
           "conversions": {
-            "meet_to_ad": null,
+            "meet_to_ad": 0.0,
             "show_to_zad": 0.0,
             "consult_to_bron": 0.0,
             "bron_to_deal": null,
             "consult_to_deal": 0.0,
             "hz_to_meet": null,
-            "meet_to_deal": null,
+            "meet_to_deal": 0.0,
             "touch_to_deal": 0.0
+          }
+        },
+        {
+          "name": "Наталья Мустафина",
+          "key": "мустафина наталья",
+          "metrics": {
+            "hz": 22.0,
+            "rastleyka": 2277.0,
+            "meetings": 2.0,
+            "ad": 1.0,
+            "showings": 2.0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 1.0,
+            "lifts": 0,
+            "rassylka": 100.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 4.0,
+            "bron": 2.0,
+            "deals": 2.0,
+            "prihod": 150000.0,
+            "touches": 8.0
+          },
+          "conversions": {
+            "meet_to_ad": 50.0,
+            "show_to_zad": 50.0,
+            "consult_to_bron": 50.0,
+            "bron_to_deal": 100.0,
+            "consult_to_deal": 50.0,
+            "hz_to_meet": 9.1,
+            "meet_to_deal": 100.0,
+            "touch_to_deal": 25.0
           }
         },
         {
@@ -503,36 +437,102 @@
           }
         },
         {
-          "name": "Данис Гиндуллин",
-          "key": "гиндуллин данис",
+          "name": "Ришат Валиануров",
+          "key": "валиануров ришат",
           "metrics": {
             "hz": 0,
-            "rastleyka": 356.0,
-            "meetings": 4.0,
+            "rastleyka": 0,
+            "meetings": 0,
             "ad": 0,
-            "showings": 4.0,
+            "showings": 1.0,
             "analogs": 0,
             "podbor": 0,
             "zadatok": 0,
             "lifts": 0,
-            "rassylka": 3500.0,
+            "rassylka": 0,
             "crm": 0,
             "incoming": 0,
-            "consults": 7.0,
-            "bron": 4.0,
-            "deals": 4.0,
-            "prihod": 309912.02,
-            "touches": 15.0
+            "consults": 1.0,
+            "bron": 0,
+            "deals": 0,
+            "prihod": 0,
+            "touches": 2.0
+          },
+          "conversions": {
+            "meet_to_ad": null,
+            "show_to_zad": 0.0,
+            "consult_to_bron": 0.0,
+            "bron_to_deal": null,
+            "consult_to_deal": 0.0,
+            "hz_to_meet": null,
+            "meet_to_deal": null,
+            "touch_to_deal": 0.0
+          }
+        },
+        {
+          "name": "Рузиля Идрисова",
+          "key": "идрисова рузиля",
+          "metrics": {
+            "hz": 12.0,
+            "rastleyka": 611.0,
+            "meetings": 1.0,
+            "ad": 0,
+            "showings": 1.0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 900.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 1.0,
+            "bron": 0,
+            "deals": 0,
+            "prihod": 681450.0,
+            "touches": 3.0
           },
           "conversions": {
             "meet_to_ad": 0.0,
             "show_to_zad": 0.0,
-            "consult_to_bron": 57.1,
-            "bron_to_deal": 100.0,
-            "consult_to_deal": 57.1,
-            "hz_to_meet": null,
-            "meet_to_deal": 100.0,
-            "touch_to_deal": 26.7
+            "consult_to_bron": 0.0,
+            "bron_to_deal": null,
+            "consult_to_deal": 0.0,
+            "hz_to_meet": 8.3,
+            "meet_to_deal": 0.0,
+            "touch_to_deal": 0.0
+          }
+        },
+        {
+          "name": "Татьяна Михлюкова",
+          "key": "михлюкова татьяна",
+          "metrics": {
+            "hz": 33.0,
+            "rastleyka": 606.0,
+            "meetings": 0,
+            "ad": 0,
+            "showings": 0,
+            "analogs": 0,
+            "podbor": 1.0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 300.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 0,
+            "bron": 1.0,
+            "deals": 0,
+            "prihod": 0,
+            "touches": 1.0
+          },
+          "conversions": {
+            "meet_to_ad": null,
+            "show_to_zad": null,
+            "consult_to_bron": null,
+            "bron_to_deal": 0.0,
+            "consult_to_deal": null,
+            "hz_to_meet": 0.0,
+            "meet_to_deal": null,
+            "touch_to_deal": 0.0
           }
         }
       ]
@@ -573,6 +573,72 @@
       },
       "agents": [
         {
+          "name": "Алия Гараева",
+          "key": "гараева алия",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 0,
+            "meetings": 0,
+            "ad": 0,
+            "showings": 0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 0,
+            "bron": 0,
+            "deals": 0,
+            "prihod": 0,
+            "touches": 0
+          },
+          "conversions": {
+            "meet_to_ad": null,
+            "show_to_zad": null,
+            "consult_to_bron": null,
+            "bron_to_deal": null,
+            "consult_to_deal": null,
+            "hz_to_meet": null,
+            "meet_to_deal": null,
+            "touch_to_deal": null
+          }
+        },
+        {
+          "name": "Альбина Сафина",
+          "key": "сафина альбина",
+          "metrics": {
+            "hz": 7.0,
+            "rastleyka": 120.0,
+            "meetings": 3.0,
+            "ad": 0,
+            "showings": 0,
+            "analogs": 0,
+            "podbor": 2.0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 2190.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 8.0,
+            "bron": 2.0,
+            "deals": 2.0,
+            "prihod": 498932.0,
+            "touches": 13.0
+          },
+          "conversions": {
+            "meet_to_ad": 0.0,
+            "show_to_zad": null,
+            "consult_to_bron": 25.0,
+            "bron_to_deal": 100.0,
+            "consult_to_deal": 25.0,
+            "hz_to_meet": 42.9,
+            "meet_to_deal": 66.7,
+            "touch_to_deal": 15.4
+          }
+        },
+        {
           "name": "Артур Гареев",
           "key": "гареев артур",
           "metrics": {
@@ -606,35 +672,134 @@
           }
         },
         {
-          "name": "Мария Князева",
-          "key": "князева мария",
+          "name": "Гульнара Гаймелетдинова",
+          "key": "гаймалетдинова гульнара",
           "metrics": {
             "hz": 0,
-            "rastleyka": 1600.0,
-            "meetings": 7.0,
+            "rastleyka": 0,
+            "meetings": 0,
             "ad": 0,
-            "showings": 2.0,
+            "showings": 0,
             "analogs": 0,
-            "podbor": 1.0,
-            "zadatok": 1.0,
+            "podbor": 0,
+            "zadatok": 0,
             "lifts": 0,
-            "rassylka": 410.0,
+            "rassylka": 0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 0,
+            "bron": 0,
+            "deals": 0,
+            "prihod": 232118.25,
+            "touches": 0
+          },
+          "conversions": {
+            "meet_to_ad": null,
+            "show_to_zad": null,
+            "consult_to_bron": null,
+            "bron_to_deal": null,
+            "consult_to_deal": null,
+            "hz_to_meet": null,
+            "meet_to_deal": null,
+            "touch_to_deal": null
+          }
+        },
+        {
+          "name": "Данис Гиндуллин",
+          "key": "гиндуллин данис",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 0,
+            "meetings": 0,
+            "ad": 0,
+            "showings": 0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 0,
+            "bron": 0,
+            "deals": 0,
+            "prihod": 652496.48,
+            "touches": 0
+          },
+          "conversions": {
+            "meet_to_ad": null,
+            "show_to_zad": null,
+            "consult_to_bron": null,
+            "bron_to_deal": null,
+            "consult_to_deal": null,
+            "hz_to_meet": null,
+            "meet_to_deal": null,
+            "touch_to_deal": null
+          }
+        },
+        {
+          "name": "Ильгина Алимбаева",
+          "key": "алимбаева ильгина",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 1990.0,
+            "meetings": 9.0,
+            "ad": 0,
+            "showings": 32.0,
+            "analogs": 0,
+            "podbor": 3.0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 1022.0,
             "crm": 0,
             "incoming": 0,
             "consults": 5.0,
             "bron": 0,
             "deals": 0,
-            "prihod": 42200.0,
-            "touches": 15.0
+            "prihod": 110126.0,
+            "touches": 49.0
           },
           "conversions": {
             "meet_to_ad": 0.0,
-            "show_to_zad": 50.0,
+            "show_to_zad": 0.0,
             "consult_to_bron": 0.0,
             "bron_to_deal": null,
             "consult_to_deal": 0.0,
             "hz_to_meet": null,
             "meet_to_deal": 0.0,
+            "touch_to_deal": 0.0
+          }
+        },
+        {
+          "name": "Лилия Клысова",
+          "key": "клысова лилия",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 0,
+            "meetings": 0,
+            "ad": 0,
+            "showings": 9.0,
+            "analogs": 0,
+            "podbor": 2.0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 37.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 4.0,
+            "bron": 0,
+            "deals": 0,
+            "prihod": 454774.17,
+            "touches": 15.0
+          },
+          "conversions": {
+            "meet_to_ad": null,
+            "show_to_zad": 0.0,
+            "consult_to_bron": 0.0,
+            "bron_to_deal": null,
+            "consult_to_deal": 0.0,
+            "hz_to_meet": null,
+            "meet_to_deal": null,
             "touch_to_deal": 0.0
           }
         },
@@ -705,135 +870,36 @@
           }
         },
         {
-          "name": "Гульнара Гаймелетдинова",
-          "key": "гаймалетдинова гульнара",
+          "name": "Мария Князева",
+          "key": "князева мария",
           "metrics": {
             "hz": 0,
-            "rastleyka": 0,
-            "meetings": 0,
+            "rastleyka": 1600.0,
+            "meetings": 7.0,
             "ad": 0,
-            "showings": 0,
+            "showings": 2.0,
             "analogs": 0,
-            "podbor": 0,
-            "zadatok": 0,
+            "podbor": 1.0,
+            "zadatok": 1.0,
             "lifts": 0,
-            "rassylka": 0,
+            "rassylka": 410.0,
             "crm": 0,
             "incoming": 0,
-            "consults": 0,
+            "consults": 5.0,
             "bron": 0,
             "deals": 0,
-            "prihod": 232118.25,
-            "touches": 0
-          },
-          "conversions": {
-            "meet_to_ad": null,
-            "show_to_zad": null,
-            "consult_to_bron": null,
-            "bron_to_deal": null,
-            "consult_to_deal": null,
-            "hz_to_meet": null,
-            "meet_to_deal": null,
-            "touch_to_deal": null
-          }
-        },
-        {
-          "name": "Алия Гараева",
-          "key": "гараева алия",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 0,
-            "meetings": 0,
-            "ad": 0,
-            "showings": 0,
-            "analogs": 0,
-            "podbor": 0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 0,
-            "bron": 0,
-            "deals": 0,
-            "prihod": 0,
-            "touches": 0
-          },
-          "conversions": {
-            "meet_to_ad": null,
-            "show_to_zad": null,
-            "consult_to_bron": null,
-            "bron_to_deal": null,
-            "consult_to_deal": null,
-            "hz_to_meet": null,
-            "meet_to_deal": null,
-            "touch_to_deal": null
-          }
-        },
-        {
-          "name": "Рузиля Идрисова",
-          "key": "идрисова рузиля",
-          "metrics": {
-            "hz": 12.0,
-            "rastleyka": 3000.0,
-            "meetings": 5.0,
-            "ad": 0,
-            "showings": 0,
-            "analogs": 0,
-            "podbor": 0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 200.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 2.0,
-            "bron": 0,
-            "deals": 0,
-            "prihod": 0,
-            "touches": 7.0
+            "prihod": 42200.0,
+            "touches": 15.0
           },
           "conversions": {
             "meet_to_ad": 0.0,
-            "show_to_zad": null,
+            "show_to_zad": 50.0,
             "consult_to_bron": 0.0,
             "bron_to_deal": null,
             "consult_to_deal": 0.0,
-            "hz_to_meet": 41.7,
+            "hz_to_meet": null,
             "meet_to_deal": 0.0,
             "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Альбина Сафина",
-          "key": "сафина альбина",
-          "metrics": {
-            "hz": 7.0,
-            "rastleyka": 120.0,
-            "meetings": 3.0,
-            "ad": 0,
-            "showings": 0,
-            "analogs": 0,
-            "podbor": 2.0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 2190.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 8.0,
-            "bron": 2.0,
-            "deals": 2.0,
-            "prihod": 498932.0,
-            "touches": 13.0
-          },
-          "conversions": {
-            "meet_to_ad": 0.0,
-            "show_to_zad": null,
-            "consult_to_bron": 25.0,
-            "bron_to_deal": 100.0,
-            "consult_to_deal": 25.0,
-            "hz_to_meet": 42.9,
-            "meet_to_deal": 66.7,
-            "touch_to_deal": 15.4
           }
         },
         {
@@ -865,138 +931,6 @@
             "bron_to_deal": null,
             "consult_to_deal": 0.0,
             "hz_to_meet": 4.5,
-            "meet_to_deal": 0.0,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Ильгина Алимбаева",
-          "key": "алимбаева ильгина",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 1990.0,
-            "meetings": 9.0,
-            "ad": 0,
-            "showings": 32.0,
-            "analogs": 0,
-            "podbor": 3.0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 1022.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 5.0,
-            "bron": 0,
-            "deals": 0,
-            "prihod": 110126.0,
-            "touches": 49.0
-          },
-          "conversions": {
-            "meet_to_ad": 0.0,
-            "show_to_zad": 0.0,
-            "consult_to_bron": 0.0,
-            "bron_to_deal": null,
-            "consult_to_deal": 0.0,
-            "hz_to_meet": null,
-            "meet_to_deal": 0.0,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Лилия Клысова",
-          "key": "клысова лилия",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 0,
-            "meetings": 0,
-            "ad": 0,
-            "showings": 9.0,
-            "analogs": 0,
-            "podbor": 2.0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 37.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 4.0,
-            "bron": 0,
-            "deals": 0,
-            "prihod": 454774.17,
-            "touches": 15.0
-          },
-          "conversions": {
-            "meet_to_ad": null,
-            "show_to_zad": 0.0,
-            "consult_to_bron": 0.0,
-            "bron_to_deal": null,
-            "consult_to_deal": 0.0,
-            "hz_to_meet": null,
-            "meet_to_deal": null,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Татьяна Михлюкова",
-          "key": "михлюкова татьяна",
-          "metrics": {
-            "hz": 33.0,
-            "rastleyka": 100.0,
-            "meetings": 2.0,
-            "ad": 1.0,
-            "showings": 1.0,
-            "analogs": 0,
-            "podbor": 3.0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 330.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 0,
-            "bron": 0,
-            "deals": 0,
-            "prihod": 0,
-            "touches": 6.0
-          },
-          "conversions": {
-            "meet_to_ad": 50.0,
-            "show_to_zad": 0.0,
-            "consult_to_bron": null,
-            "bron_to_deal": null,
-            "consult_to_deal": null,
-            "hz_to_meet": 6.1,
-            "meet_to_deal": 0.0,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Ришат Валиануров",
-          "key": "валиануров ришат",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 0,
-            "meetings": 11.0,
-            "ad": 0,
-            "showings": 5.0,
-            "analogs": 0,
-            "podbor": 2.0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 30.0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 1.0,
-            "bron": 0,
-            "deals": 0,
-            "prihod": 3000.0,
-            "touches": 19.0
-          },
-          "conversions": {
-            "meet_to_ad": 0.0,
-            "show_to_zad": 0.0,
-            "consult_to_bron": 0.0,
-            "bron_to_deal": null,
-            "consult_to_deal": 0.0,
-            "hz_to_meet": null,
             "meet_to_deal": 0.0,
             "touch_to_deal": 0.0
           }
@@ -1035,36 +969,102 @@
           }
         },
         {
-          "name": "Данис Гиндуллин",
-          "key": "гиндуллин данис",
+          "name": "Ришат Валиануров",
+          "key": "валиануров ришат",
           "metrics": {
             "hz": 0,
             "rastleyka": 0,
-            "meetings": 0,
+            "meetings": 11.0,
+            "ad": 0,
+            "showings": 5.0,
+            "analogs": 0,
+            "podbor": 2.0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 30.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 1.0,
+            "bron": 0,
+            "deals": 0,
+            "prihod": 3000.0,
+            "touches": 19.0
+          },
+          "conversions": {
+            "meet_to_ad": 0.0,
+            "show_to_zad": 0.0,
+            "consult_to_bron": 0.0,
+            "bron_to_deal": null,
+            "consult_to_deal": 0.0,
+            "hz_to_meet": null,
+            "meet_to_deal": 0.0,
+            "touch_to_deal": 0.0
+          }
+        },
+        {
+          "name": "Рузиля Идрисова",
+          "key": "идрисова рузиля",
+          "metrics": {
+            "hz": 12.0,
+            "rastleyka": 3000.0,
+            "meetings": 5.0,
             "ad": 0,
             "showings": 0,
             "analogs": 0,
             "podbor": 0,
             "zadatok": 0,
             "lifts": 0,
-            "rassylka": 0,
+            "rassylka": 200.0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 2.0,
+            "bron": 0,
+            "deals": 0,
+            "prihod": 0,
+            "touches": 7.0
+          },
+          "conversions": {
+            "meet_to_ad": 0.0,
+            "show_to_zad": null,
+            "consult_to_bron": 0.0,
+            "bron_to_deal": null,
+            "consult_to_deal": 0.0,
+            "hz_to_meet": 41.7,
+            "meet_to_deal": 0.0,
+            "touch_to_deal": 0.0
+          }
+        },
+        {
+          "name": "Татьяна Михлюкова",
+          "key": "михлюкова татьяна",
+          "metrics": {
+            "hz": 33.0,
+            "rastleyka": 100.0,
+            "meetings": 2.0,
+            "ad": 1.0,
+            "showings": 1.0,
+            "analogs": 0,
+            "podbor": 3.0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 330.0,
             "crm": 0,
             "incoming": 0,
             "consults": 0,
             "bron": 0,
             "deals": 0,
-            "prihod": 652496.48,
-            "touches": 0
+            "prihod": 0,
+            "touches": 6.0
           },
           "conversions": {
-            "meet_to_ad": null,
-            "show_to_zad": null,
+            "meet_to_ad": 50.0,
+            "show_to_zad": 0.0,
             "consult_to_bron": null,
             "bron_to_deal": null,
             "consult_to_deal": null,
-            "hz_to_meet": null,
-            "meet_to_deal": null,
-            "touch_to_deal": null
+            "hz_to_meet": 6.1,
+            "meet_to_deal": 0.0,
+            "touch_to_deal": 0.0
           }
         }
       ]
@@ -1210,6 +1210,41 @@
           }
         },
         {
+          "name": "Гареева Земфира",
+          "key": "стажёр земфира",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 60.0,
+            "meetings": 7.0,
+            "ad": 0,
+            "showings": 0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 622.0,
+            "crm": 1,
+            "incoming": 2,
+            "consults": 5.0,
+            "bron": 0,
+            "deals": 0,
+            "deals_secondary": 0,
+            "prihod": 0,
+            "touches": 12.0,
+            "objects": 1
+          },
+          "conversions": {
+            "meet_to_ad": 0.0,
+            "show_to_zad": null,
+            "consult_to_bron": 0.0,
+            "bron_to_deal": null,
+            "consult_to_deal": 0.0,
+            "hz_to_meet": null,
+            "meet_to_deal": 0.0,
+            "touch_to_deal": 0.0
+          }
+        },
+        {
           "name": "Гульнара Гаймелетдинова",
           "key": "гаймалетдинова гульнара",
           "metrics": {
@@ -1305,28 +1340,27 @@
           "conversions": {}
         },
         {
-          "name": "Земфира Стажёр",
-          "key": "стажёр земфира",
+          "name": "Жданова Луиза",
+          "key": "стажёр луиза",
           "metrics": {
             "hz": 0,
-            "rastleyka": 60.0,
-            "meetings": 7.0,
+            "rastleyka": 1180.0,
+            "meetings": 3.0,
             "ad": 0,
             "showings": 0,
             "analogs": 0,
-            "podbor": 0,
+            "podbor": 1.0,
             "zadatok": 0,
             "lifts": 0,
-            "rassylka": 622.0,
-            "crm": 1,
+            "rassylka": 0,
+            "crm": 0,
             "incoming": 2,
-            "consults": 5.0,
+            "consults": 2.0,
             "bron": 0,
             "deals": 0,
             "deals_secondary": 0,
             "prihod": 0,
-            "touches": 12.0,
-            "objects": 1
+            "touches": 6.0
           },
           "conversions": {
             "meet_to_ad": 0.0,
@@ -1375,7 +1409,33 @@
           }
         },
         {
-          "name": "Илья Стажёр",
+          "name": "Калимуллина Айгуль",
+          "key": "стажёр айгуль",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 0,
+            "meetings": 0,
+            "ad": 0,
+            "showings": 0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 0,
+            "bron": 0,
+            "deals": 0,
+            "deals_secondary": 0,
+            "prihod": 0,
+            "touches": 0,
+            "objects": 0
+          },
+          "conversions": {}
+        },
+        {
+          "name": "Кузнецов Илья",
           "key": "стажёр илья",
           "metrics": {
             "hz": 13,
@@ -1404,40 +1464,6 @@
             "bron_to_deal": null,
             "consult_to_deal": 0.0,
             "hz_to_meet": 53.8,
-            "meet_to_deal": 0.0,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Константин Стажёр",
-          "key": "стажёр константин",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 50,
-            "meetings": 2,
-            "ad": 0,
-            "showings": 0,
-            "analogs": 0,
-            "podbor": 0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 0,
-            "crm": 0,
-            "incoming": 0,
-            "consults": 0,
-            "bron": 0,
-            "deals": 0,
-            "deals_secondary": 0,
-            "prihod": 0,
-            "touches": 2
-          },
-          "conversions": {
-            "meet_to_ad": 0.0,
-            "show_to_zad": null,
-            "consult_to_bron": null,
-            "bron_to_deal": null,
-            "consult_to_deal": null,
-            "hz_to_meet": null,
             "meet_to_deal": 0.0,
             "touch_to_deal": 0.0
           }
@@ -1472,40 +1498,6 @@
             "consult_to_bron": null,
             "bron_to_deal": 0.0,
             "consult_to_deal": null,
-            "hz_to_meet": null,
-            "meet_to_deal": 0.0,
-            "touch_to_deal": 0.0
-          }
-        },
-        {
-          "name": "Луиза Стажёр",
-          "key": "стажёр луиза",
-          "metrics": {
-            "hz": 0,
-            "rastleyka": 1180.0,
-            "meetings": 3.0,
-            "ad": 0,
-            "showings": 0,
-            "analogs": 0,
-            "podbor": 1.0,
-            "zadatok": 0,
-            "lifts": 0,
-            "rassylka": 0,
-            "crm": 0,
-            "incoming": 2,
-            "consults": 2.0,
-            "bron": 0,
-            "deals": 0,
-            "deals_secondary": 0,
-            "prihod": 0,
-            "touches": 6.0
-          },
-          "conversions": {
-            "meet_to_ad": 0.0,
-            "show_to_zad": null,
-            "consult_to_bron": 0.0,
-            "bron_to_deal": null,
-            "consult_to_deal": 0.0,
             "hz_to_meet": null,
             "meet_to_deal": 0.0,
             "touch_to_deal": 0.0
@@ -1579,6 +1571,40 @@
             "hz_to_meet": null,
             "meet_to_deal": 50.0,
             "touch_to_deal": 18.2
+          }
+        },
+        {
+          "name": "Максимов Константин",
+          "key": "стажёр константин",
+          "metrics": {
+            "hz": 0,
+            "rastleyka": 50,
+            "meetings": 2,
+            "ad": 0,
+            "showings": 0,
+            "analogs": 0,
+            "podbor": 0,
+            "zadatok": 0,
+            "lifts": 0,
+            "rassylka": 0,
+            "crm": 0,
+            "incoming": 0,
+            "consults": 0,
+            "bron": 0,
+            "deals": 0,
+            "deals_secondary": 0,
+            "prihod": 0,
+            "touches": 2
+          },
+          "conversions": {
+            "meet_to_ad": 0.0,
+            "show_to_zad": null,
+            "consult_to_bron": null,
+            "bron_to_deal": null,
+            "consult_to_deal": null,
+            "hz_to_meet": null,
+            "meet_to_deal": 0.0,
+            "touch_to_deal": 0.0
           }
         },
         {
@@ -2804,5 +2830,37 @@
   "lastDailyReport": {
     "date": "2026-08-17",
     "agents": 11
+  },
+  "interns": {
+    "goalDeals": 5,
+    "tariffs": [
+      {
+        "deals": "1",
+        "rate": 30,
+        "label": "1-я сделка"
+      },
+      {
+        "deals": "2–5",
+        "rate": 40,
+        "label": "2–5-я сделка"
+      }
+    ],
+    "agents": {
+      "стажёр луиза": {
+        "name": "Жданова Луиза"
+      },
+      "стажёр константин": {
+        "name": "Максимов Константин"
+      },
+      "стажёр земфира": {
+        "name": "Гареева Земфира"
+      },
+      "стажёр илья": {
+        "name": "Кузнецов Илья"
+      },
+      "стажёр айгуль": {
+        "name": "Калимуллина Айгуль"
+      }
+    }
   }
 }

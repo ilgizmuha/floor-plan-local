@@ -722,6 +722,108 @@ tbody tr:hover { background: #f5f1e8; }
   color: var(--muted);
 }
 
+.intern-progress { display: grid; gap: 1rem; }
+
+.intern-progress-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.intern-progress-value {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.intern-progress-value small {
+  font-size: 1rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.intern-progress-sub {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.intern-next-rate {
+  padding: 0.55rem 0.8rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.intern-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: #e8e2d6;
+  overflow: hidden;
+}
+
+.intern-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #0f6b57, #2f9b7d);
+  border-radius: inherit;
+}
+
+.intern-steps {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.intern-step {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: #f7f3eb;
+}
+
+.intern-step.is-done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #f5fffa;
+}
+
+.intern-tariff-table {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.intern-tariff-table th,
+.intern-tariff-table td {
+  padding: 0.55rem 0.75rem;
+}
+
+.intern-done-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.intern-done-sub {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
 .foot {
   display: flex;
   justify-content: space-between;

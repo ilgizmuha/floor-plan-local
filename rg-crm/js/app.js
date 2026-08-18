@@ -128,6 +128,9 @@ const els = {
   agentMonth: document.getElementById("agentMonthSelect"),
   agentKpi: document.getElementById("agentKpi"),
   agentPlans: document.getElementById("agentPlans"),
+  internProgressCard: document.getElementById("internProgressCard"),
+  internProgress: document.getElementById("internProgress"),
+  internProgressHint: document.getElementById("internProgressHint"),
   planHint: document.getElementById("planHint"),
   agentFunnel: document.getElementById("agentFunnel"),
   agentConv: document.getElementById("agentConv"),
@@ -214,18 +217,131 @@ function filterAgentNav() {
   });
 }
 
-function agentNavLabel(name) {
-  const intern = isIntern(name);
-  const clean = (name || "").replace(/\s*·\s*стаж[её]р/gi, "").trim();
-  return intern ? `${clean} · стажёр` : clean;
+function internConfig() {
+  return DATA?.interns || {};
 }
 
-function isIntern(name) {
+function internRegistry() {
+  return internConfig().agents || {};
+}
+
+function internGoal() {
+  return internConfig().goalDeals || 5;
+}
+
+function internDisplayName(key, fallback = "") {
+  const reg = internRegistry();
+  if (reg[key]?.name) return reg[key].name;
+  return (fallback || "").replace(/\s*стаж[её]р\s*/gi, " ").trim();
+}
+
+function isInternKey(key) {
+  return Boolean(key && internRegistry()[key]);
+}
+
+function careerDeals(key) {
+  let total = 0;
+  for (const month of DATA?.months || []) {
+    const row = (month.agents || []).find((a) => a.key === key);
+    if (!row) continue;
+    total += dealParts(row.metrics).total;
+  }
+  return total;
+}
+
+function isInternAgent(key, name = "") {
+  if (!isInternKey(key)) return false;
+  return careerDeals(key) < internGoal();
+}
+
+function agentNavLabel(name, key) {
+  const display = internDisplayName(key, name) || name;
+  const clean = display.replace(/\s*·\s*стаж[её]р/gi, "").trim();
+  return isInternAgent(key, name) ? `${clean} · стажёр` : clean;
+}
+
+function isIntern(name, key) {
+  if (key) return isInternAgent(key, name);
   return /стаж/i.test(name || "");
 }
 
-function planFor(name) {
-  return isIntern(name) ? PLAN_INTERN : PLAN_AGENT;
+function planFor(name, key) {
+  return isIntern(name, key) ? PLAN_INTERN : PLAN_AGENT;
+}
+
+function internTariffForDeal(n) {
+  if (n <= 0) return null;
+  if (n === 1) return 30;
+  if (n <= internGoal()) return 40;
+  return null;
+}
+
+function renderInternProgress(row) {
+  const key = row?.key;
+  const card = els.internProgressCard;
+  const box = els.internProgress;
+  if (!card || !box) return;
+
+  const registered = isInternKey(key);
+  const deals = careerDeals(key);
+  const goal = internGoal();
+  const activeIntern = registered && deals < goal;
+
+  if (!registered) {
+    card.classList.add("is-hidden");
+    return;
+  }
+
+  card.classList.remove("is-hidden");
+  const pctDone = Math.min(100, Math.round((deals / goal) * 100));
+  const tariffs = internConfig().tariffs || [
+    { deals: "1", rate: 30, label: "1-я сделка" },
+    { deals: "2–5", rate: 40, label: "2–5-я сделка" },
+  ];
+  const nextDeal = Math.min(deals + 1, goal);
+  const nextRate = internTariffForDeal(nextDeal);
+
+  if (!activeIntern) {
+    els.internProgressHint.textContent = `Выполнено ${deals} сделок — статус агента`;
+    box.innerHTML = `<div class="intern-done">
+      <p class="intern-done-title">Поздравляем! Вы агент</p>
+      <p class="intern-done-sub">Сделок за всё время: <strong>${int(deals)}</strong></p>
+    </div>`;
+    return;
+  }
+
+  els.internProgressHint.textContent = `${goal} сделок для перехода в статус агента`;
+  box.innerHTML = `
+    <div class="intern-progress-top">
+      <div>
+        <p class="intern-progress-value">${int(deals)} <small>/ ${goal} сделок</small></p>
+        <p class="intern-progress-sub">${deals ? `осталось ${goal - deals}` : "первая сделка — 30%"}</p>
+      </div>
+      ${nextRate != null ? `<div class="intern-next-rate">Следующая сделка: <strong>${nextRate}%</strong></div>` : ""}
+    </div>
+    <div class="intern-bar" aria-hidden="true"><span style="width:${pctDone}%"></span></div>
+    <div class="intern-steps">
+      ${Array.from({ length: goal }, (_, i) => {
+        const n = i + 1;
+        const done = deals >= n;
+        const rate = internTariffForDeal(n);
+        return `<span class="intern-step ${done ? "is-done" : ""}" title="${n}-я сделка · ${rate}%">${n}</span>`;
+      }).join("")}
+    </div>
+    <table class="intern-tariff-table">
+      <thead><tr><th>Сделка</th><th class="num">Комиссия</th></tr></thead>
+      <tbody>
+        ${tariffs
+          .map(
+            (t) => `<tr>
+              <td>${t.label || t.deals}</td>
+              <td class="num">${t.rate}%</td>
+            </tr>`
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
 }
 
 /** Первичка = ! Первичка; вторичка = ! Вторичка. Бронь/задаток — текущие, не сделки. */
@@ -373,7 +489,7 @@ function buildDailyRows(report) {
       byKey.set(key, {
         name: raw?.name || key,
         key,
-        intern: isIntern(raw?.name || ""),
+        intern: isInternAgent(key, raw?.name || ""),
         metrics,
       });
     }
@@ -556,12 +672,16 @@ function enrich(month) {
   const amap = attestMap();
   return (month?.agents || []).map((ag) => {
     const att = amap.get(ag.key);
-    const plan = planFor(ag.name);
+    const name = internDisplayName(ag.key, ag.name);
+    const intern = isInternAgent(ag.key, name);
+    const plan = planFor(name, ag.key);
     return {
       ...ag,
+      name,
       attRevenue: att?.revenueByMonth?.[month.label] ?? null,
       plan,
-      intern: isIntern(ag.name),
+      intern,
+      careerDeals: careerDeals(ag.key),
     };
   });
 }
@@ -570,8 +690,16 @@ function allAgentDirectory() {
   const byKey = new Map();
   for (const m of DATA.months) {
     for (const a of m.agents || []) {
-      if (!byKey.has(a.key)) byKey.set(a.key, { key: a.key, name: a.name });
+      if (!byKey.has(a.key)) {
+        byKey.set(a.key, {
+          key: a.key,
+          name: internDisplayName(a.key, a.name),
+        });
+      }
     }
+  }
+  for (const [key, info] of Object.entries(internRegistry())) {
+    if (!byKey.has(key)) byKey.set(key, { key, name: info.name });
   }
   for (const a of DATA.attestation?.agents || []) {
     if (!byKey.has(a.key)) byKey.set(a.key, { key: a.key, name: a.name });
@@ -669,7 +797,7 @@ function renderAgentNav() {
   els.agentNav.innerHTML = list
     .map((a) => {
       const active = route.view === "agent" && route.agentKey === a.key ? "is-active" : "";
-      return `<a class="${active}" href="${agentHref(a.key)}">${agentNavLabel(a.name)}</a>`;
+      return `<a class="${active}" href="${agentHref(a.key)}">${agentNavLabel(a.name, a.key)}</a>`;
     })
     .join("");
   els.sideDailyLink?.classList.toggle("is-active", route.view === "daily");
@@ -1274,15 +1402,28 @@ function renderAgentCabinet() {
 
   let row = findAgentRow(month, key);
   if (!row && dir) {
-    row = { name: dir.name, key, metrics: {}, conversions: {}, plan: planFor(dir.name), intern: isIntern(dir.name) };
+    row = {
+      name: dir.name,
+      key,
+      metrics: {},
+      conversions: {},
+      plan: planFor(dir.name, key),
+      intern: isInternAgent(key, dir.name),
+      careerDeals: careerDeals(key),
+    };
   }
-  const name = row?.name || key;
+  const name = internDisplayName(key, row?.name || key);
 
-  els.agentTitle.textContent = name;
-  els.agentSub.textContent = `${row?.intern ? "Стажёр" : "Агент"} · личный кабинет · свой приход виден`;
+  els.agentTitle.textContent = isInternAgent(key, name) ? `${name} · стажёр` : name;
+  els.agentSub.textContent = row?.intern
+    ? `Стажёр · ${row.careerDeals ?? careerDeals(key)} / ${internGoal()} сделок до агента`
+    : isInternKey(key) && (row?.careerDeals ?? careerDeals(key)) >= internGoal()
+      ? "Агент · программа стажировки завершена"
+      : "Агент · личный кабинет · свой приход виден";
   document.title = `${name} · РГ CRM`;
 
   const rows = [row];
+  renderInternProgress(row);
   renderKpis(month, rows, els.agentKpi, { personal: true });
   renderPlans(row);
   renderFunnel(rows, els.agentFunnel);
