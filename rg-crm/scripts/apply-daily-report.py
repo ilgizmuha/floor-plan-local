@@ -2,208 +2,14 @@
 """Apply a daily agent report to metrics.json (adds to current month totals)."""
 from __future__ import annotations
 
+import argparse
 import json
-import re
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 METRICS_PATH = ROOT / "data" / "metrics.json"
 DAILY_DIR = ROOT / "data" / "daily"
-
-REPORT_DATE = "2026-08-17"
-MONTH_ID = "Август 2026"
-
-# Parsed from user report for 2026-08-17
-DAILY_AGENTS: dict[str, dict] = {
-    "клысова лилия": {
-        "name": "Лилия Клысова",
-        "hz": 0,
-        "incoming": 1,
-        "rastleyka": 0,
-        "rassylka": 0,
-        "crm": 3,
-        "meetings": 0,
-        "showings": 1,
-        "podbor": 0,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "идрисова рузиля": {
-        "name": "Рузиля Идрисова",
-        "hz": 0,
-        "incoming": 7,
-        "rastleyka": 0,
-        "rassylka": 0,
-        "crm": 1,
-        "meetings": 0,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "стажёр константин": {
-        "name": "Максимов Константин",
-        "hz": 0,
-        "incoming": 0,
-        "rastleyka": 50,
-        "rassylka": 0,
-        "crm": 0,
-        "meetings": 2,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "михлюкова татьяна": {
-        "name": "Татьяна Михлюкова",
-        "hz": 0,
-        "incoming": 3,
-        "rastleyka": 0,
-        "rassylka": 0,
-        "crm": 1,
-        "meetings": 0,
-        "showings": 0,
-        "podbor": 1,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "стажёр земфира": {
-        "name": "Гареева Земфира",
-        "hz": 0,
-        "incoming": 2,
-        "rastleyka": 20,
-        "rassylka": 0,
-        "crm": 1,
-        "meetings": 3,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 1,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "гафурзянова ляйсян": {
-        "name": "Ляйсян Гафурзянова",
-        "hz": 4,
-        "incoming": 3,
-        "rastleyka": 400,
-        "rassylka": 0,
-        "crm": 2,
-        "meetings": 0,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "мустафина наталья": {
-        "name": "Наталья Мустафина",
-        "hz": 1,
-        "incoming": 1,
-        "rastleyka": 0,
-        "rassylka": 0,
-        "crm": 0,
-        "meetings": 0,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 2,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "стажёр луиза": {
-        "name": "Жданова Луиза",
-        "hz": 0,
-        "incoming": 2,
-        "rastleyka": 0,
-        "rassylka": 0,
-        "crm": 0,
-        "meetings": 0,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "стажёр илья": {
-        "name": "Кузнецов Илья",
-        "hz": 13,
-        "incoming": 0,
-        "rastleyka": 0,
-        "rassylka": 0,
-        "crm": 0,
-        "meetings": 1,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "редникова ляля": {
-        "name": "Ляля Редникова",
-        "hz": 0,
-        "incoming": 1,
-        "rastleyka": 1200,
-        "rassylka": 1500,
-        "crm": 4,
-        "meetings": 0,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-    "сафина альбина": {
-        "name": "Альбина Сафина",
-        "hz": 0,
-        "incoming": 5,
-        "rastleyka": 0,
-        "rassylka": 1000,
-        "crm": 0,
-        "meetings": 0,
-        "showings": 0,
-        "podbor": 0,
-        "consults": 0,
-        "bron": 0,
-        "zadatok": 0,
-        "deals": 0,
-        "deals_secondary": 0,
-        "ad": 0,
-    },
-}
 
 NUMERIC_KEYS = [
     "hz",
@@ -224,6 +30,7 @@ NUMERIC_KEYS = [
     "deals_secondary",
     "prihod",
     "touches",
+    "objects",
 ]
 
 
@@ -303,29 +110,38 @@ def update_daily_index() -> None:
     )
 
 
-def main() -> None:
+def load_daily(path: Path) -> tuple[str, str, dict[str, dict]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    report_date = payload["date"]
+    month_id = payload["monthId"]
+    agents = payload["agents"]
+    return report_date, month_id, agents
+
+
+def apply_daily(report_date: str, month_id: str, daily_agents: dict[str, dict]) -> None:
     data = json.loads(METRICS_PATH.read_text(encoding="utf-8"))
-    month = next(m for m in data["months"] if m["id"] == MONTH_ID)
+    month = next(m for m in data["months"] if m["id"] == month_id)
 
     DAILY_DIR.mkdir(parents=True, exist_ok=True)
-    daily_path = DAILY_DIR / f"{REPORT_DATE}.json"
-    daily_path.write_text(
-        json.dumps(
-            {
-                "date": REPORT_DATE,
-                "monthId": MONTH_ID,
-                "agents": DAILY_AGENTS,
-                "note": "Статусы 3-х лиц → crm; топ100 → incoming",
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    daily_path = DAILY_DIR / f"{report_date}.json"
+    if not daily_path.exists():
+        daily_path.write_text(
+            json.dumps(
+                {
+                    "date": report_date,
+                    "monthId": month_id,
+                    "agents": daily_agents,
+                    "note": "Статусы 3-х лиц → crm; топ100 → incoming",
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
     by_key = {ag["key"]: ag for ag in month["agents"]}
     updated = []
-    for key, delta in DAILY_AGENTS.items():
+    for key, delta in daily_agents.items():
         if key not in by_key:
             by_key[key] = {
                 "name": delta["name"],
@@ -344,12 +160,28 @@ def main() -> None:
     month["conversions"] = month_conversions(month["totals"])
 
     data["generatedAt"] = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
-    data["lastDailyReport"] = {"date": REPORT_DATE, "agents": len(DAILY_AGENTS)}
+    data["lastDailyReport"] = {"date": report_date, "agents": len(daily_agents)}
 
     METRICS_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     update_daily_index()
-    print(f"Applied daily report {REPORT_DATE} to {MONTH_ID}")
+    print(f"Applied daily report {report_date} to {month_id}")
     print("Updated:", ", ".join(updated))
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Apply daily CRM report to metrics.json")
+    parser.add_argument(
+        "file",
+        nargs="?",
+        default=str(DAILY_DIR / "2026-08-18.json"),
+        help="Path to daily JSON (default: latest prepared file)",
+    )
+    args = parser.parse_args()
+    path = Path(args.file)
+    if not path.is_absolute():
+        path = ROOT / path
+    report_date, month_id, daily_agents = load_daily(path)
+    apply_daily(report_date, month_id, daily_agents)
 
 
 if __name__ == "__main__":
