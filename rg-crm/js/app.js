@@ -108,6 +108,7 @@ const els = {
   attestHead: document.querySelector("#attestTable thead"),
   attestBody: document.querySelector("#attestTable tbody"),
   count: document.getElementById("rowCount"),
+  buildStamp: document.getElementById("buildStamp"),
   viewGroup: document.getElementById("viewGroup"),
   viewDaily: document.getElementById("viewDaily"),
   viewAgent: document.getElementById("viewAgent"),
@@ -1645,6 +1646,12 @@ function bind() {
 async function boot() {
   const cacheBust = Date.now();
   DATA = await (await fetch(`data/metrics.json?_=${cacheBust}`)).json();
+  try {
+    const build = await (await fetch(`BUILD_ID?_=${cacheBust}`)).text();
+    if (els.buildStamp && build.trim()) els.buildStamp.textContent = `Сборка ${build.trim()}`;
+  } catch {
+    if (els.buildStamp && DATA.generatedAt) els.buildStamp.textContent = `Данные ${DATA.generatedAt}`;
+  }
   selectedMonthId = DATA.months.at(-1)?.id;
   if (isMobileLayout()) detailsOpen = false;
   fillFilters();
